@@ -129,6 +129,7 @@
                                     <th>Registrace do</th>
                                     <th>Místa</th>
                                     <th>Stav</th>
+                                    <th>Akce</th>
                                 </tr>
                             </thead>
                             <tbody>
@@ -146,6 +147,9 @@
                                         <td>@CzechTime.Format(game.RegistrationClosesAtUtc)</td>
                                         <td>@game.RemainingPlayerSpots / @game.TargetPlayerCountTotal</td>
                                         <td>@(game.IsPublished ? "Zveřejněno" : "Skryto")</td>
+                                        <td>
+                                            <a href="/admin/hry/@game.Id/kralovstvi" class="btn btn-sm btn-outline-primary">Království</a>
+                                        </td>
                                     </tr>
                                 }
                             </tbody>
