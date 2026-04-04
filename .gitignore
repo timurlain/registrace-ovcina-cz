@@ -128,6 +128,10 @@ ipch/
 
 # Visual Studio Trace Files
 *.e2e
+!tests/RegistraceOvcina.E2E/
+!tests/RegistraceOvcina.E2E/**
+tests/RegistraceOvcina.E2E/bin/
+tests/RegistraceOvcina.E2E/obj/
 
 # TFS 2012 Local Workspace
 $tf/

@@ -1,12 +1,16 @@
 using System.ComponentModel.DataAnnotations;
+using System.Globalization;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Components.Authorization;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Localization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using RegistraceOvcina.Web.Components;
 using RegistraceOvcina.Web.Components.Account;
 using RegistraceOvcina.Web.Data;
+using RegistraceOvcina.Web.Features.Email;
 using RegistraceOvcina.Web.Features.Games;
 using RegistraceOvcina.Web.Features.Payments;
 using RegistraceOvcina.Web.Features.Submissions;
@@ -19,6 +23,10 @@ public class Program
     public static async Task Main(string[] args)
     {
         var builder = WebApplication.CreateBuilder(args);
+        var defaultCulture = new CultureInfo("cs-CZ");
+
+        CultureInfo.DefaultThreadCurrentCulture = defaultCulture;
+        CultureInfo.DefaultThreadCurrentUICulture = defaultCulture;
 
         if (builder.Environment.IsDevelopment() || builder.Environment.IsEnvironment("Testing"))
         {
@@ -44,6 +52,18 @@ public class Program
             options.LoginPath = "/Account/Login";
             options.AccessDeniedPath = "/Account/AccessDenied";
         });
+        builder.Services.Configure<RequestLocalizationOptions>(options =>
+        {
+            options.DefaultRequestCulture = new RequestCulture(defaultCulture);
+            options.SupportedCultures = [defaultCulture];
+            options.SupportedUICultures = [defaultCulture];
+        });
+        builder.Services.Configure<ForwardedHeadersOptions>(options =>
+        {
+            options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+            options.KnownNetworks.Clear();
+            options.KnownProxies.Clear();
+        });
 
         builder.Services.AddAuthorizationBuilder()
             .AddPolicy(AuthorizationPolicies.AdminOnly, policy => policy.RequireRole(RoleNames.Admin))
@@ -58,9 +78,25 @@ public class Program
             options => options.UseNpgsql(connectionString),
             ServiceLifetime.Scoped);
         builder.Services.AddDatabaseDeveloperPageExceptionFilter();
+        builder.Services.Configure<MailboxEmailOptions>(
+            builder.Configuration.GetSection(MailboxEmailOptions.SectionName));
+
+        var mailboxEmailOptions = builder.Configuration
+            .GetSection(MailboxEmailOptions.SectionName)
+            .Get<MailboxEmailOptions>() ?? new MailboxEmailOptions();
+
+        if (mailboxEmailOptions.HasPartialConfiguration)
+        {
+            throw new InvalidOperationException(MailboxEmailOptions.ValidationMessage);
+        }
 
         builder.Services.AddIdentityCore<ApplicationUser>(options =>
             {
+                options.Password.RequiredLength = 6;
+                options.Password.RequireDigit = false;
+                options.Password.RequireLowercase = false;
+                options.Password.RequireUppercase = false;
+                options.Password.RequireNonAlphanumeric = false;
                 options.SignIn.RequireConfirmedAccount = false;
                 options.Stores.SchemaVersion = IdentitySchemaVersions.Version3;
                 options.User.RequireUniqueEmail = true;
@@ -71,13 +107,29 @@ public class Program
             .AddDefaultTokenProviders();
 
         builder.Services.AddSingleton(TimeProvider.System);
-        builder.Services.AddSingleton<IEmailSender<ApplicationUser>, IdentityNoOpEmailSender>();
+        builder.Services.AddHttpClient(
+            MicrosoftGraphMailboxEmailSender.GraphHttpClientName,
+            client => client.BaseAddress = new Uri("https://graph.microsoft.com/v1.0/"));
+
+        if (mailboxEmailOptions.IsConfigured)
+        {
+            builder.Services.AddSingleton<IGraphAccessTokenProvider, MicrosoftGraphAccessTokenProvider>();
+            builder.Services.AddSingleton<IEmailSender<ApplicationUser>, MicrosoftGraphMailboxEmailSender>();
+        }
+        else
+        {
+            builder.Services.AddSingleton<IEmailSender<ApplicationUser>, IdentityNoOpEmailSender>();
+        }
+
         builder.Services.AddSingleton<SpaydPaymentQrService>();
         builder.Services.AddSingleton<SubmissionPricingService>();
         builder.Services.AddScoped<GameService>();
         builder.Services.AddScoped<SubmissionService>();
 
         var app = builder.Build();
+
+        app.UseForwardedHeaders();
+        app.UseRequestLocalization();
 
         if (app.Environment.IsDevelopment() || app.Environment.IsEnvironment("Testing"))
         {
@@ -94,6 +146,49 @@ public class Program
         if (!app.Environment.IsEnvironment("Testing"))
         {
             app.UseHttpsRedirection();
+        }
+
+        if (app.Environment.IsDevelopment())
+        {
+            app.Use(async (context, next) =>
+            {
+                var path = context.Request.Path.Value ?? string.Empty;
+                var isAuthDebugPath =
+                    path.StartsWith("/Account/", StringComparison.OrdinalIgnoreCase)
+                    || path.Equals("/not-found", StringComparison.OrdinalIgnoreCase);
+
+                if (!isAuthDebugPath)
+                {
+                    await next();
+                    return;
+                }
+
+                var logger = context.RequestServices
+                    .GetRequiredService<ILoggerFactory>()
+                    .CreateLogger("AuthDebug");
+
+                logger.LogInformation(
+                    "[AuthDebug] START {Method} {Path}{QueryString} | Referer: {Referer} | PID: {ProcessId}",
+                    context.Request.Method,
+                    context.Request.Path,
+                    context.Request.QueryString,
+                    context.Request.Headers.Referer.ToString(),
+                    Environment.ProcessId);
+
+                try
+                {
+                    await next();
+                }
+                finally
+                {
+                    logger.LogInformation(
+                        "[AuthDebug] END {Method} {Path}{QueryString} -> {StatusCode}",
+                        context.Request.Method,
+                        context.Request.Path,
+                        context.Request.QueryString,
+                        context.Response.StatusCode);
+                }
+            });
         }
 
         app.UseAuthentication();

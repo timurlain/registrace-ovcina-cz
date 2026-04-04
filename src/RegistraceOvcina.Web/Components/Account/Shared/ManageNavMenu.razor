@@ -5,28 +5,28 @@
 
 <ul class="nav nav-pills flex-column">
     <li class="nav-item">
-        <NavLink class="nav-link" href="/Account/Manage" Match="NavLinkMatch.All" data-enhance-nav="false">Profile</NavLink>
+        <NavLink class="nav-link" href="/Account/Manage" Match="NavLinkMatch.All" data-enhance-nav="false" onclick="window.location.href=this.href; return false;">Profile</NavLink>
     </li>
     <li class="nav-item">
-        <NavLink class="nav-link" href="/Account/Manage/Email" data-enhance-nav="false">Email</NavLink>
+        <NavLink class="nav-link" href="/Account/Manage/Email" data-enhance-nav="false" onclick="window.location.href=this.href; return false;">Email</NavLink>
     </li>
     <li class="nav-item">
-        <NavLink class="nav-link" href="/Account/Manage/ChangePassword" data-enhance-nav="false">Password</NavLink>
+        <NavLink class="nav-link" href="/Account/Manage/ChangePassword" data-enhance-nav="false" onclick="window.location.href=this.href; return false;">Password</NavLink>
     </li>
     @if (hasExternalLogins)
     {
         <li class="nav-item">
-            <NavLink class="nav-link" href="/Account/Manage/ExternalLogins" data-enhance-nav="false">External logins</NavLink>
+            <NavLink class="nav-link" href="/Account/Manage/ExternalLogins" data-enhance-nav="false" onclick="window.location.href=this.href; return false;">External logins</NavLink>
         </li>
     }
     <li class="nav-item">
-        <NavLink class="nav-link" href="/Account/Manage/TwoFactorAuthentication" data-enhance-nav="false">Two-factor authentication</NavLink>
+        <NavLink class="nav-link" href="/Account/Manage/TwoFactorAuthentication" data-enhance-nav="false" onclick="window.location.href=this.href; return false;">Two-factor authentication</NavLink>
     </li>
     <li class="nav-item">
-        <NavLink class="nav-link" href="/Account/Manage/Passkeys" data-enhance-nav="false">Passkeys</NavLink>
+        <NavLink class="nav-link" href="/Account/Manage/Passkeys" data-enhance-nav="false" onclick="window.location.href=this.href; return false;">Passkeys</NavLink>
     </li>
     <li class="nav-item">
-        <NavLink class="nav-link" href="/Account/Manage/PersonalData" data-enhance-nav="false">Personal data</NavLink>
+        <NavLink class="nav-link" href="/Account/Manage/PersonalData" data-enhance-nav="false" onclick="window.location.href=this.href; return false;">Personal data</NavLink>
     </li>
 </ul>
 

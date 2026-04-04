@@ -1,6 +1,7 @@
 name: CI
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - main
@@ -10,6 +11,7 @@ on:
 env:
   DOTNET_VERSION: 10.0.x
   BUILD_CONFIGURATION: Release
+  CONTAINER_IMAGE_NAME: registrace-ovcina-web
 
 jobs:
   build-test:
@@ -18,6 +20,14 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj', 'global.json') }}
+          restore-keys: |
+            ${{ runner.os }}-nuget-
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
@@ -30,6 +40,9 @@ jobs:
       - name: Build
         run: dotnet build RegistraceOvcina.slnx --configuration ${{ env.BUILD_CONFIGURATION }} --no-restore
 
+      - name: Validate container image build
+        run: docker build --tag ${{ env.CONTAINER_IMAGE_NAME }}:ci .
+
       - name: Run unit tests
         run: dotnet test tests/RegistraceOvcina.Web.Tests/RegistraceOvcina.Web.Tests.csproj --configuration ${{ env.BUILD_CONFIGURATION }} --no-build --logger "trx;LogFileName=web-tests.trx"
 
@@ -40,3 +53,145 @@ jobs:
           name: test-results
           path: |
             **/TestResults/*.trx
+
+  deploy:
+    runs-on: ubuntu-latest
+    needs: build-test
+    if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master'))
+    environment:
+      name: production
+    permissions:
+      contents: read
+    env:
+      AZURE_ACR_NAME: ${{ vars.AZURE_ACR_NAME }}
+      AZURE_CONTAINER_APP_NAME: ${{ vars.AZURE_CONTAINER_APP_NAME }}
+      AZURE_RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate deployment configuration
+        shell: bash
+        run: |
+          missing=0
+
+          for variable in AZURE_ACR_NAME AZURE_CONTAINER_APP_NAME AZURE_RESOURCE_GROUP; do
+            if [ -z "${!variable}" ]; then
+              echo "::error::GitHub variable $variable is required."
+              missing=1
+            fi
+          done
+
+          if [ -z "$AZURE_POSTGRES_CONNECTION_STRING" ]; then
+            echo "::error::GitHub secret AZURE_POSTGRES_CONNECTION_STRING is required."
+            missing=1
+          fi
+
+          email_settings_present=0
+
+          for variable in Email__SharedMailboxAddress Email__Graph__TenantId Email__Graph__ClientId; do
+            if [ -n "${!variable}" ]; then
+              email_settings_present=1
+            fi
+          done
+
+          if [ -n "$Email__Graph__ClientSecret" ]; then
+            email_settings_present=1
+          fi
+
+          if [ "$email_settings_present" -ne 0 ]; then
+            for variable in Email__SharedMailboxAddress Email__Graph__TenantId Email__Graph__ClientId; do
+              if [ -z "${!variable}" ]; then
+                echo "::error::GitHub variable $variable is required when mailbox support is configured."
+                missing=1
+              fi
+            done
+
+            if [ -z "$Email__Graph__ClientSecret" ]; then
+              echo "::error::GitHub secret Email__Graph__ClientSecret is required when mailbox support is configured."
+              missing=1
+            fi
+          fi
+
+          if [ "$missing" -ne 0 ]; then
+            exit 1
+          fi
+        env:
+          AZURE_POSTGRES_CONNECTION_STRING: ${{ secrets.AZURE_POSTGRES_CONNECTION_STRING }}
+          Email__SharedMailboxAddress: ${{ vars.Email__SharedMailboxAddress }}
+          Email__Graph__TenantId: ${{ vars.Email__Graph__TenantId }}
+          Email__Graph__ClientId: ${{ vars.Email__Graph__ClientId }}
+          Email__Graph__ClientSecret: ${{ secrets.Email__Graph__ClientSecret }}
+
+      - name: Login to Azure
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Ensure Container Apps CLI extension
+        run: az extension add --name containerapp --upgrade
+
+      - name: Resolve ACR login server
+        shell: bash
+        run: |
+          login_server="$(az acr show -n "$AZURE_ACR_NAME" --query loginServer -o tsv)"
+          echo "ACR_LOGIN_SERVER=$login_server" >> "$GITHUB_ENV"
+          echo "DEPLOY_IMAGE=$login_server/${CONTAINER_IMAGE_NAME}:${GITHUB_SHA}" >> "$GITHUB_ENV"
+
+      - name: Login to ACR
+        run: az acr login --name "$AZURE_ACR_NAME"
+
+      - name: Build and push container image
+        shell: bash
+        run: |
+          image_root="$ACR_LOGIN_SERVER/${CONTAINER_IMAGE_NAME}"
+          docker build -t "$image_root:${GITHUB_SHA}" -t "$image_root:latest" .
+          docker push "$image_root:${GITHUB_SHA}"
+          docker push "$image_root:latest"
+
+      - name: Deploy to Azure Container Apps
+        uses: azure/container-apps-deploy-action@v2
+        with:
+          containerAppName: ${{ env.AZURE_CONTAINER_APP_NAME }}
+          resourceGroup: ${{ env.AZURE_RESOURCE_GROUP }}
+          imageToDeploy: ${{ env.DEPLOY_IMAGE }}
+
+      - name: Configure production settings
+        shell: bash
+        run: |
+          secret_args=("default-connection=$AZURE_POSTGRES_CONNECTION_STRING")
+
+          if [ -n "$Email__SharedMailboxAddress" ]; then
+            secret_args+=("email-graph-client-secret=$Email__Graph__ClientSecret")
+          fi
+
+          az containerapp secret set -n "$AZURE_CONTAINER_APP_NAME" -g "$AZURE_RESOURCE_GROUP" \
+            --secrets "${secret_args[@]}" \
+            --output none
+
+          env_args=(
+            "ASPNETCORE_ENVIRONMENT=Production"
+            "Database__ApplyMigrationsOnStartup=true"
+            "SeedData__SeedDemoUsers=false"
+            "ConnectionStrings__DefaultConnection=secretref:default-connection"
+          )
+
+          if [ -n "$Email__SharedMailboxAddress" ]; then
+            env_args+=(
+              "Email__SharedMailboxAddress=$Email__SharedMailboxAddress"
+              "Email__Graph__TenantId=$Email__Graph__TenantId"
+              "Email__Graph__ClientId=$Email__Graph__ClientId"
+              "Email__Graph__ClientSecret=secretref:email-graph-client-secret"
+            )
+          fi
+
+          az containerapp update -n "$AZURE_CONTAINER_APP_NAME" -g "$AZURE_RESOURCE_GROUP" \
+            --set-env-vars "${env_args[@]}" \
+            --output none
+        env:
+          AZURE_POSTGRES_CONNECTION_STRING: ${{ secrets.AZURE_POSTGRES_CONNECTION_STRING }}
+          Email__SharedMailboxAddress: ${{ vars.Email__SharedMailboxAddress }}
+          Email__Graph__TenantId: ${{ vars.Email__Graph__TenantId }}
+          Email__Graph__ClientId: ${{ vars.Email__Graph__ClientId }}
+          Email__Graph__ClientSecret: ${{ secrets.Email__Graph__ClientSecret }}

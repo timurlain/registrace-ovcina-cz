@@ -1,9 +1,45 @@
 ﻿@page "/not-found"
 
+@inject NavigationManager NavigationManager
+@inject IWebHostEnvironment HostEnvironment
+
 <PageTitle>Stránka nenalezena</PageTitle>
 
 <section class="empty-state">
     <h1 class="h3 mb-3">Tato stránka neexistuje</h1>
     <p class="mb-3">Zkontrolujte adresu nebo se vraťte zpět na hlavní stránku aplikace.</p>
     <a class="btn btn-primary" href="/">Zpět na domovskou stránku</a>
+
+    @if (HostEnvironment.IsDevelopment())
+    {
+        <div class="alert alert-warning mt-4 text-start">
+            <h2 class="h6 mb-3">Debug routing info</h2>
+            <dl class="mb-0">
+                <dt>Aktuální URL</dt>
+                <dd><code>@NavigationManager.Uri</code></dd>
+
+                <dt>Klientská route</dt>
+                <dd><code>@CurrentRoute</code></dd>
+
+                <dt>Co zkontrolovat</dt>
+                <dd class="mb-0">
+                    Pokud jste čekali <code>/Account/Login</code> nebo <code>/Account/Register</code>,
+                    sledujte okno aplikace pro řádky začínající <code>[AuthDebug]</code>. Pokud po kliknutí
+                    žádné nové řádky nepřibudou, prohlížeč zůstal na staré klientské stránce a požadavek
+                    vůbec nedošel na server.
+                </dd>
+            </dl>
+        </div>
+    }
 </section>
+
+@code {
+    private string CurrentRoute
+    {
+        get
+        {
+            var relativePath = NavigationManager.ToBaseRelativePath(NavigationManager.Uri);
+            return string.IsNullOrWhiteSpace(relativePath) ? "/" : $"/{relativePath}";
+        }
+    }
+}

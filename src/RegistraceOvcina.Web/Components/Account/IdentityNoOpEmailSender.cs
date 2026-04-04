@@ -4,7 +4,7 @@ using RegistraceOvcina.Web.Data;
 
 namespace RegistraceOvcina.Web.Components.Account;
 
-// Remove the "else if (EmailSender is IdentityNoOpEmailSender)" block from RegisterConfirmation.razor after updating with a real implementation.
+// Fallback sender used when Exchange Online / Microsoft Graph settings are not configured yet.
 internal sealed class IdentityNoOpEmailSender : IEmailSender<ApplicationUser>
 {
     private readonly IEmailSender emailSender = new NoOpEmailSender();
