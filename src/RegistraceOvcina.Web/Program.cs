@@ -171,9 +171,15 @@ public class Program
         builder.Services.AddScoped<FoodSummaryService>();
         builder.Services.AddScoped<MealOptionService>();
         builder.Services.AddScoped<GameService>();
+        builder.Services.AddScoped<InboxService>();
         builder.Services.AddScoped<KingdomService>();
         builder.Services.AddScoped<SubmissionService>();
         builder.Services.AddScoped<UserAdministrationService>();
+
+        if (mailboxEmailOptions.IsConfigured)
+        {
+            builder.Services.AddScoped<MailboxSyncService>();
+        }
 
         var app = builder.Build();
 
@@ -689,6 +695,61 @@ public class Program
                     }
                 })
             .RequireAuthorization();
+        app.MapPost(
+                "/organizace/posta/sync",
+                async (HttpContext httpContext, MailboxSyncService? syncService) =>
+                {
+                    if (syncService is null)
+                    {
+                        return Results.LocalRedirect("/organizace/posta");
+                    }
+
+                    await syncService.SyncInboxAsync(httpContext.RequestAborted);
+                    return Results.LocalRedirect("/organizace/posta?synced=1");
+                })
+            .RequireAuthorization(AuthorizationPolicies.StaffOnly);
+        app.MapPost(
+                "/organizace/posta/{messageId:int}/propojit-prihlasku",
+                async ([FromForm] int submissionId, int messageId, HttpContext httpContext, UserManager<ApplicationUser> userManager, InboxService inboxService) =>
+                {
+                    var user = await userManager.GetUserAsync(httpContext.User);
+                    if (user is null)
+                    {
+                        return Results.LocalRedirect($"/Account/Login?ReturnUrl={Uri.EscapeDataString($"/organizace/posta/{messageId}")}");
+                    }
+
+                    await inboxService.LinkToSubmissionAsync(messageId, submissionId, user.Id);
+                    return Results.LocalRedirect($"/organizace/posta/{messageId}?linked=1");
+                })
+            .RequireAuthorization(AuthorizationPolicies.StaffOnly);
+        app.MapPost(
+                "/organizace/posta/{messageId:int}/propojit-osobu",
+                async ([FromForm] int personId, int messageId, HttpContext httpContext, UserManager<ApplicationUser> userManager, InboxService inboxService) =>
+                {
+                    var user = await userManager.GetUserAsync(httpContext.User);
+                    if (user is null)
+                    {
+                        return Results.LocalRedirect($"/Account/Login?ReturnUrl={Uri.EscapeDataString($"/organizace/posta/{messageId}")}");
+                    }
+
+                    await inboxService.LinkToPersonAsync(messageId, personId, user.Id);
+                    return Results.LocalRedirect($"/organizace/posta/{messageId}?linked=1");
+                })
+            .RequireAuthorization(AuthorizationPolicies.StaffOnly);
+        app.MapPost(
+                "/organizace/posta/{messageId:int}/odpojit",
+                async (int messageId, HttpContext httpContext, UserManager<ApplicationUser> userManager, InboxService inboxService) =>
+                {
+                    var user = await userManager.GetUserAsync(httpContext.User);
+                    if (user is null)
+                    {
+                        return Results.LocalRedirect($"/Account/Login?ReturnUrl={Uri.EscapeDataString($"/organizace/posta/{messageId}")}");
+                    }
+
+                    await inboxService.UnlinkAsync(messageId, user.Id);
+                    return Results.LocalRedirect($"/organizace/posta/{messageId}?unlinked=1");
+                })
+            .RequireAuthorization(AuthorizationPolicies.StaffOnly);
         app.MapStaticAssets();
         app.MapRazorComponents<App>()
             .AddInteractiveServerRenderMode();
