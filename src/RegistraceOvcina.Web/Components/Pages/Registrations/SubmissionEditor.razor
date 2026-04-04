@@ -424,10 +424,53 @@ else
                                 <article class="card border-0 bg-light">
                                     <div class="card-body">
                                         <div class="fw-semibold">@attendee.FullName</div>
-                                        <div class="small text-secondary">@GetAttendeeTypeLabel(attendee.AttendeeType) · ročník @attendee.BirthYear</div>
+                                        <div class="small text-secondary">
+                                            @GetAttendeeTypeLabel(attendee.AttendeeType)
+                                            @if (attendee.AttendeeType == AttendeeType.Player && attendee.PlayerSubType is { } pst)
+                                            {
+                                                <span> · @GetPlayerSubTypeLabel(pst)</span>
+                                            }
+                                            @if (attendee.AttendeeType == AttendeeType.Adult && attendee.AdultRoles != AdultRoleFlags.None)
+                                            {
+                                                <span> · @GetAdultRolesLabel(attendee.AdultRoles)</span>
+                                            }
+                                            · ročník @attendee.BirthYear
+                                        </div>
                                         @if (!string.IsNullOrWhiteSpace(attendee.PreferredKingdom))
                                         {
                                             <div class="small">Preferované království: <strong>@attendee.PreferredKingdom</strong></div>
+                                        }
+                                        @if (!string.IsNullOrWhiteSpace(attendee.CharacterName))
+                                        {
+                                            <div class="small">Postava: <strong>@attendee.CharacterName</strong></div>
+                                        }
+                                        @if (attendee.LodgingPreference is { } lp)
+                                        {
+                                            <div class="small">Ubytování: @GetLodgingLabel(lp)</div>
+                                        }
+                                        @if (!string.IsNullOrWhiteSpace(attendee.AttendeeNote))
+                                        {
+                                            <div class="small text-secondary fst-italic">@attendee.AttendeeNote</div>
+                                        }
+                                        @{
+                                            var attendeeFoodOrders = submission.ExistingFoodOrders
+                                                .Where(x => x.RegistrationId == attendee.RegistrationId)
+                                                .ToList();
+                                        }
+                                        @if (attendeeFoodOrders.Count > 0 && submission.MealDays.Count > 0)
+                                        {
+                                            <div class="small mt-1">
+                                                <span class="text-secondary">Stravování:</span>
+                                                @foreach (var fo in attendeeFoodOrders)
+                                                {
+                                                    var day = submission.MealDays.FirstOrDefault(d => d.DayUtc.Date == fo.MealDayUtc.Date);
+                                                    var option = day?.Options.FirstOrDefault(o => o.Id == fo.MealOptionId);
+                                                    if (day is not null && option is not null)
+                                                    {
+                                                        <span class="ms-2">@day.DayLabel: @option.Name</span>
+                                                    }
+                                                }
+                                            </div>
                                         }
                                     </div>
                                 </article>
