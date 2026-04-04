@@ -8,6 +8,7 @@ using Microsoft.EntityFrameworkCore;
 using RegistraceOvcina.Web.Components;
 using RegistraceOvcina.Web.Components.Account;
 using RegistraceOvcina.Web.Data;
+using RegistraceOvcina.Web.Features.Email;
 using RegistraceOvcina.Web.Features.Games;
 using RegistraceOvcina.Web.Features.Payments;
 using RegistraceOvcina.Web.Features.Submissions;
@@ -65,6 +66,17 @@ public class Program
             options => options.UseNpgsql(connectionString),
             ServiceLifetime.Scoped);
         builder.Services.AddDatabaseDeveloperPageExceptionFilter();
+        builder.Services.Configure<MailboxEmailOptions>(
+            builder.Configuration.GetSection(MailboxEmailOptions.SectionName));
+
+        var mailboxEmailOptions = builder.Configuration
+            .GetSection(MailboxEmailOptions.SectionName)
+            .Get<MailboxEmailOptions>() ?? new MailboxEmailOptions();
+
+        if (mailboxEmailOptions.HasPartialConfiguration)
+        {
+            throw new InvalidOperationException(MailboxEmailOptions.ValidationMessage);
+        }
 
         builder.Services.AddIdentityCore<ApplicationUser>(options =>
             {
@@ -83,7 +95,20 @@ public class Program
             .AddDefaultTokenProviders();
 
         builder.Services.AddSingleton(TimeProvider.System);
-        builder.Services.AddSingleton<IEmailSender<ApplicationUser>, IdentityNoOpEmailSender>();
+        builder.Services.AddHttpClient(
+            MicrosoftGraphMailboxEmailSender.GraphHttpClientName,
+            client => client.BaseAddress = new Uri("https://graph.microsoft.com/v1.0/"));
+
+        if (mailboxEmailOptions.IsConfigured)
+        {
+            builder.Services.AddSingleton<IGraphAccessTokenProvider, MicrosoftGraphAccessTokenProvider>();
+            builder.Services.AddSingleton<IEmailSender<ApplicationUser>, MicrosoftGraphMailboxEmailSender>();
+        }
+        else
+        {
+            builder.Services.AddSingleton<IEmailSender<ApplicationUser>, IdentityNoOpEmailSender>();
+        }
+
         builder.Services.AddSingleton<SpaydPaymentQrService>();
         builder.Services.AddSingleton<SubmissionPricingService>();
         builder.Services.AddScoped<GameService>();

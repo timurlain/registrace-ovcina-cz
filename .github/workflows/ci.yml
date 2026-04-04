@@ -102,11 +102,41 @@ jobs:
             missing=1
           fi
 
+          email_settings_present=0
+
+          for variable in Email__SharedMailboxAddress Email__Graph__TenantId Email__Graph__ClientId; do
+            if [ -n "${!variable}" ]; then
+              email_settings_present=1
+            fi
+          done
+
+          if [ -n "$Email__Graph__ClientSecret" ]; then
+            email_settings_present=1
+          fi
+
+          if [ "$email_settings_present" -ne 0 ]; then
+            for variable in Email__SharedMailboxAddress Email__Graph__TenantId Email__Graph__ClientId; do
+              if [ -z "${!variable}" ]; then
+                echo "::error::GitHub variable $variable is required when mailbox support is configured."
+                missing=1
+              fi
+            done
+
+            if [ -z "$Email__Graph__ClientSecret" ]; then
+              echo "::error::GitHub secret Email__Graph__ClientSecret is required when mailbox support is configured."
+              missing=1
+            fi
+          fi
+
           if [ "$missing" -ne 0 ]; then
             exit 1
           fi
         env:
           AZURE_POSTGRES_CONNECTION_STRING: ${{ secrets.AZURE_POSTGRES_CONNECTION_STRING }}
+          Email__SharedMailboxAddress: ${{ vars.Email__SharedMailboxAddress }}
+          Email__Graph__TenantId: ${{ vars.Email__Graph__TenantId }}
+          Email__Graph__ClientId: ${{ vars.Email__Graph__ClientId }}
+          Email__Graph__ClientSecret: ${{ secrets.Email__Graph__ClientSecret }}
 
       - name: Login to Azure
         uses: azure/login@v2
@@ -144,19 +174,41 @@ jobs:
       - name: Configure production settings
         shell: bash
         run: |
+          secret_args=("default-connection=$AZURE_POSTGRES_CONNECTION_STRING")
+
+          if [ -n "$Email__SharedMailboxAddress" ]; then
+            secret_args+=("email-graph-client-secret=$Email__Graph__ClientSecret")
+          fi
+
           az containerapp secret set -n "$AZURE_CONTAINER_APP_NAME" -g "$AZURE_RESOURCE_GROUP" \
-            --secrets "default-connection=$AZURE_POSTGRES_CONNECTION_STRING" \
+            --secrets "${secret_args[@]}" \
             --output none
 
+          env_args=(
+            "ASPNETCORE_ENVIRONMENT=Production"
+            "Database__ApplyMigrationsOnStartup=true"
+            "SeedData__SeedDemoUsers=false"
+            "ConnectionStrings__DefaultConnection=secretref:default-connection"
+          )
+
+          if [ -n "$Email__SharedMailboxAddress" ]; then
+            env_args+=(
+              "Email__SharedMailboxAddress=$Email__SharedMailboxAddress"
+              "Email__Graph__TenantId=$Email__Graph__TenantId"
+              "Email__Graph__ClientId=$Email__Graph__ClientId"
+              "Email__Graph__ClientSecret=secretref:email-graph-client-secret"
+            )
+          fi
+
           az containerapp update -n "$AZURE_CONTAINER_APP_NAME" -g "$AZURE_RESOURCE_GROUP" \
-            --set-env-vars \
-              "ASPNETCORE_ENVIRONMENT=Production" \
-              "Database__ApplyMigrationsOnStartup=true" \
-              "SeedData__SeedDemoUsers=false" \
-              "ConnectionStrings__DefaultConnection=secretref:default-connection" \
+            --set-env-vars "${env_args[@]}" \
             --ingress external \
             --target-port 8080 \
             --min-replicas 1 \
             --output none
         env:
           AZURE_POSTGRES_CONNECTION_STRING: ${{ secrets.AZURE_POSTGRES_CONNECTION_STRING }}
+          Email__SharedMailboxAddress: ${{ vars.Email__SharedMailboxAddress }}
+          Email__Graph__TenantId: ${{ vars.Email__Graph__TenantId }}
+          Email__Graph__ClientId: ${{ vars.Email__Graph__ClientId }}
+          Email__Graph__ClientSecret: ${{ secrets.Email__Graph__ClientSecret }}

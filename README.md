@@ -110,6 +110,9 @@ Repository **variables**:
 | `AZURE_ACR_NAME` | Azure Container Registry name |
 | `AZURE_RESOURCE_GROUP` | Resource group containing the Container App |
 | `AZURE_CONTAINER_APP_NAME` | Target Container App name |
+| `Email__SharedMailboxAddress` | Exchange Online shared mailbox identity used for app email sending |
+| `Email__Graph__TenantId` | Microsoft Entra tenant ID for the mailbox app registration |
+| `Email__Graph__ClientId` | Microsoft Entra app registration client ID |
 
 Repository **secrets**:
 
@@ -117,6 +120,14 @@ Repository **secrets**:
 | --- | --- |
 | `AZURE_CREDENTIALS` | Service principal JSON used by `azure/login` |
 | `AZURE_POSTGRES_CONNECTION_STRING` | Production PostgreSQL connection string |
+| `Email__Graph__ClientSecret` | Microsoft Entra app registration client secret |
+
+Mailbox support is enabled only when all four Exchange Online / Microsoft Graph settings are present. If none of them are configured, the app keeps using the current no-op sender. Partial configuration is treated as an error so broken deployments fail fast.
+
+To send from `ovcina@ovcina.cz`, the Microsoft Entra app registration should have Microsoft Graph **application** permissions such as:
+
+- `Mail.Send`
+- `Mail.ReadWrite`
 
 The Azure service principal in `AZURE_CREDENTIALS` needs permission to:
 
@@ -149,7 +160,7 @@ registration-app-starter-prompt.md  Execution brief
 - GitHub Actions for CI/CD
 - PostgreSQL as the application database
 - narrow read-only integration API
-- Exchange Online shared mailbox integration planned
+- Exchange Online shared mailbox sending via Microsoft Graph when configured
 - SPAYD QR payments planned and partially scaffolded
 
 ## Current status
