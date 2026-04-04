@@ -174,10 +174,10 @@ else
                                 <div class="col-md-4">
                                     <label class="form-label" for="attendee-kingdom">Preferované království</label>
                                     <select id="attendee-kingdom" name="@nameof(AttendeeInput.PreferredKingdomId)" class="form-select" disabled="@(submission.AvailableKingdoms.Count == 0)">
-                                        <option value="">Bez preference</option>
+                                        <option value="" selected="@(attendeeInput.PreferredKingdomId is null)">Bez preference</option>
                                         @foreach (var kingdom in submission.AvailableKingdoms)
                                         {
-                                            <option value="@kingdom.Id">@kingdom.Name</option>
+                                            <option value="@kingdom.Id" selected="@(attendeeInput.PreferredKingdomId == kingdom.Id)">@kingdom.Name</option>
                                         }
                                     </select>
                                     @if (submission.AvailableKingdoms.Count == 0)
@@ -576,6 +576,7 @@ document.addEventListener('change', e => {
             BirthYear = attendee.BirthYear,
             AttendeeType = attendee.AttendeeType,
             PlayerSubType = attendee.PlayerSubType,
+            PreferredKingdomId = attendee.PreferredKingdomId,
             CharacterName = attendee.CharacterName,
             LodgingPreference = attendee.LodgingPreference,
             AttendeeNote = attendee.AttendeeNote,
