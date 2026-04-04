@@ -155,6 +155,8 @@ public sealed class SubmissionService(
             .Select(x => new FoodOrderViewModel(x.RegistrationId, x.MealOptionId, x.MealDayUtc))
             .ToListAsync(cancellationToken);
 
+        var nowUtc = timeProvider.GetUtcNow().UtcDateTime;
+
         return new SubmissionEditorViewModel
         {
             Id = submission.Id,
@@ -162,7 +164,12 @@ public sealed class SubmissionService(
             GameName = submission.Game.Name,
             GameStartsAtUtc = submission.Game.StartsAtUtc,
             RegistrationClosesAtUtc = submission.Game.RegistrationClosesAtUtc,
+            MealOrderingClosesAtUtc = submission.Game.MealOrderingClosesAtUtc,
             PaymentDueAtUtc = submission.Game.PaymentDueAtUtc,
+            CanEditRegistration = submission.Status != SubmissionStatus.Cancelled
+                && nowUtc <= submission.Game.RegistrationClosesAtUtc,
+            CanEditMeals = submission.Status != SubmissionStatus.Cancelled
+                && nowUtc <= submission.Game.MealOrderingClosesAtUtc,
             BankAccount = submission.Game.BankAccount,
             BankAccountName = submission.Game.BankAccountName,
             Status = submission.Status,
@@ -217,8 +224,10 @@ public sealed class SubmissionService(
         ArgumentNullException.ThrowIfNull(input);
 
         await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
-        var submission = await LoadOwnedSubmissionAsync(db, submissionId, userId, cancellationToken);
-        EnsureDraft(submission);
+        var submission = await db.RegistrationSubmissions
+            .FirstOrDefaultAsync(x => x.Id == submissionId && x.RegistrantUserId == userId, cancellationToken)
+            ?? throw new ValidationException("Přihláška nebyla nalezena.");
+        EnsureEditable(submission);
 
         submission.PrimaryContactName = input.PrimaryContactName.Trim();
         submission.PrimaryEmail = input.PrimaryEmail.Trim();
@@ -244,7 +253,7 @@ public sealed class SubmissionService(
             .FirstOrDefaultAsync(x => x.Id == submissionId && x.RegistrantUserId == userId, cancellationToken)
             ?? throw new ValidationException("Přihláška nebyla nalezena.");
 
-        EnsureDraft(submission);
+        EnsureRegistrationOpen(submission);
 
         if (pricingService.RequiresGuardianData(input.BirthYear))
         {
@@ -289,6 +298,7 @@ public sealed class SubmissionService(
 
         db.Registrations.Add(registration);
         submission.LastEditedAtUtc = nowUtc;
+        RecalculateIfSubmitted(submission);
         await db.SaveChangesAsync(cancellationToken);
 
         db.AuditLogs.Add(new AuditLog
@@ -320,8 +330,12 @@ public sealed class SubmissionService(
         ArgumentNullException.ThrowIfNull(input);
 
         await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
-        var submission = await LoadOwnedSubmissionAsync(db, submissionId, userId, cancellationToken);
-        EnsureDraft(submission);
+        var submission = await db.RegistrationSubmissions
+            .Include(x => x.Game)
+            .Include(x => x.Registrations)
+            .FirstOrDefaultAsync(x => x.Id == submissionId && x.RegistrantUserId == userId, cancellationToken)
+            ?? throw new ValidationException("Přihláška nebyla nalezena.");
+        EnsureRegistrationOpen(submission);
 
         var registration = await db.Registrations
             .Include(x => x.Person)
@@ -362,6 +376,7 @@ public sealed class SubmissionService(
         registration.UpdatedAtUtc = nowUtc;
 
         submission.LastEditedAtUtc = nowUtc;
+        RecalculateIfSubmitted(submission);
 
         db.AuditLogs.Add(new AuditLog
         {
@@ -389,8 +404,12 @@ public sealed class SubmissionService(
         CancellationToken cancellationToken = default)
     {
         await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
-        var submission = await LoadOwnedSubmissionAsync(db, submissionId, userId, cancellationToken);
-        EnsureDraft(submission);
+        var submission = await db.RegistrationSubmissions
+            .Include(x => x.Game)
+            .Include(x => x.Registrations)
+            .FirstOrDefaultAsync(x => x.Id == submissionId && x.RegistrantUserId == userId, cancellationToken)
+            ?? throw new ValidationException("Přihláška nebyla nalezena.");
+        EnsureRegistrationOpen(submission);
 
         var registration = await db.Registrations
             .Include(x => x.Person)
@@ -409,6 +428,7 @@ public sealed class SubmissionService(
         }
 
         submission.LastEditedAtUtc = timeProvider.GetUtcNow().UtcDateTime;
+        RecalculateIfSubmitted(submission);
         await db.SaveChangesAsync(cancellationToken);
     }
 
@@ -425,7 +445,7 @@ public sealed class SubmissionService(
             .FirstOrDefaultAsync(x => x.Id == submissionId && x.RegistrantUserId == userId, cancellationToken)
             ?? throw new ValidationException("Přihláška nebyla nalezena.");
 
-        EnsureDraft(submission);
+        EnsureMealOrderingOpen(submission);
 
         var validRegistrationIds = submission.Registrations.Select(x => x.Id).ToHashSet();
         var validMealOptionIds = submission.Game.MealOptions.Where(x => x.IsActive).ToDictionary(x => x.Id);
@@ -467,7 +487,10 @@ public sealed class SubmissionService(
             .FirstOrDefaultAsync(x => x.Id == submissionId && x.RegistrantUserId == userId, cancellationToken)
             ?? throw new ValidationException("Přihláška nebyla nalezena.");
 
-        EnsureDraft(submission);
+        if (submission.Status != SubmissionStatus.Draft)
+        {
+            throw new ValidationException("Přihlášku lze odeslat pouze ze stavu rozpracovaná.");
+        }
 
         if (submission.Game.RegistrationClosesAtUtc < timeProvider.GetUtcNow().UtcDateTime)
         {
@@ -510,11 +533,33 @@ public sealed class SubmissionService(
         await db.SaveChangesAsync(cancellationToken);
     }
 
-    private static void EnsureDraft(RegistrationSubmission submission)
+    private static void EnsureEditable(RegistrationSubmission submission)
     {
-        if (submission.Status != SubmissionStatus.Draft)
+        if (submission.Status == SubmissionStatus.Cancelled)
+            throw new ValidationException("Zrušená přihláška nelze upravovat.");
+    }
+
+    private void EnsureRegistrationOpen(RegistrationSubmission submission)
+    {
+        EnsureEditable(submission);
+        var now = timeProvider.GetUtcNow().UtcDateTime;
+        if (now > submission.Game.RegistrationClosesAtUtc)
+            throw new ValidationException("Registrace pro tuto hru je už uzavřená.");
+    }
+
+    private void EnsureMealOrderingOpen(RegistrationSubmission submission)
+    {
+        EnsureEditable(submission);
+        var now = timeProvider.GetUtcNow().UtcDateTime;
+        if (now > submission.Game.MealOrderingClosesAtUtc)
+            throw new ValidationException("Objednávání jídel pro tuto hru je už uzavřené.");
+    }
+
+    private void RecalculateIfSubmitted(RegistrationSubmission submission)
+    {
+        if (submission.Status == SubmissionStatus.Submitted)
         {
-            throw new ValidationException("Tuto přihlášku už nelze upravovat v rozpracovaném režimu.");
+            submission.ExpectedTotalAmount = pricingService.CalculateExpectedTotal(submission.Game, submission.Registrations);
         }
     }
 
@@ -566,7 +611,10 @@ public sealed class SubmissionEditorViewModel
     public string GameName { get; init; } = "";
     public DateTime GameStartsAtUtc { get; init; }
     public DateTime RegistrationClosesAtUtc { get; init; }
+    public DateTime MealOrderingClosesAtUtc { get; init; }
     public DateTime PaymentDueAtUtc { get; init; }
+    public bool CanEditRegistration { get; init; }
+    public bool CanEditMeals { get; init; }
     public string BankAccount { get; init; } = "";
     public string BankAccountName { get; init; } = "";
     public SubmissionStatus Status { get; init; }
