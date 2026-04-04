@@ -173,7 +173,7 @@ jobs:
 
           env_args=(
             "ASPNETCORE_ENVIRONMENT=Production"
-            "Database__ApplyMigrationsOnStartup=true"
+            "Database__ApplyMigrationsOnStartup=false"
             "SeedData__SeedDemoUsers=false"
             "ConnectionStrings__DefaultConnection=secretref:default-connection"
           )
@@ -196,3 +196,35 @@ jobs:
           Email__Graph__TenantId: ${{ vars.Email__Graph__TenantId }}
           Email__Graph__ClientId: ${{ vars.Email__Graph__ClientId }}
           Email__Graph__ClientSecret: ${{ secrets.Email__Graph__ClientSecret }}
+
+      - name: Verify latest revision is healthy
+        shell: bash
+        run: |
+          latest_revision="$(az containerapp show -n "$AZURE_CONTAINER_APP_NAME" -g "$AZURE_RESOURCE_GROUP" --query properties.latestRevisionName -o tsv)"
+          echo "Latest revision: $latest_revision"
+
+          for attempt in {1..24}; do
+            provisioning="$(az containerapp revision show -n "$AZURE_CONTAINER_APP_NAME" -g "$AZURE_RESOURCE_GROUP" --revision "$latest_revision" --query properties.provisioningState -o tsv)"
+            health="$(az containerapp revision show -n "$AZURE_CONTAINER_APP_NAME" -g "$AZURE_RESOURCE_GROUP" --revision "$latest_revision" --query properties.healthState -o tsv)"
+            running="$(az containerapp revision show -n "$AZURE_CONTAINER_APP_NAME" -g "$AZURE_RESOURCE_GROUP" --revision "$latest_revision" --query properties.runningState -o tsv)"
+            details="$(az containerapp revision show -n "$AZURE_CONTAINER_APP_NAME" -g "$AZURE_RESOURCE_GROUP" --revision "$latest_revision" --query properties.runningStateDetails -o tsv)"
+
+            echo "Attempt $attempt: provisioning=$provisioning health=$health running=$running details=$details"
+
+            if [ "$provisioning" = "Provisioned" ] && [ "$health" = "Healthy" ] && [ "$running" = "Running" ]; then
+              exit 0
+            fi
+
+            if [ "$provisioning" = "Failed" ] || [ "$health" = "Unhealthy" ] || [ "$running" = "Failed" ]; then
+              echo "::error::Latest revision $latest_revision is unhealthy."
+              az containerapp logs show -n "$AZURE_CONTAINER_APP_NAME" -g "$AZURE_RESOURCE_GROUP" --revision "$latest_revision" --tail 200 || true
+              exit 1
+            fi
+
+            sleep 10
+          done
+
+          echo "::error::Timed out waiting for revision $latest_revision to become healthy."
+          az containerapp revision show -n "$AZURE_CONTAINER_APP_NAME" -g "$AZURE_RESOURCE_GROUP" --revision "$latest_revision" -o json
+          az containerapp logs show -n "$AZURE_CONTAINER_APP_NAME" -g "$AZURE_RESOURCE_GROUP" --revision "$latest_revision" --tail 200 || true
+          exit 1
