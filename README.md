@@ -148,7 +148,8 @@ The Azure service principal in `AZURE_CREDENTIALS` needs permission to:
 - the Azure Container App already exists
 - the Container App should be reachable with **external ingress** on port `8080`
 - the PostgreSQL server or database already exists
-- production startup migrations are enabled through `Database__ApplyMigrationsOnStartup=true`
+- production startup migrations stay disabled through `Database__ApplyMigrationsOnStartup=false`
+- schema changes for production should be applied explicitly as part of a controlled migration step, not opportunistically during app startup
 - demo-user seeding stays disabled in production
 
 ## Repository layout
