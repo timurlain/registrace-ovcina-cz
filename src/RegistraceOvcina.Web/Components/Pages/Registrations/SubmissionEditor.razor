@@ -97,7 +97,7 @@ else
                                         <div class="card-body d-flex flex-column flex-lg-row justify-content-between gap-3">
                                             <div>
                                                 <h3 class="h5 mb-1">@attendee.FullName</h3>
-                                                <div class="small text-secondary">@GetRoleLabel(attendee.Role) · ročník @attendee.BirthYear</div>
+                                                <div class="small text-secondary">@GetAttendeeTypeLabel(attendee.AttendeeType) · ročník @attendee.BirthYear</div>
                                                 @if (!string.IsNullOrWhiteSpace(attendee.PreferredKingdom))
                                                 {
                                                     <div class="small">Preferované království: <strong>@attendee.PreferredKingdom</strong></div>
@@ -148,10 +148,10 @@ else
                                 </div>
                                 <div class="col-md-4">
                                     <label class="form-label" for="attendee-role">Role</label>
-                                    <select id="attendee-role" name="@nameof(AttendeeInput.Role)" class="form-select" data-testid="attendee-role">
-                                        @foreach (var role in Enum.GetValues<RegistrationRole>())
+                                    <select id="attendee-role" name="@nameof(AttendeeInput.AttendeeType)" class="form-select" data-testid="attendee-role">
+                                        @foreach (var type in Enum.GetValues<AttendeeType>())
                                         {
-                                            <option value="@role">@GetRoleLabel(role)</option>
+                                            <option value="@type">@GetAttendeeTypeLabel(type)</option>
                                         }
                                     </select>
                                 </div>
@@ -247,7 +247,7 @@ else
                                 <article class="card border-0 bg-light">
                                     <div class="card-body">
                                         <div class="fw-semibold">@attendee.FullName</div>
-                                        <div class="small text-secondary">@GetRoleLabel(attendee.Role) · ročník @attendee.BirthYear</div>
+                                        <div class="small text-secondary">@GetAttendeeTypeLabel(attendee.AttendeeType) · ročník @attendee.BirthYear</div>
                                         @if (!string.IsNullOrWhiteSpace(attendee.PreferredKingdom))
                                         {
                                             <div class="small">Preferované království: <strong>@attendee.PreferredKingdom</strong></div>
@@ -426,13 +426,11 @@ else
         return await UserManager.GetUserAsync(authState.User);
     }
 
-    private static string GetRoleLabel(RegistrationRole role) => role switch
+    private static string GetAttendeeTypeLabel(AttendeeType type) => type switch
     {
-        RegistrationRole.Player => "Hráč",
-        RegistrationRole.Npc => "NPC",
-        RegistrationRole.Monster => "Monstrum",
-        RegistrationRole.TechSupport => "Technická podpora",
-        _ => role.ToString()
+        AttendeeType.Player => "Hráč (dítě)",
+        AttendeeType.Adult => "Dospělý",
+        _ => type.ToString()
     };
 
     private static string GetSubmissionStatusLabel(SubmissionStatus status) => status switch
@@ -455,6 +453,6 @@ else
     private static AttendeeInput CreateDefaultAttendeeInput() => new()
     {
         BirthYear = DateTime.UtcNow.Year - 10,
-        Role = RegistrationRole.Player
+        AttendeeType = AttendeeType.Player
     };
 }

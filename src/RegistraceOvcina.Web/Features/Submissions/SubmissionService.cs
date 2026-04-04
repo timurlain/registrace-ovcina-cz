@@ -162,10 +162,17 @@ public sealed class SubmissionService(
                 .OrderBy(x => x.CreatedAtUtc)
                 .Select(x => new AttendeeViewModel(
                     x.Id,
+                    x.Person.FirstName,
+                    x.Person.LastName,
                     $"{x.Person.FirstName} {x.Person.LastName}",
                     x.Person.BirthYear,
-                    x.Role,
+                    x.AttendeeType,
+                    x.PlayerSubType,
+                    x.AdultRoles,
                     x.PreferredKingdom?.DisplayName,
+                    x.CharacterName,
+                    x.LodgingPreference,
+                    x.RegistrantNote,
                     x.GuardianAuthorizationConfirmed,
                     x.ContactEmail,
                     x.ContactPhone))
@@ -235,9 +242,17 @@ public sealed class SubmissionService(
         {
             Person = person,
             SubmissionId = submission.Id,
-            Role = input.Role,
+#pragma warning disable CS0618 // Keep old Role populated for backward compat
+            Role = input.AttendeeType == AttendeeType.Player ? RegistrationRole.Player : RegistrationRole.Npc,
+#pragma warning restore CS0618
+            AttendeeType = input.AttendeeType,
+            PlayerSubType = input.AttendeeType == AttendeeType.Player ? input.PlayerSubType : null,
+            AdultRoles = input.AttendeeType == AttendeeType.Adult ? input.AdultRoles : AdultRoleFlags.None,
+            CharacterName = string.IsNullOrWhiteSpace(input.CharacterName) ? null : input.CharacterName.Trim(),
+            LodgingPreference = input.LodgingPreference,
+            RegistrantNote = string.IsNullOrWhiteSpace(input.AttendeeNote) ? null : input.AttendeeNote.Trim(),
             Status = RegistrationStatus.Active,
-            PreferredKingdomId = input.Role == RegistrationRole.Player ? input.PreferredKingdomId : null,
+            PreferredKingdomId = input.AttendeeType == AttendeeType.Player ? input.PreferredKingdomId : null,
             ContactEmail = string.IsNullOrWhiteSpace(input.ContactEmail) ? null : input.ContactEmail.Trim(),
             ContactPhone = string.IsNullOrWhiteSpace(input.ContactPhone) ? null : input.ContactPhone.Trim(),
             GuardianName = string.IsNullOrWhiteSpace(input.GuardianName) ? null : input.GuardianName.Trim(),
@@ -263,7 +278,82 @@ public sealed class SubmissionService(
                 registration.SubmissionId,
                 person.FirstName,
                 person.LastName,
-                registration.Role
+                registration.AttendeeType
+            })
+        });
+
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task UpdateAttendeeAsync(
+        int submissionId,
+        int registrationId,
+        string userId,
+        AttendeeInput input,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(input);
+
+        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+        var submission = await LoadOwnedSubmissionAsync(db, submissionId, userId, cancellationToken);
+        EnsureDraft(submission);
+
+        var registration = await db.Registrations
+            .Include(x => x.Person)
+            .FirstOrDefaultAsync(x => x.Id == registrationId && x.SubmissionId == submissionId, cancellationToken)
+            ?? throw new ValidationException("Účastník nebyl nalezen.");
+
+        if (pricingService.RequiresGuardianData(input.BirthYear))
+        {
+            if (string.IsNullOrWhiteSpace(input.GuardianName) || string.IsNullOrWhiteSpace(input.GuardianRelationship) || !input.GuardianAuthorizationConfirmed)
+            {
+                throw new ValidationException("Nezletilý účastník musí mít vyplněného zákonného zástupce a potvrzení souhlasu.");
+            }
+        }
+
+        var nowUtc = timeProvider.GetUtcNow().UtcDateTime;
+
+        // Update Person
+        registration.Person.FirstName = input.FirstName.Trim();
+        registration.Person.LastName = input.LastName.Trim();
+        registration.Person.BirthYear = input.BirthYear;
+        registration.Person.Email = string.IsNullOrWhiteSpace(input.ContactEmail) ? null : input.ContactEmail.Trim();
+        registration.Person.Phone = string.IsNullOrWhiteSpace(input.ContactPhone) ? null : input.ContactPhone.Trim();
+        registration.Person.UpdatedAtUtc = nowUtc;
+
+        // Update Registration
+#pragma warning disable CS0618 // Keep old Role populated for backward compat
+        registration.Role = input.AttendeeType == AttendeeType.Player ? RegistrationRole.Player : RegistrationRole.Npc;
+#pragma warning restore CS0618
+        registration.AttendeeType = input.AttendeeType;
+        registration.PlayerSubType = input.AttendeeType == AttendeeType.Player ? input.PlayerSubType : null;
+        registration.AdultRoles = input.AttendeeType == AttendeeType.Adult ? input.AdultRoles : AdultRoleFlags.None;
+        registration.PreferredKingdomId = input.AttendeeType == AttendeeType.Player ? input.PreferredKingdomId : null;
+        registration.CharacterName = string.IsNullOrWhiteSpace(input.CharacterName) ? null : input.CharacterName.Trim();
+        registration.LodgingPreference = input.LodgingPreference;
+        registration.RegistrantNote = string.IsNullOrWhiteSpace(input.AttendeeNote) ? null : input.AttendeeNote.Trim();
+        registration.ContactEmail = string.IsNullOrWhiteSpace(input.ContactEmail) ? null : input.ContactEmail.Trim();
+        registration.ContactPhone = string.IsNullOrWhiteSpace(input.ContactPhone) ? null : input.ContactPhone.Trim();
+        registration.GuardianName = string.IsNullOrWhiteSpace(input.GuardianName) ? null : input.GuardianName.Trim();
+        registration.GuardianRelationship = string.IsNullOrWhiteSpace(input.GuardianRelationship) ? null : input.GuardianRelationship.Trim();
+        registration.GuardianAuthorizationConfirmed = input.GuardianAuthorizationConfirmed;
+        registration.UpdatedAtUtc = nowUtc;
+
+        submission.LastEditedAtUtc = nowUtc;
+
+        db.AuditLogs.Add(new AuditLog
+        {
+            EntityType = nameof(Registration),
+            EntityId = registration.Id.ToString(),
+            Action = "AttendeeUpdated",
+            ActorUserId = userId,
+            CreatedAtUtc = nowUtc,
+            DetailsJson = JsonSerializer.Serialize(new
+            {
+                registration.SubmissionId,
+                registration.Person.FirstName,
+                registration.Person.LastName,
+                registration.AttendeeType
             })
         });
 
@@ -388,10 +478,17 @@ public sealed record SubmissionSummary(
 
 public sealed record AttendeeViewModel(
     int RegistrationId,
+    string FirstName,
+    string LastName,
     string FullName,
     int BirthYear,
-    RegistrationRole Role,
+    AttendeeType AttendeeType,
+    PlayerSubType? PlayerSubType,
+    AdultRoleFlags AdultRoles,
     string? PreferredKingdom,
+    string? CharacterName,
+    LodgingPreference? LodgingPreference,
+    string? AttendeeNote,
     bool GuardianAuthorizationConfirmed,
     string? ContactEmail,
     string? ContactPhone);
@@ -452,7 +549,17 @@ public sealed class AttendeeInput : IValidatableObject
     [Range(1900, 2100, ErrorMessage = "Rok narození není platný.")]
     public int BirthYear { get; set; }
 
-    public RegistrationRole Role { get; set; } = RegistrationRole.Player;
+    public AttendeeType AttendeeType { get; set; } = AttendeeType.Player;
+    public PlayerSubType? PlayerSubType { get; set; }
+    public AdultRoleFlags AdultRoles { get; set; }
+
+    [StringLength(200)]
+    public string? CharacterName { get; set; }
+
+    public LodgingPreference? LodgingPreference { get; set; }
+
+    [StringLength(4000)]
+    public string? AttendeeNote { get; set; }
 
     public int? PreferredKingdomId { get; set; }
 
@@ -476,6 +583,16 @@ public sealed class AttendeeInput : IValidatableObject
         if (BirthYear > DateTime.UtcNow.Year + 1)
         {
             yield return new ValidationResult("Rok narození nemůže být v budoucnu.", [nameof(BirthYear)]);
+        }
+
+        if (AttendeeType == AttendeeType.Player && PlayerSubType is null)
+        {
+            yield return new ValidationResult("Vyberte kategorii hráče.", [nameof(PlayerSubType)]);
+        }
+
+        if (AttendeeType == AttendeeType.Adult && AdultRoles == AdultRoleFlags.None)
+        {
+            yield return new ValidationResult("Vyberte alespoň jednu roli dospělého.", [nameof(AdultRoles)]);
         }
 
         if (IsMinor)
