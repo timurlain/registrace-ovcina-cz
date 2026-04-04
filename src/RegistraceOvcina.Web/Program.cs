@@ -243,6 +243,65 @@ public class Program
                 })
             .RequireAuthorization();
         app.MapPost(
+                "/prihlasky/{submissionId:int}/ucastnici/{registrationId:int}/upravit",
+                async ([FromForm] AttendeeInput input, HttpContext httpContext, int submissionId, int registrationId, UserManager<ApplicationUser> userManager, SubmissionService submissionService) =>
+                {
+                    if (GetValidationError(input) is { } validationError)
+                    {
+                        return Results.LocalRedirect($"/prihlasky/{submissionId}?error={Uri.EscapeDataString(validationError)}");
+                    }
+
+                    var user = await userManager.GetUserAsync(httpContext.User);
+                    if (user is null)
+                    {
+                        return Results.LocalRedirect($"/Account/Login?ReturnUrl={Uri.EscapeDataString($"/prihlasky/{submissionId}")}");
+                    }
+
+                    try
+                    {
+                        await submissionService.UpdateAttendeeAsync(submissionId, registrationId, user.Id, input);
+                        return Results.LocalRedirect($"/prihlasky/{submissionId}?attendeeUpdated=1");
+                    }
+                    catch (ValidationException ex)
+                    {
+                        return Results.LocalRedirect($"/prihlasky/{submissionId}?error={Uri.EscapeDataString(ex.Message)}");
+                    }
+                })
+            .RequireAuthorization();
+        app.MapPost(
+                "/prihlasky/{submissionId:int}/strava",
+                async (HttpContext httpContext, int submissionId, UserManager<ApplicationUser> userManager, SubmissionService submissionService) =>
+                {
+                    var user = await userManager.GetUserAsync(httpContext.User);
+                    if (user is null)
+                    {
+                        return Results.LocalRedirect($"/Account/Login?ReturnUrl={Uri.EscapeDataString($"/prihlasky/{submissionId}")}");
+                    }
+
+                    try
+                    {
+                        var orders = new List<FoodOrderInput>();
+                        foreach (var key in httpContext.Request.Form.Keys)
+                        {
+                            if (!key.StartsWith("food_")) continue;
+                            var parts = key.Split('_');
+                            if (parts.Length != 3) continue;
+                            if (!int.TryParse(parts[1], out var regId)) continue;
+                            if (!long.TryParse(parts[2], out var dayTicks)) continue;
+                            if (!int.TryParse(httpContext.Request.Form[key], out var mealOptionId)) continue;
+                            orders.Add(new FoodOrderInput(regId, mealOptionId, new DateTime(dayTicks, DateTimeKind.Utc)));
+                        }
+
+                        await submissionService.SaveFoodOrdersAsync(submissionId, user.Id, orders);
+                        return Results.LocalRedirect($"/prihlasky/{submissionId}?foodSaved=1");
+                    }
+                    catch (ValidationException ex)
+                    {
+                        return Results.LocalRedirect($"/prihlasky/{submissionId}?error={Uri.EscapeDataString(ex.Message)}");
+                    }
+                })
+            .RequireAuthorization();
+        app.MapPost(
                 "/prihlasky/{submissionId:int}/odeslat",
                 async (HttpContext httpContext, int submissionId, UserManager<ApplicationUser> userManager, SubmissionService submissionService) =>
                 {

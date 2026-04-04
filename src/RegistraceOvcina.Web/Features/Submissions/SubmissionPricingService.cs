@@ -10,7 +10,7 @@ public sealed class SubmissionPricingService(TimeProvider timeProvider)
 
         foreach (var registration in registrations.Where(x => x.Status == RegistrationStatus.Active))
         {
-            total += registration.Role == RegistrationRole.Player
+            total += registration.AttendeeType == AttendeeType.Player
                 ? game.PlayerBasePrice
                 : game.AdultHelperBasePrice;
         }
