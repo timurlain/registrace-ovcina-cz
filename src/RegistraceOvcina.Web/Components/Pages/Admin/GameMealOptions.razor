@@ -1,0 +1,177 @@
+@page "/admin/hry/{gameId:int}/jidla"
+@attribute [Authorize(Policy = AuthorizationPolicies.AdminOnly)]
+
+@using RegistraceOvcina.Web.Features.Food
+
+@inject MealOptionService MealOptionService
+
+<PageTitle>Jídla — @gameName</PageTitle>
+
+<div class="row g-4">
+    <div class="col-xl-5">
+        <section class="card shadow-sm h-100">
+            <div class="card-body p-4">
+                <h1 class="h3 mb-2">@(editingMealOption is not null ? "Upravit jídlo" : "Přidat jídlo")</h1>
+
+                @if (!string.IsNullOrWhiteSpace(statusMessage))
+                {
+                    <div class="alert alert-success" role="status">@statusMessage</div>
+                }
+
+                @if (!string.IsNullOrWhiteSpace(errorMessage))
+                {
+                    <div class="alert alert-danger" role="alert">@errorMessage</div>
+                }
+
+                @if (editingMealOption is not null)
+                {
+                    <form method="post" action="/admin/hry/@GameId/jidla/@editingMealOption.Id/upravit">
+                        <AntiforgeryToken />
+                        <div class="mb-3">
+                            <label class="form-label" for="meal-name">Název</label>
+                            <input id="meal-name" name="Name" value="@editingMealOption.Name" class="form-control" placeholder="např. Sobota oběd - dětská porce" required />
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label" for="meal-price">Cena (Kč)</label>
+                            <input id="meal-price" name="Price" type="number" step="0.01" value="@editingMealOption.Price.ToString("F2", System.Globalization.CultureInfo.InvariantCulture)" class="form-control" placeholder="např. 150" required />
+                        </div>
+                        <div class="mb-3 form-check">
+                            <input id="meal-active" name="IsActive" type="checkbox" value="true" checked="@editingMealOption.IsActive" class="form-check-input" />
+                            <input type="hidden" name="IsActive" value="false" />
+                            <label class="form-check-label" for="meal-active">Aktivní</label>
+                        </div>
+                        <div class="d-flex gap-2">
+                            <button type="submit" class="btn btn-primary flex-fill">Uložit</button>
+                            <a href="/admin/hry/@GameId/jidla" class="btn btn-outline-secondary">Zrušit</a>
+                        </div>
+                    </form>
+                }
+                else
+                {
+                    <form method="post" action="/admin/hry/@GameId/jidla/pridat">
+                        <AntiforgeryToken />
+                        <div class="mb-3">
+                            <label class="form-label" for="meal-name">Název</label>
+                            <input id="meal-name" name="Name" class="form-control" placeholder="např. Sobota oběd - dětská porce" required />
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label" for="meal-price">Cena (Kč)</label>
+                            <input id="meal-price" name="Price" type="number" step="0.01" class="form-control" placeholder="např. 150" required />
+                        </div>
+                        <button type="submit" class="btn btn-primary w-100">Přidat jídlo</button>
+                    </form>
+                }
+            </div>
+        </section>
+    </div>
+
+    <div class="col-xl-7">
+        <section class="card shadow-sm h-100">
+            <div class="card-body p-4">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <div>
+                        <h2 class="h4 mb-1">Jídla — @gameName</h2>
+                    </div>
+                    <a href="/admin/hry" class="btn btn-outline-secondary btn-sm">Zpět na hry</a>
+                </div>
+
+                @if (mealOptions is null)
+                {
+                    <p class="text-secondary">Načítám seznam jídel...</p>
+                }
+                else if (mealOptions.Count == 0)
+                {
+                    <div class="empty-state">Zatím nejsou žádná jídla.</div>
+                }
+                else
+                {
+                    <div class="table-responsive">
+                        <table class="table align-middle">
+                            <thead>
+                                <tr>
+                                    <th>Název</th>
+                                    <th>Cena (Kč)</th>
+                                    <th>Aktivní</th>
+                                    <th>Akce</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var meal in mealOptions)
+                                {
+                                    <tr data-testid="@($"meal-row-{meal.Id}")">
+                                        <td class="fw-semibold">@meal.Name</td>
+                                        <td>@meal.Price.ToString("N2") Kč</td>
+                                        <td>
+                                            @if (meal.IsActive)
+                                            {
+                                                <span class="badge bg-success">Aktivní</span>
+                                            }
+                                            else
+                                            {
+                                                <span class="badge bg-secondary">Neaktivní</span>
+                                            }
+                                        </td>
+                                        <td>
+                                            <div class="d-flex gap-1">
+                                                <a href="/admin/hry/@GameId/jidla?edit=@meal.Id" class="btn btn-sm btn-outline-primary">Upravit</a>
+                                                <form method="post" action="/admin/hry/@GameId/jidla/@meal.Id/smazat" onsubmit="return confirm('Opravdu smazat jídlo &quot;@meal.Name&quot;?');">
+                                                    <AntiforgeryToken />
+                                                    <button type="submit" class="btn btn-sm btn-outline-danger">Smazat</button>
+                                                </form>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </div>
+        </section>
+    </div>
+</div>
+
+@code {
+    [Parameter]
+    public int GameId { get; set; }
+
+    [SupplyParameterFromQuery(Name = "created")]
+    private int? created { get; set; }
+
+    [SupplyParameterFromQuery(Name = "updated")]
+    private int? updated { get; set; }
+
+    [SupplyParameterFromQuery(Name = "deleted")]
+    private int? deleted { get; set; }
+
+    [SupplyParameterFromQuery(Name = "error")]
+    private string? queryError { get; set; }
+
+    [SupplyParameterFromQuery(Name = "edit")]
+    private int? editId { get; set; }
+
+    private IReadOnlyList<MealOption>? mealOptions;
+    private MealOption? editingMealOption;
+    private string gameName = "Hra";
+    private string? statusMessage;
+    private string? errorMessage;
+
+    protected override async Task OnInitializedAsync()
+    {
+        gameName = await MealOptionService.GetGameNameAsync(GameId);
+        mealOptions = await MealOptionService.GetMealOptionsForGameAsync(GameId);
+    }
+
+    protected override void OnParametersSet()
+    {
+        statusMessage = created == 1 ? "Jídlo bylo vytvořeno."
+            : updated == 1 ? "Jídlo bylo upraveno."
+            : deleted == 1 ? "Jídlo bylo smazáno."
+            : null;
+        errorMessage = queryError;
+
+        editingMealOption = editId.HasValue && mealOptions is not null
+            ? mealOptions.FirstOrDefault(m => m.Id == editId.Value)
+            : null;
+    }
+}
