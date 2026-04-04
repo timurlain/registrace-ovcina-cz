@@ -12,7 +12,7 @@ using RegistraceOvcina.Web.Data;
 namespace RegistraceOvcina.Web.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    [Migration("20260404183923_InitialCreate")]
+    [Migration("20260404193053_InitialCreate")]
     partial class InitialCreate
     {
         /// <inheritdoc />
@@ -834,11 +834,6 @@ namespace RegistraceOvcina.Web.Migrations
                     b.Property<string>("RegistrantNote")
                         .HasMaxLength(4000)
                         .HasColumnType("character varying(4000)");
-
-                    b.Property<string>("Role")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("character varying(32)");
 
                     b.Property<string>("Status")
                         .IsRequired()

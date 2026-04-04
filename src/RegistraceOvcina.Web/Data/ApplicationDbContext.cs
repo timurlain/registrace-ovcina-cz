@@ -125,7 +125,6 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
         {
             entity.HasKey(x => x.Id);
             entity.HasQueryFilter(x => !x.Person.IsDeleted && !x.Submission.IsDeleted);
-            entity.Property(x => x.Role).HasConversion<string>().HasMaxLength(32);
             entity.Property(x => x.Status).HasConversion<string>().HasMaxLength(32);
             entity.Property(x => x.ContactEmail).HasMaxLength(256);
             entity.Property(x => x.ContactPhone).HasMaxLength(40);

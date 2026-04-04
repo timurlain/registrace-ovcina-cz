@@ -483,7 +483,6 @@ namespace RegistraceOvcina.Web.Migrations
                         .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
                     SubmissionId = table.Column<int>(type: "integer", nullable: false),
                     PersonId = table.Column<int>(type: "integer", nullable: false),
-                    Role = table.Column<string>(type: "character varying(32)", maxLength: 32, nullable: false),
                     AttendeeType = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
                     PlayerSubType = table.Column<int>(type: "integer", nullable: true),
                     AdultRoles = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
