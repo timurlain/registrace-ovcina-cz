@@ -173,7 +173,10 @@ public class Program
         builder.Services.AddScoped<GameService>();
         builder.Services.AddScoped<InboxService>();
         builder.Services.AddScoped<KingdomService>();
+        builder.Services.AddScoped<KingdomAssignmentService>();
         builder.Services.AddScoped<SubmissionService>();
+        builder.Services.AddScoped<OrganizerSubmissionService>();
+        builder.Services.AddScoped<PaymentService>();
         builder.Services.AddScoped<UserAdministrationService>();
 
         if (mailboxEmailOptions.IsConfigured)
@@ -748,6 +751,93 @@ public class Program
 
                     await inboxService.UnlinkAsync(messageId, user.Id);
                     return Results.LocalRedirect($"/organizace/posta/{messageId}?unlinked=1");
+                })
+            .RequireAuthorization(AuthorizationPolicies.StaffOnly);
+        app.MapPost(
+                "/organizace/prihlasky/{submissionId:int}/poznamka",
+                async ([FromForm] string note, HttpContext httpContext, int submissionId, UserManager<ApplicationUser> userManager, OrganizerSubmissionService organizerSubmissionService) =>
+                {
+                    var user = await userManager.GetUserAsync(httpContext.User);
+                    if (user is null)
+                    {
+                        return Results.LocalRedirect($"/Account/Login?ReturnUrl={Uri.EscapeDataString($"/organizace/prihlasky/{submissionId}")}");
+                    }
+
+                    if (string.IsNullOrWhiteSpace(note))
+                    {
+                        return Results.LocalRedirect($"/organizace/prihlasky/{submissionId}?error={Uri.EscapeDataString("Poznámka nemůže být prázdná.")}");
+                    }
+
+                    try
+                    {
+                        await organizerSubmissionService.AddNoteAsync(submissionId, note, user.Id);
+                        return Results.LocalRedirect($"/organizace/prihlasky/{submissionId}?noteSaved=1");
+                    }
+                    catch (InvalidOperationException ex)
+                    {
+                        return Results.LocalRedirect($"/organizace/prihlasky/{submissionId}?error={Uri.EscapeDataString(ex.Message)}");
+                    }
+                })
+            .RequireAuthorization(AuthorizationPolicies.StaffOnly);
+        app.MapPost(
+                "/organizace/platby/{submissionId:int}/zaznamenat",
+                async ([FromForm] decimal amount, [FromForm] int method, [FromForm] string? reference, [FromForm] string? note, int submissionId, HttpContext httpContext, UserManager<ApplicationUser> userManager, PaymentService paymentService) =>
+                {
+                    var user = await userManager.GetUserAsync(httpContext.User);
+                    if (user is null)
+                    {
+                        return Results.LocalRedirect($"/Account/Login?ReturnUrl={Uri.EscapeDataString("/organizace/platby")}");
+                    }
+
+                    if (amount <= 0)
+                    {
+                        return Results.LocalRedirect($"/organizace/platby?error={Uri.EscapeDataString("Částka musí být kladná.")}");
+                    }
+
+                    try
+                    {
+                        await paymentService.RecordPaymentAsync(
+                            submissionId,
+                            amount,
+                            (PaymentMethod)method,
+                            reference,
+                            note,
+                            user.Id);
+                        return Results.LocalRedirect("/organizace/platby?recorded=1");
+                    }
+                    catch (InvalidOperationException ex)
+                    {
+                        return Results.LocalRedirect($"/organizace/platby?error={Uri.EscapeDataString(ex.Message)}");
+                    }
+                })
+            .RequireAuthorization(AuthorizationPolicies.StaffOnly);
+        app.MapPost(
+                "/organizace/hry/{gameId:int}/kralovstvi/pridelit",
+                async (int gameId, HttpContext httpContext, UserManager<ApplicationUser> userManager, KingdomAssignmentService kingdomAssignmentService) =>
+                {
+                    var user = await userManager.GetUserAsync(httpContext.User);
+                    if (user is null)
+                    {
+                        return Results.LocalRedirect($"/Account/Login?ReturnUrl={Uri.EscapeDataString($"/organizace/hry/{gameId}/kralovstvi")}");
+                    }
+
+                    try
+                    {
+                        var form = await httpContext.Request.ReadFormAsync();
+                        if (!int.TryParse(form["registrationId"], out var registrationId))
+                        {
+                            return Results.LocalRedirect($"/organizace/hry/{gameId}/kralovstvi?error={Uri.EscapeDataString("Neplatná registrace.")}");
+                        }
+
+                        int? kingdomId = int.TryParse(form["kingdomId"], out var kid) && kid > 0 ? kid : null;
+
+                        await kingdomAssignmentService.AssignPlayerAsync(registrationId, kingdomId, user.Id);
+                        return Results.LocalRedirect($"/organizace/hry/{gameId}/kralovstvi?assigned=1");
+                    }
+                    catch (InvalidOperationException ex)
+                    {
+                        return Results.LocalRedirect($"/organizace/hry/{gameId}/kralovstvi?error={Uri.EscapeDataString(ex.Message)}");
+                    }
                 })
             .RequireAuthorization(AuthorizationPolicies.StaffOnly);
         app.MapStaticAssets();
