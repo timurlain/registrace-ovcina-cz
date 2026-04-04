@@ -65,6 +65,40 @@ public static class DatabaseInitializer
             configuration["SeedData:RegistrantDisplayName"] ?? "Ukázkový registrující",
             nowUtc,
             [RoleNames.Registrant]);
+
+        await SeedGameDataAsync(db, nowUtc);
+    }
+
+    private static async Task SeedGameDataAsync(ApplicationDbContext db, DateTime nowUtc)
+    {
+        if (await db.Games.AnyAsync())
+        {
+            return;
+        }
+
+        var game = new Game
+        {
+            Name = "30. Ovčina Balinova pozvánka",
+            Description = "Co se skrývá v Morii?",
+            StartsAtUtc = new DateTime(2026, 5, 1, 7, 0, 0, DateTimeKind.Utc),
+            EndsAtUtc = new DateTime(2026, 5, 2, 16, 0, 0, DateTimeKind.Utc),
+            RegistrationClosesAtUtc = new DateTime(2026, 4, 28, 15, 0, 0, DateTimeKind.Utc),
+            MealOrderingClosesAtUtc = new DateTime(2026, 4, 28, 15, 0, 0, DateTimeKind.Utc),
+            PaymentDueAtUtc = new DateTime(2026, 4, 29, 15, 0, 0, DateTimeKind.Utc),
+            AssignmentFreezeAtUtc = new DateTime(2026, 4, 30, 21, 30, 0, DateTimeKind.Utc),
+            PlayerBasePrice = 100m,
+            AdultHelperBasePrice = 0m,
+            BankAccount = "CZ6508000000192000145399",
+            BankAccountName = "Ovčina z.s.",
+            VariableSymbolStrategy = VariableSymbolStrategy.PerSubmissionId,
+            TargetPlayerCountTotal = 120,
+            IsPublished = true,
+            CreatedAtUtc = nowUtc,
+            UpdatedAtUtc = nowUtc
+        };
+
+        db.Games.Add(game);
+        await db.SaveChangesAsync();
     }
 
     private static async Task EnsureUserAsync(
