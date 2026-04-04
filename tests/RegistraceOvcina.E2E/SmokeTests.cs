@@ -1,4 +1,6 @@
+using Microsoft.EntityFrameworkCore;
 using Microsoft.Playwright;
+using RegistraceOvcina.Web.Data;
 using Xunit.Sdk;
 
 namespace RegistraceOvcina.E2E;
@@ -31,7 +33,7 @@ public sealed class SmokeTests : IClassFixture<AppFixture>
             {
                 Timeout = 5000
             }),
-            page.GetByRole(AriaRole.Link, new() { Name = "Přihlásit se a začít" }).ClickAsync());
+            page.GetByTestId("home-login-button").ClickAsync());
 
         await page.GetByTestId("login-email").WaitForAsync(new LocatorWaitForOptions
         {
@@ -49,7 +51,7 @@ public sealed class SmokeTests : IClassFixture<AppFixture>
             {
                 Timeout = 5000
             }),
-            page.GetByRole(AriaRole.Link, new() { Name = "Vytvořit nový účet" }).ClickAsync());
+            page.GetByTestId("home-register-button").ClickAsync());
 
         await page.GetByTestId("register-email").WaitForAsync(new LocatorWaitForOptions
         {
@@ -125,6 +127,36 @@ public sealed class SmokeTests : IClassFixture<AppFixture>
         {
             Timeout = 5000
         });
+
+        await AssertNoBlazorErrorsAsync(adminPage);
+        await adminPage.CloseAsync();
+    }
+
+    [Fact]
+    public async Task AdminCanOpenFoodSummaryAndSeeAggregatedCounts()
+    {
+        var seeded = await SeedFoodSummaryAsync();
+        var adminPage = await _fixture.Browser.NewPageAsync();
+
+        await LoginAsync(adminPage, AdminEmail);
+        await adminPage.GotoAsync($"{_fixture.BaseUrl}/organizace/strava?gameId={seeded.GameId}", new PageGotoOptions
+        {
+            WaitUntil = WaitUntilState.NetworkIdle
+        });
+        await WaitForInteractiveReadyAsync(adminPage);
+
+        await adminPage.GetByTestId("food-summary-game-title").WaitForAsync(new LocatorWaitForOptions
+        {
+            Timeout = 5000
+        });
+
+        Assert.Equal(seeded.GameName, (await adminPage.GetByTestId("food-summary-game-title").TextContentAsync())?.Trim());
+        Assert.Equal("4", (await adminPage.GetByTestId("food-summary-total-selections").TextContentAsync())?.Trim());
+        Assert.Equal("2", (await adminPage.GetByTestId("food-summary-registration-count").TextContentAsync())?.Trim());
+        Assert.Equal("2", (await adminPage.GetByTestId($"food-count-{seeded.DayOne:yyyyMMdd}-{seeded.SoupOptionId}").TextContentAsync())?.Trim());
+        Assert.Equal("1", (await adminPage.GetByTestId($"food-count-{seeded.DayOne:yyyyMMdd}-{seeded.LunchOptionId}").TextContentAsync())?.Trim());
+        Assert.Equal("1", (await adminPage.GetByTestId($"food-count-{seeded.DayTwo:yyyyMMdd}-{seeded.LunchOptionId}").TextContentAsync())?.Trim());
+        Assert.Equal("0", (await adminPage.GetByTestId($"food-count-{seeded.DayTwo:yyyyMMdd}-{seeded.SoupOptionId}").TextContentAsync())?.Trim());
 
         await AssertNoBlazorErrorsAsync(adminPage);
         await adminPage.CloseAsync();
@@ -213,53 +245,15 @@ public sealed class SmokeTests : IClassFixture<AppFixture>
 
         await WaitForInteractiveReadyAsync(registrantPage);
 
-        await registrantPage.EvaluateAsync(
-            """
-            () => {
-                const setValue = (selector, value) => {
-                    const input = document.querySelector(selector);
-                    if (!input) {
-                        throw new Error(`Missing attendee field: ${selector}`);
-                    }
-
-                    input.value = value;
-                    input.dispatchEvent(new Event('input', { bubbles: true }));
-                    input.dispatchEvent(new Event('change', { bubbles: true }));
-                };
-
-                setValue('[data-testid="attendee-first-name"]', 'Anna');
-                setValue('[data-testid="attendee-last-name"]', 'Smoková');
-                setValue('[data-testid="attendee-birth-year"]', '2014');
-                setValue('#attendee-email', '');
-                setValue('#attendee-phone', '');
-                setValue('#guardian-name', 'Tomáš Smok');
-                setValue('#guardian-relationship', 'otec');
-
-                const role = document.querySelector('[data-testid="attendee-role"]');
-                if (!role) {
-                    throw new Error('Missing attendee role select.');
-                }
-
-                role.value = 'Player';
-                role.dispatchEvent(new Event('change', { bubbles: true }));
-
-                const guardianConfirmed = document.querySelector('#guardian-confirmed');
-                if (!guardianConfirmed) {
-                    throw new Error('Missing guardian confirmation checkbox.');
-                }
-
-                guardianConfirmed.checked = true;
-                guardianConfirmed.dispatchEvent(new Event('input', { bubbles: true }));
-                guardianConfirmed.dispatchEvent(new Event('change', { bubbles: true }));
-
-                const submitButton = document.querySelector('[data-testid="add-attendee-submit"]');
-                if (!submitButton || !submitButton.form) {
-                    throw new Error('Missing attendee submit button.');
-                }
-
-                submitButton.form.requestSubmit();
-            }
-            """);
+        await registrantPage.GetByTestId("attendee-first-name").FillAsync("Anna");
+        await registrantPage.GetByTestId("attendee-last-name").FillAsync("Smoková");
+        await registrantPage.GetByTestId("attendee-birth-year").FillAsync("2014");
+        await registrantPage.GetByTestId("type-player").CheckAsync();
+        await registrantPage.Locator("#pst-independent").CheckAsync();
+        await registrantPage.Locator("#guardian-name").FillAsync("Tomáš Smok");
+        await registrantPage.Locator("#guardian-relationship").FillAsync("otec");
+        await registrantPage.Locator("#guardian-confirmed").CheckAsync();
+        await registrantPage.GetByTestId("add-attendee-submit").ClickAsync();
 
         try
         {
@@ -319,6 +313,128 @@ public sealed class SmokeTests : IClassFixture<AppFixture>
         await page.WaitForLoadStateAsync(LoadState.DOMContentLoaded);
     }
 
+    private async Task<SeededFoodSummaryData> SeedFoodSummaryAsync()
+    {
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseNpgsql(_fixture.ConnectionString)
+            .Options;
+
+        await using var db = new ApplicationDbContext(options);
+        var registrant = await db.Users.SingleAsync(x => x.Email == RegistrantEmail);
+        var admin = await db.Users.SingleAsync(x => x.Email == AdminEmail);
+        var nowUtc = DateTime.UtcNow;
+        var startsAtUtc = new DateTime(2026, 7, 10, 8, 0, 0, DateTimeKind.Utc);
+        var endsAtUtc = startsAtUtc.AddDays(1).AddHours(8);
+        var gameName = $"Jidlo {Guid.NewGuid():N}".Substring(0, 18);
+
+        var game = new Game
+        {
+            Name = gameName,
+            Description = "E2E souhrn stravy",
+            StartsAtUtc = startsAtUtc,
+            EndsAtUtc = endsAtUtc,
+            RegistrationClosesAtUtc = startsAtUtc.AddDays(-7),
+            MealOrderingClosesAtUtc = startsAtUtc.AddDays(-10),
+            PaymentDueAtUtc = startsAtUtc.AddDays(-5),
+            BankAccount = "CZ6508000000192000145399",
+            BankAccountName = "Ovčina z.s.",
+            VariableSymbolStrategy = VariableSymbolStrategy.PerSubmissionId,
+            TargetPlayerCountTotal = 80,
+            IsPublished = true,
+            CreatedAtUtc = nowUtc,
+            UpdatedAtUtc = nowUtc
+        };
+
+        var soup = new MealOption { Game = game, Name = "Polévka", Price = 85m, IsActive = true };
+        var lunch = new MealOption { Game = game, Name = "Oběd", Price = 120m, IsActive = true };
+
+        var submitted = new RegistrationSubmission
+        {
+            Game = game,
+            RegistrantUserId = registrant.Id,
+            PrimaryContactName = "Rodina Testova",
+            PrimaryEmail = "rodina@example.cz",
+            PrimaryPhone = "+420777123456",
+            Status = SubmissionStatus.Submitted,
+            SubmittedAtUtc = nowUtc,
+            LastEditedAtUtc = nowUtc,
+            ExpectedTotalAmount = 0m
+        };
+
+        var draft = new RegistrationSubmission
+        {
+            Game = game,
+            RegistrantUserId = admin.Id,
+            PrimaryContactName = "Rodina Draft",
+            PrimaryEmail = "draft@example.cz",
+            PrimaryPhone = "+420777000000",
+            Status = SubmissionStatus.Draft,
+            LastEditedAtUtc = nowUtc,
+            ExpectedTotalAmount = 0m
+        };
+
+        var personOne = new Person { FirstName = "Anna", LastName = "Testová", BirthYear = 2014, CreatedAtUtc = nowUtc, UpdatedAtUtc = nowUtc };
+        var personTwo = new Person { FirstName = "Petr", LastName = "Test", BirthYear = 2012, CreatedAtUtc = nowUtc, UpdatedAtUtc = nowUtc };
+        var personThree = new Person { FirstName = "Eva", LastName = "Zrusena", BirthYear = 2010, CreatedAtUtc = nowUtc, UpdatedAtUtc = nowUtc };
+        var personFour = new Person { FirstName = "Lucie", LastName = "Draftova", BirthYear = 2016, CreatedAtUtc = nowUtc, UpdatedAtUtc = nowUtc };
+
+        var activeRegistrationOne = new Registration
+        {
+            Submission = submitted,
+            Person = personOne,
+            AttendeeType = AttendeeType.Player,
+            Status = RegistrationStatus.Active,
+            CreatedAtUtc = nowUtc,
+            UpdatedAtUtc = nowUtc
+        };
+
+        var activeRegistrationTwo = new Registration
+        {
+            Submission = submitted,
+            Person = personTwo,
+            AttendeeType = AttendeeType.Player,
+            Status = RegistrationStatus.Active,
+            CreatedAtUtc = nowUtc,
+            UpdatedAtUtc = nowUtc
+        };
+
+        var cancelledRegistration = new Registration
+        {
+            Submission = submitted,
+            Person = personThree,
+            AttendeeType = AttendeeType.Player,
+            Status = RegistrationStatus.Cancelled,
+            CreatedAtUtc = nowUtc,
+            UpdatedAtUtc = nowUtc
+        };
+
+        var draftRegistration = new Registration
+        {
+            Submission = draft,
+            Person = personFour,
+            AttendeeType = AttendeeType.Player,
+            Status = RegistrationStatus.Active,
+            CreatedAtUtc = nowUtc,
+            UpdatedAtUtc = nowUtc
+        };
+
+        db.AddRange(game, soup, lunch, submitted, draft, personOne, personTwo, personThree, personFour);
+        db.AddRange(activeRegistrationOne, activeRegistrationTwo, cancelledRegistration, draftRegistration);
+        await db.SaveChangesAsync();
+
+        db.FoodOrders.AddRange(
+            new FoodOrder { RegistrationId = activeRegistrationOne.Id, MealOptionId = soup.Id, MealDayUtc = startsAtUtc.Date, Price = soup.Price },
+            new FoodOrder { RegistrationId = activeRegistrationOne.Id, MealOptionId = lunch.Id, MealDayUtc = startsAtUtc.Date, Price = lunch.Price },
+            new FoodOrder { RegistrationId = activeRegistrationTwo.Id, MealOptionId = soup.Id, MealDayUtc = startsAtUtc.Date, Price = soup.Price },
+            new FoodOrder { RegistrationId = activeRegistrationTwo.Id, MealOptionId = lunch.Id, MealDayUtc = startsAtUtc.Date.AddDays(1), Price = lunch.Price },
+            new FoodOrder { RegistrationId = cancelledRegistration.Id, MealOptionId = soup.Id, MealDayUtc = startsAtUtc.Date, Price = soup.Price },
+            new FoodOrder { RegistrationId = draftRegistration.Id, MealOptionId = lunch.Id, MealDayUtc = startsAtUtc.Date, Price = lunch.Price });
+
+        await db.SaveChangesAsync();
+
+        return new SeededFoodSummaryData(game.Id, gameName, startsAtUtc.Date, startsAtUtc.Date.AddDays(1), soup.Id, lunch.Id);
+    }
+
     private static async Task FillAndCommitAsync(ILocator locator, string value)
     {
         await locator.FillAsync(value);
@@ -346,4 +462,12 @@ public sealed class SmokeTests : IClassFixture<AppFixture>
                 + $"Host diagnostics:{Environment.NewLine}{_fixture.GetDiagnostics()}");
         }
     }
+
+    private sealed record SeededFoodSummaryData(
+        int GameId,
+        string GameName,
+        DateTime DayOne,
+        DateTime DayTwo,
+        int SoupOptionId,
+        int LunchOptionId);
 }
