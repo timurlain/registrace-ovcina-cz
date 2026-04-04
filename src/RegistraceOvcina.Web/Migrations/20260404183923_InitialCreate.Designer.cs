@@ -9,11 +9,11 @@ using RegistraceOvcina.Web.Data;
 
 #nullable disable
 
-namespace RegistraceOvcina.Web.Data.Migrations
+namespace RegistraceOvcina.Web.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    [Migration("20260404155351_AddRoleSystemCharacterNameLodging")]
-    partial class AddRoleSystemCharacterNameLodging
+    [Migration("20260404183923_InitialCreate")]
+    partial class InitialCreate
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)

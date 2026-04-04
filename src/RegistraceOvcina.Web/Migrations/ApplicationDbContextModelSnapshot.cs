@@ -8,7 +8,7 @@ using RegistraceOvcina.Web.Data;
 
 #nullable disable
 
-namespace RegistraceOvcina.Web.Data.Migrations
+namespace RegistraceOvcina.Web.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
     partial class ApplicationDbContextModelSnapshot : ModelSnapshot

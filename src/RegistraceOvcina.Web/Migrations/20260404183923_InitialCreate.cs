@@ -4,10 +4,10 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
 #nullable disable
 
-namespace RegistraceOvcina.Web.Data.Migrations
+namespace RegistraceOvcina.Web.Migrations
 {
     /// <inheritdoc />
-    public partial class InitialPostgresSchema : Migration
+    public partial class InitialCreate : Migration
     {
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
@@ -484,6 +484,11 @@ namespace RegistraceOvcina.Web.Data.Migrations
                     SubmissionId = table.Column<int>(type: "integer", nullable: false),
                     PersonId = table.Column<int>(type: "integer", nullable: false),
                     Role = table.Column<string>(type: "character varying(32)", maxLength: 32, nullable: false),
+                    AttendeeType = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
+                    PlayerSubType = table.Column<int>(type: "integer", nullable: true),
+                    AdultRoles = table.Column<int>(type: "integer", nullable: false, defaultValue: 0),
+                    CharacterName = table.Column<string>(type: "character varying(200)", maxLength: 200, nullable: true),
+                    LodgingPreference = table.Column<int>(type: "integer", nullable: true),
                     Status = table.Column<string>(type: "character varying(32)", maxLength: 32, nullable: false),
                     PreferredKingdomId = table.Column<int>(type: "integer", nullable: true),
                     ContactEmail = table.Column<string>(type: "character varying(256)", maxLength: 256, nullable: true),
