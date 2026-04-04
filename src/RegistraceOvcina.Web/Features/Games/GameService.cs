@@ -28,7 +28,7 @@ public sealed class GameService(IDbContextFactory<ApplicationDbContext> dbContex
                 ReservedPlayers = x.Submissions
                     .Where(s => s.Status == SubmissionStatus.Submitted)
                     .SelectMany(s => s.Registrations)
-                    .Count(r => r.Status == RegistrationStatus.Active && r.Role == RegistrationRole.Player)
+                    .Count(r => r.Status == RegistrationStatus.Active && r.AttendeeType == AttendeeType.Player)
             })
             .ToListAsync(cancellationToken);
 
@@ -66,7 +66,7 @@ public sealed class GameService(IDbContextFactory<ApplicationDbContext> dbContex
                 ReservedPlayers = x.Submissions
                     .Where(s => s.Status == SubmissionStatus.Submitted)
                     .SelectMany(s => s.Registrations)
-                    .Count(r => r.Status == RegistrationStatus.Active && r.Role == RegistrationRole.Player)
+                    .Count(r => r.Status == RegistrationStatus.Active && r.AttendeeType == AttendeeType.Player)
             })
             .ToListAsync(cancellationToken);
 
