@@ -3,6 +3,7 @@
     <Project Path="src/RegistraceOvcina.Web/RegistraceOvcina.Web.csproj" />
   </Folder>
   <Folder Name="/tests/">
+    <Project Path="tests/RegistraceOvcina.E2E/RegistraceOvcina.E2E.csproj" />
     <Project Path="tests/RegistraceOvcina.Web.Tests/RegistraceOvcina.Web.Tests.csproj" />
   </Folder>
 </Solution>
