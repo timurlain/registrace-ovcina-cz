@@ -46,26 +46,26 @@ else
             {
                 <section class="card shadow-sm mb-4">
                     <div class="card-body p-4">
-                        <h2 class="h4 mb-3">Kontakt skupiny nebo rodiny</h2>
+                        <h2 class="h4 mb-3">Přihlašovatel / registrátor — hlavní kontakt skupiny nebo rodiny</h2>
 
                         <form method="post" action="@($"/prihlasky/{SubmissionId}/kontakt")">
                             <AntiforgeryToken />
                             <div class="row g-3">
                                 <div class="col-md-6">
                                     <label class="form-label" for="contact-name">Hlavní kontakt</label>
-                                    <input id="contact-name" name="@nameof(ContactInput.PrimaryContactName)" value="@contactInput.PrimaryContactName" class="form-control" data-testid="contact-name" />
+                                    <input id="contact-name" name="@nameof(ContactInput.PrimaryContactName)" value="@contactInput.PrimaryContactName" class="form-control" placeholder="např. Jana Nováková" data-testid="contact-name" />
                                 </div>
                                 <div class="col-md-6">
                                     <label class="form-label" for="contact-email">Kontaktní e-mail</label>
-                                    <input id="contact-email" name="@nameof(ContactInput.PrimaryEmail)" value="@contactInput.PrimaryEmail" class="form-control" data-testid="contact-email" />
+                                    <input id="contact-email" name="@nameof(ContactInput.PrimaryEmail)" value="@contactInput.PrimaryEmail" class="form-control" placeholder="např. jana@email.cz" data-testid="contact-email" />
                                 </div>
                                 <div class="col-md-6">
                                     <label class="form-label" for="contact-phone">Kontaktní telefon</label>
-                                    <input id="contact-phone" name="@nameof(ContactInput.PrimaryPhone)" value="@contactInput.PrimaryPhone" class="form-control" />
+                                    <input id="contact-phone" name="@nameof(ContactInput.PrimaryPhone)" value="@contactInput.PrimaryPhone" class="form-control" placeholder="např. 721 123 456" />
                                 </div>
                                 <div class="col-12">
                                     <label class="form-label" for="registrant-note">Poznámka pro organizátory</label>
-                                    <textarea id="registrant-note" name="@nameof(ContactInput.RegistrantNote)" class="form-control" rows="3">@contactInput.RegistrantNote</textarea>
+                                    <textarea id="registrant-note" name="@nameof(ContactInput.RegistrantNote)" class="form-control" rows="3" placeholder="Cokoliv, co chcete organizátorům sdělit předem.">@contactInput.RegistrantNote</textarea>
                                 </div>
                             </div>
 
@@ -136,15 +136,15 @@ else
                             <div class="row g-3">
                                 <div class="col-md-6">
                                     <label class="form-label" for="attendee-first-name">Jméno</label>
-                                    <input id="attendee-first-name" name="@nameof(AttendeeInput.FirstName)" value="@attendeeInput.FirstName" class="form-control" data-testid="attendee-first-name" />
+                                    <input id="attendee-first-name" name="@nameof(AttendeeInput.FirstName)" value="@attendeeInput.FirstName" class="form-control" placeholder="např. Jan" data-testid="attendee-first-name" />
                                 </div>
                                 <div class="col-md-6">
                                     <label class="form-label" for="attendee-last-name">Příjmení</label>
-                                    <input id="attendee-last-name" name="@nameof(AttendeeInput.LastName)" value="@attendeeInput.LastName" class="form-control" data-testid="attendee-last-name" />
+                                    <input id="attendee-last-name" name="@nameof(AttendeeInput.LastName)" value="@attendeeInput.LastName" class="form-control" placeholder="např. Novák" data-testid="attendee-last-name" />
                                 </div>
                                 <div class="col-md-4">
                                     <label class="form-label" for="attendee-birth-year">Rok narození</label>
-                                    <input id="attendee-birth-year" name="@nameof(AttendeeInput.BirthYear)" type="number" value="@attendeeInput.BirthYear" class="form-control" data-testid="attendee-birth-year" />
+                                    <input id="attendee-birth-year" name="@nameof(AttendeeInput.BirthYear)" type="number" value="@attendeeInput.BirthYear" class="form-control" placeholder="např. 2015" data-testid="attendee-birth-year" />
                                 </div>
                                 <div class="col-md-4">
                                     <label class="form-label" for="attendee-role">Role</label>
@@ -171,11 +171,11 @@ else
                                 </div>
                                 <div class="col-md-6">
                                     <label class="form-label" for="attendee-email">E-mail účastníka (volitelné)</label>
-                                    <input id="attendee-email" name="@nameof(AttendeeInput.ContactEmail)" value="@attendeeInput.ContactEmail" class="form-control" />
+                                    <input id="attendee-email" name="@nameof(AttendeeInput.ContactEmail)" value="@attendeeInput.ContactEmail" class="form-control" placeholder="např. jan@email.cz" />
                                 </div>
                                 <div class="col-md-6">
                                     <label class="form-label" for="attendee-phone">Telefon účastníka (volitelné)</label>
-                                    <input id="attendee-phone" name="@nameof(AttendeeInput.ContactPhone)" value="@attendeeInput.ContactPhone" class="form-control" />
+                                    <input id="attendee-phone" name="@nameof(AttendeeInput.ContactPhone)" value="@attendeeInput.ContactPhone" class="form-control" placeholder="např. 721 123 456" />
                                 </div>
                             </div>
 
@@ -184,11 +184,11 @@ else
                                 <div class="row g-3">
                                     <div class="col-md-6">
                                         <label class="form-label" for="guardian-name">Zákonný zástupce</label>
-                                        <input id="guardian-name" name="@nameof(AttendeeInput.GuardianName)" value="@attendeeInput.GuardianName" class="form-control" />
+                                        <input id="guardian-name" name="@nameof(AttendeeInput.GuardianName)" value="@attendeeInput.GuardianName" class="form-control" placeholder="např. Jana Nováková" />
                                     </div>
                                     <div class="col-md-6">
                                         <label class="form-label" for="guardian-relationship">Vztah k účastníkovi</label>
-                                        <input id="guardian-relationship" name="@nameof(AttendeeInput.GuardianRelationship)" value="@attendeeInput.GuardianRelationship" class="form-control" />
+                                        <input id="guardian-relationship" name="@nameof(AttendeeInput.GuardianRelationship)" value="@attendeeInput.GuardianRelationship" class="form-control" placeholder="např. matka" />
                                     </div>
                                     <div class="col-12">
                                         <div class="form-check">
