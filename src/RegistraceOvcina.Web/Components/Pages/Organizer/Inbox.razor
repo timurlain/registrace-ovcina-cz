@@ -1,0 +1,159 @@
+@page "/organizace/posta"
+@attribute [Authorize(Policy = AuthorizationPolicies.StaffOnly)]
+
+@using RegistraceOvcina.Web.Features.Email
+
+@inject InboxService InboxService
+@inject IOptions<MailboxEmailOptions> MailboxOptions
+
+<PageTitle>Příchozí pošta</PageTitle>
+
+@if (!MailboxOptions.Value.IsConfigured)
+{
+    <div class="row g-4">
+        <div class="col-12">
+            <section class="card shadow-sm">
+                <div class="card-body p-4">
+                    <h1 class="h3 mb-3">Příchozí pošta</h1>
+                    <div class="alert alert-warning mb-0" role="status">
+                        Poštovní schránka není nakonfigurovaná. Nastavte Email sekci v konfiguraci.
+                    </div>
+                </div>
+            </section>
+        </div>
+    </div>
+}
+else if (result is null)
+{
+    <p class="text-secondary">Načítám zprávy...</p>
+}
+else
+{
+    <div class="row g-4">
+        <div class="col-12">
+            <section class="card shadow-sm">
+                <div class="card-body p-4">
+                    <div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-end gap-3">
+                        <div>
+                            <h1 class="h3 mb-2">Příchozí pošta</h1>
+                            <p class="text-secondary mb-0">Zprávy ze sdílené poštovní schránky.</p>
+                        </div>
+                        <div class="d-flex gap-2">
+                            @if (synced)
+                            {
+                                <span class="badge bg-success align-self-center">Synchronizováno</span>
+                            }
+                            <form method="post" action="/organizace/posta/sync">
+                                <AntiforgeryToken />
+                                <button type="submit" class="btn btn-outline-primary" data-testid="inbox-sync-button">Synchronizovat</button>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </div>
+
+        <div class="col-12">
+            <section class="card shadow-sm">
+                <div class="card-body p-4">
+                    @if (result.Messages.Count == 0)
+                    {
+                        <div class="empty-state">Žádné zprávy.</div>
+                    }
+                    else
+                    {
+                        <div class="table-responsive">
+                            <table class="table align-middle" data-testid="inbox-table">
+                                <thead>
+                                    <tr>
+                                        <th>Datum</th>
+                                        <th>Od</th>
+                                        <th>Předmět</th>
+                                        <th>Propojeno s</th>
+                                        <th>Akce</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var msg in result.Messages)
+                                    {
+                                        <tr data-testid="@($"inbox-row-{msg.Id}")">
+                                            <td class="text-nowrap small">
+                                                @(msg.ReceivedAtUtc?.ToLocalTime().ToString("d.M.yyyy H:mm") ?? "—")
+                                            </td>
+                                            <td>@msg.From</td>
+                                            <td>
+                                                <a href="/organizace/posta/@msg.Id" data-testid="@($"inbox-subject-{msg.Id}")">
+                                                    @(string.IsNullOrWhiteSpace(msg.Subject) ? "(bez předmětu)" : msg.Subject)
+                                                </a>
+                                            </td>
+                                            <td>
+                                                @if (msg.LinkedSubmission is not null)
+                                                {
+                                                    <span class="badge bg-primary">Přihláška #@msg.LinkedSubmissionId</span>
+                                                }
+                                                else if (msg.LinkedPerson is not null)
+                                                {
+                                                    <span class="badge bg-info">@msg.LinkedPerson.LastName @msg.LinkedPerson.FirstName</span>
+                                                }
+                                                else
+                                                {
+                                                    <span class="text-secondary">—</span>
+                                                }
+                                            </td>
+                                            <td>
+                                                <a href="/organizace/posta/@msg.Id" class="btn btn-sm btn-outline-secondary">
+                                                    Detail
+                                                </a>
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+
+                        @if (result.TotalPages > 1)
+                        {
+                            <nav aria-label="Stránkování">
+                                <ul class="pagination justify-content-center mb-0 mt-3">
+                                    <li class="page-item @(result.HasPreviousPage ? "" : "disabled")">
+                                        <a class="page-link" href="/organizace/posta?page=@(page - 1)">Předchozí</a>
+                                    </li>
+                                    @for (var i = 1; i <= result.TotalPages; i++)
+                                    {
+                                        <li class="page-item @(i == page ? "active" : "")">
+                                            <a class="page-link" href="/organizace/posta?page=@i">@i</a>
+                                        </li>
+                                    }
+                                    <li class="page-item @(result.HasNextPage ? "" : "disabled")">
+                                        <a class="page-link" href="/organizace/posta?page=@(page + 1)">Další</a>
+                                    </li>
+                                </ul>
+                            </nav>
+                        }
+                    }
+                </div>
+            </section>
+        </div>
+    </div>
+}
+
+@code {
+    [SupplyParameterFromQuery(Name = "page")]
+    private int page { get; set; } = 1;
+
+    [SupplyParameterFromQuery(Name = "synced")]
+    private bool synced { get; set; }
+
+    private InboxPageResult? result;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (!MailboxOptions.Value.IsConfigured)
+        {
+            return;
+        }
+
+        if (page < 1) page = 1;
+        result = await InboxService.GetMessagesAsync(page);
+    }
+}
