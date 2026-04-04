@@ -1,0 +1,176 @@
+﻿@page "/moje-prihlasky"
+@attribute [Authorize]
+
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject GameService GameService
+@inject NavigationManager NavigationManager
+@inject SubmissionService SubmissionService
+@inject UserManager<ApplicationUser> UserManager
+
+<PageTitle>Moje přihlášky</PageTitle>
+
+<section class="mb-4">
+    <h1 class="h3 mb-2">Moje přihlášky</h1>
+    <p class="text-secondary mb-0">Ke každé hře můžete mít právě jednu přihlášku skupiny či rodiny na přihlášený kontakt. Pokud už přihlášku máte, znovu ji otevřete.</p>
+</section>
+
+@if (!string.IsNullOrWhiteSpace(errorMessage))
+{
+    <div class="alert alert-danger" role="alert">@errorMessage</div>
+}
+
+<div class="row g-4">
+    <div class="col-xl-6">
+        <section class="card shadow-sm h-100">
+            <div class="card-body p-4">
+                <h2 class="h4 mb-3">Moje rozpracované a odeslané přihlášky</h2>
+
+                @if (submissions is null)
+                {
+                    <p class="text-secondary">Načítám přihlášky...</p>
+                }
+                else if (submissions.Count == 0)
+                {
+                    <div class="empty-state">Zatím nemáte žádnou přihlášku. Vyberte si hru vpravo.</div>
+                }
+                else
+                {
+                    <div class="d-flex flex-column gap-3">
+                        @foreach (var submission in submissions)
+                        {
+                            <article class="card border-0 bg-light" data-testid="@($"submission-card-{submission.Id}")">
+                                <div class="card-body d-flex flex-column gap-2">
+                                    <div class="d-flex justify-content-between align-items-start gap-3">
+                                        <div>
+                                            <h3 class="h5 mb-1">@submission.GameName</h3>
+                                            <div class="text-secondary small">@GetSubmissionStatusLabel(submission.Status)</div>
+                                        </div>
+                                        <a class="btn btn-primary btn-sm" href="@($"/prihlasky/{submission.Id}")" data-testid="@($"open-submission-{submission.Id}")">Otevřít</a>
+                                    </div>
+
+                                    <dl class="row mb-0 small">
+                                        <dt class="col-sm-5 text-secondary">Částka</dt>
+                                        <dd class="col-sm-7">@submission.ExpectedTotalAmount.ToString("0.00") Kč</dd>
+
+                                        <dt class="col-sm-5 text-secondary">Stav platby</dt>
+                                        <dd class="col-sm-7">@GetBalanceLabel(submission.BalanceStatus)</dd>
+
+                                        @if (submission.SubmittedAtUtc is { } submittedAtUtc)
+                                        {
+                                            <dt class="col-sm-5 text-secondary">Odesláno</dt>
+                                            <dd class="col-sm-7">@CzechTime.Format(submittedAtUtc)</dd>
+                                        }
+                                    </dl>
+                                </div>
+                            </article>
+                        }
+                    </div>
+                }
+            </div>
+        </section>
+    </div>
+
+    <div class="col-xl-6">
+        <section class="card shadow-sm h-100">
+            <div class="card-body p-4">
+                <h2 class="h4 mb-3">Založit nebo obnovit přihlášku skupiny či rodiny</h2>
+
+                @if (games is null)
+                {
+                    <p class="text-secondary">Načítám dostupné hry...</p>
+                }
+                else if (games.Count == 0)
+                {
+                    <div class="empty-state">Momentálně není dostupná žádná zveřejněná hra.</div>
+                }
+                else
+                {
+                    <div class="d-flex flex-column gap-3">
+                        @foreach (var game in games)
+                        {
+                            var existing = submissions?.FirstOrDefault(x => x.GameId == game.Id);
+
+                            <article class="card border-0 bg-light">
+                                <div class="card-body d-flex flex-column gap-3">
+                                    <div>
+                                        <h3 class="h5 mb-1">@game.Name</h3>
+                                        <div class="small text-secondary">@CzechTime.Format(game.StartsAtUtc) - @CzechTime.Format(game.EndsAtUtc)</div>
+                                    </div>
+
+                                    <div class="small">
+                                        <div><span class="text-secondary">Registrace do:</span> @CzechTime.Format(game.RegistrationClosesAtUtc)</div>
+                                        <div><span class="text-secondary">Zbývající hráčská místa:</span> @game.RemainingPlayerSpots / @game.TargetPlayerCountTotal</div>
+                                    </div>
+
+                                    <form method="post" action="@($"/prihlasky/vytvorit/{game.Id}")" class="align-self-start">
+                                        <AntiforgeryToken />
+                                        <button class="btn btn-primary"
+                                                type="submit"
+                                                data-testid="@($"create-draft-{game.Id}")">
+                                            @(existing is null ? "Začít novou přihlášku skupiny či rodiny" : "Otevřít existující přihlášku")
+                                        </button>
+                                    </form>
+                                </div>
+                            </article>
+                        }
+                    </div>
+                }
+            </div>
+        </section>
+    </div>
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "error")]
+    private string? queryError { get; set; }
+
+    private string? errorMessage;
+    private IReadOnlyList<GameSummary>? games;
+    private IReadOnlyList<SubmissionSummary>? submissions;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+    }
+
+    protected override void OnParametersSet()
+    {
+        errorMessage = queryError;
+    }
+
+    private async Task LoadAsync()
+    {
+        var user = await GetCurrentUserAsync();
+        if (user is null)
+        {
+            errorMessage = "Nepodařilo se načíst přihlášeného uživatele.";
+            return;
+        }
+
+        games = await GameService.GetLandingGamesAsync();
+        submissions = await SubmissionService.GetUserSubmissionsAsync(user.Id);
+    }
+
+    private async Task<ApplicationUser?> GetCurrentUserAsync()
+    {
+        var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        return await UserManager.GetUserAsync(authState.User);
+    }
+
+    private static string GetSubmissionStatusLabel(SubmissionStatus status) => status switch
+    {
+        SubmissionStatus.Draft => "Rozpracovaná",
+        SubmissionStatus.Submitted => "Odeslaná",
+        SubmissionStatus.Cancelled => "Zrušená",
+        _ => status.ToString()
+    };
+
+    private static string GetBalanceLabel(BalanceStatus balanceStatus) => balanceStatus switch
+    {
+        BalanceStatus.Unpaid => "Neuhrazeno",
+        BalanceStatus.Underpaid => "Nedoplatek",
+        BalanceStatus.Balanced => "Vyrovnáno",
+        BalanceStatus.Overpaid => "Přeplatek",
+        _ => balanceStatus.ToString()
+    };
+}

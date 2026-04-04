@@ -1,0 +1,111 @@
+html,
+body {
+    background: #f5f7fb;
+    color: #13233b;
+    min-height: 100%;
+}
+
+body {
+    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+}
+
+a {
+    color: #1955d6;
+    text-decoration: none;
+}
+
+a:hover {
+    text-decoration: underline;
+}
+
+.brand-link {
+    color: #13233b;
+    font-size: 1.25rem;
+    font-weight: 700;
+    text-decoration: none;
+}
+
+.hero-card,
+.info-panel,
+.empty-state,
+.qr-wrapper {
+    border-radius: 1rem;
+}
+
+.hero-card {
+    background: linear-gradient(135deg, #ffffff, #eef4ff);
+    border: 1px solid #d8e4ff;
+    padding: 2rem;
+}
+
+.info-panel {
+    background: rgba(25, 85, 214, 0.08);
+    border: 1px solid rgba(25, 85, 214, 0.15);
+    padding: 1.25rem;
+}
+
+.empty-state {
+    background: #ffffff;
+    border: 1px dashed #bfd0ea;
+    color: #49627f;
+    padding: 1rem 1.25rem;
+}
+
+.qr-wrapper {
+    background: #fff;
+    border: 1px solid #dbe5f2;
+    display: flex;
+    justify-content: center;
+    padding: 1rem;
+}
+
+.qr-wrapper svg {
+    height: auto;
+    max-width: 100%;
+}
+
+h1:focus {
+    outline: none;
+}
+
+.valid.modified:not([type=checkbox]) {
+    outline: 1px solid #26b050;
+}
+
+.invalid {
+    outline: 1px solid #e50000;
+}
+
+.validation-message {
+    color: #e50000;
+}
+
+.blazor-error-boundary {
+    background: #b32121;
+    border-radius: 0.75rem;
+    color: white;
+    padding: 1rem 1rem 1rem 3.7rem;
+}
+
+.blazor-error-boundary::after {
+    content: "Došlo k chybě.";
+}
+
+#blazor-error-ui {
+    background: #fff4d6;
+    bottom: 1rem;
+    box-shadow: 0 4px 24px rgba(19, 35, 59, 0.15);
+    display: none;
+    left: 1rem;
+    padding: 1rem 1.25rem;
+    position: fixed;
+    right: 1rem;
+    z-index: 1000;
+}
+
+#blazor-error-ui .dismiss {
+    cursor: pointer;
+    position: absolute;
+    right: 0.75rem;
+    top: 0.5rem;
+}

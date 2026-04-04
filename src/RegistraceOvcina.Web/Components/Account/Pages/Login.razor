@@ -1,0 +1,148 @@
+﻿@page "/Account/Login"
+
+@using Microsoft.AspNetCore.Authentication
+@using RegistraceOvcina.Web.Data
+
+@inject UserManager<ApplicationUser> UserManager
+@inject SignInManager<ApplicationUser> SignInManager
+@inject ILogger<Login> Logger
+@inject NavigationManager NavigationManager
+@inject IdentityRedirectManager RedirectManager
+@inject TimeProvider TimeProvider
+
+<PageTitle>Přihlášení</PageTitle>
+
+<div class="row justify-content-center">
+    <div class="col-lg-6">
+        <section class="card shadow-sm">
+            <div class="card-body p-4">
+                <h1 class="h3 mb-2">Přihlášení</h1>
+                <p class="text-secondary">Před založením rozpracované přihlášky je potřeba účet registrující osoby.</p>
+
+                <StatusMessage Message="@errorMessage" />
+
+                <EditForm EditContext="editContext" method="post" OnSubmit="LoginUser" FormName="login">
+                    <DataAnnotationsValidator />
+                    <ValidationSummary class="text-danger" role="alert" />
+
+                    <div class="mb-3">
+                        <label for="Input.Email" class="form-label">E-mail</label>
+                        <InputText @bind-Value="Input.Email" id="Input.Email" class="form-control" autocomplete="username" aria-required="true" placeholder="rodic@example.cz" data-testid="login-email" />
+                        <ValidationMessage For="() => Input.Email" class="text-danger" />
+                    </div>
+
+                    <div class="mb-3">
+                        <label for="Input.Password" class="form-label">Heslo</label>
+                        <InputText type="password" @bind-Value="Input.Password" id="Input.Password" class="form-control" autocomplete="current-password" aria-required="true" placeholder="Heslo" data-testid="login-password" />
+                        <ValidationMessage For="() => Input.Password" class="text-danger" />
+                    </div>
+
+                    <div class="form-check mb-3">
+                        <InputCheckbox @bind-Value="Input.RememberMe" id="remember-me" class="form-check-input" />
+                        <label class="form-check-label" for="remember-me">Zapamatovat si mě</label>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary w-100" data-testid="login-submit">Přihlásit se</button>
+
+                    <div class="mt-3 d-flex flex-column gap-2">
+                        <a href="@(NavigationManager.GetUriWithQueryParameters("Account/Register", new Dictionary<string, object?> { ["ReturnUrl"] = ReturnUrl }))">Nemáte účet? Založte si ho.</a>
+                    </div>
+                </EditForm>
+
+                <div class="mt-4 border-top pt-3">
+                    <h2 class="h6">Externí přihlášení</h2>
+                    <ExternalLoginPicker />
+                </div>
+            </div>
+        </section>
+    </div>
+</div>
+
+@code {
+    private string? errorMessage;
+    private EditContext editContext = default!;
+
+    [CascadingParameter]
+    private HttpContext HttpContext { get; set; } = default!;
+
+    [SupplyParameterFromForm]
+    private InputModel Input { get; set; } = default!;
+
+    [SupplyParameterFromQuery]
+    private string? ReturnUrl { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        Input ??= new();
+        editContext = new EditContext(Input);
+
+        if (HttpMethods.IsGet(HttpContext.Request.Method))
+        {
+            await HttpContext.SignOutAsync(IdentityConstants.ExternalScheme);
+        }
+    }
+
+    private async Task LoginUser()
+    {
+        if (!editContext.Validate())
+        {
+            return;
+        }
+
+        var appUser = await UserManager.FindByEmailAsync(Input.Email);
+        if (appUser is not null && !appUser.IsActive)
+        {
+            errorMessage = "Tento účet je momentálně deaktivovaný.";
+            return;
+        }
+
+        var result = await SignInManager.PasswordSignInAsync(
+            Input.Email,
+            Input.Password,
+            Input.RememberMe,
+            lockoutOnFailure: false);
+
+        if (result.Succeeded)
+        {
+            if (appUser is not null)
+            {
+                appUser.LastLoginAtUtc = TimeProvider.GetUtcNow().UtcDateTime;
+                await UserManager.UpdateAsync(appUser);
+            }
+
+            Logger.LogInformation("User logged in.");
+            RedirectManager.RedirectTo(ReturnUrl);
+            return;
+        }
+
+        if (result.RequiresTwoFactor)
+        {
+            RedirectManager.RedirectTo(
+                "Account/LoginWith2fa",
+                new() { ["returnUrl"] = ReturnUrl, ["rememberMe"] = Input.RememberMe });
+            return;
+        }
+
+        if (result.IsLockedOut)
+        {
+            Logger.LogWarning("User account locked out.");
+            RedirectManager.RedirectTo("Account/Lockout");
+            return;
+        }
+
+        errorMessage = "Přihlášení se nepodařilo. Zkontrolujte e-mail a heslo.";
+    }
+
+    private sealed class InputModel
+    {
+        [Required]
+        [EmailAddress]
+        public string Email { get; set; } = "";
+
+        [Required]
+        [DataType(DataType.Password)]
+        public string Password { get; set; } = "";
+
+        public bool RememberMe { get; set; }
+    }
+}

@@ -1,0 +1,103 @@
+﻿@page "/"
+@inject GameService GameService
+
+<PageTitle>Ovčina registrace</PageTitle>
+
+<section class="hero-card mb-4">
+    <div class="row g-4 align-items-center">
+        <div class="col-lg-8">
+            <h1 class="display-6 fw-bold mb-3">Registrace celé skupiny nebo rodiny pro jednu hru</h1>
+            <p class="lead mb-3">
+                Nejprve se přihlaste, pak založte nebo obnovte rozpracovanou přihlášku, přidejte účastníky
+                s různými rolemi a po odeslání si rovnou zobrazte platební QR.
+            </p>
+
+            <div class="d-flex flex-wrap gap-2">
+                <AuthorizeView>
+                    <Authorized>
+                        <a class="btn btn-primary" href="/moje-prihlasky" data-testid="go-dashboard">Pokračovat do mých přihlášek</a>
+                    </Authorized>
+                    <NotAuthorized>
+                        <a class="btn btn-primary" href="/Account/Login">Přihlásit se a začít</a>
+                        <a class="btn btn-outline-primary" href="/Account/Register">Vytvořit nový účet</a>
+                    </NotAuthorized>
+                </AuthorizeView>
+            </div>
+        </div>
+        <div class="col-lg-4">
+            <div class="info-panel">
+                <h2 class="h5">Co je už teď připravené</h2>
+                <ul class="mb-0">
+                    <li>přihlášení před založením návrhu</li>
+                    <li>jedna přihláška skupiny či rodiny na jednu hru a kontakt</li>
+                    <li>více účastníků s mixem rolí</li>
+                    <li>odeslání a zobrazení SPAYD QR</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</section>
+
+<section>
+    <div class="d-flex justify-content-between align-items-end mb-3">
+        <div>
+            <h2 class="h4 mb-1">Vypsané hry</h2>
+            <p class="text-secondary mb-0">Veřejně ukazujeme jen celkový počet zbývajících hráčských míst.</p>
+        </div>
+    </div>
+
+    @if (games is null)
+    {
+        <p class="text-secondary">Načítám seznam her...</p>
+    }
+    else if (games.Count == 0)
+    {
+        <div class="empty-state">
+            Zatím není zveřejněná žádná hra. Administrátor ji může připravit ve správě her.
+        </div>
+    }
+    else
+    {
+        <div class="row g-3">
+            @foreach (var game in games)
+            {
+                <div class="col-12 col-lg-6">
+                    <article class="card shadow-sm h-100" data-testid="@($"landing-game-{game.Id}")">
+                        <div class="card-body d-flex flex-column gap-3">
+                            <div>
+                                <h3 class="h5 card-title mb-1">@game.Name</h3>
+                                @if (!string.IsNullOrWhiteSpace(game.Description))
+                                {
+                                    <p class="card-text text-secondary mb-0">@game.Description</p>
+                                }
+                            </div>
+
+                            <dl class="row mb-0 small">
+                                <dt class="col-sm-5 text-secondary">Termín hry</dt>
+                                <dd class="col-sm-7">@GetGameDateRange(game)</dd>
+
+                                <dt class="col-sm-5 text-secondary">Registrace do</dt>
+                                <dd class="col-sm-7">@CzechTime.Format(game.RegistrationClosesAtUtc)</dd>
+
+                                <dt class="col-sm-5 text-secondary">Volná místa pro hráče</dt>
+                                <dd class="col-sm-7 fw-semibold">@game.RemainingPlayerSpots / @game.TargetPlayerCountTotal</dd>
+                            </dl>
+                        </div>
+                    </article>
+                </div>
+            }
+        </div>
+    }
+</section>
+
+@code {
+    private IReadOnlyList<GameSummary>? games;
+
+    protected override async Task OnInitializedAsync()
+    {
+        games = await GameService.GetLandingGamesAsync();
+    }
+
+    private static string GetGameDateRange(GameSummary game) =>
+        $"{CzechTime.Format(game.StartsAtUtc)} - {CzechTime.Format(game.EndsAtUtc)}";
+}

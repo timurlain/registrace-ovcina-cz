@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - master
+  pull_request:
+
+env:
+  DOTNET_VERSION: 10.0.x
+  BUILD_CONFIGURATION: Release
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: ${{ env.DOTNET_VERSION }}
+
+      - name: Restore
+        run: dotnet restore RegistraceOvcina.slnx
+
+      - name: Build
+        run: dotnet build RegistraceOvcina.slnx --configuration ${{ env.BUILD_CONFIGURATION }} --no-restore
+
+      - name: Install Playwright browsers
+        run: pwsh tests/RegistraceOvcina.E2E/bin/${{ env.BUILD_CONFIGURATION }}/net10.0/playwright.ps1 install --with-deps chromium
+
+      - name: Run unit tests
+        run: dotnet test tests/RegistraceOvcina.Web.Tests/RegistraceOvcina.Web.Tests.csproj --configuration ${{ env.BUILD_CONFIGURATION }} --no-build --logger "trx;LogFileName=web-tests.trx"
+
+      - name: Run E2E smoke tests
+        run: dotnet test tests/RegistraceOvcina.E2E/RegistraceOvcina.E2E.csproj --configuration ${{ env.BUILD_CONFIGURATION }} --no-build --logger "trx;LogFileName=e2e-tests.trx"
+
+      - name: Publish test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: |
+            **/TestResults/*.trx
+
+      - name: Publish Playwright artifacts
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-artifacts
+          path: |
+            **/playwright-artifacts/**

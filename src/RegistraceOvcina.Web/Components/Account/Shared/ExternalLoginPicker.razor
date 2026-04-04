@@ -1,0 +1,38 @@
+﻿@using Microsoft.AspNetCore.Authentication
+@using RegistraceOvcina.Web.Data
+
+@inject SignInManager<ApplicationUser> SignInManager
+
+@if (externalLogins.Length == 0)
+{
+    <p class="text-secondary mb-0">
+        V tomto prostředí zatím nejsou nakonfigurovaní externí poskytovatelé.
+        Připravujeme přihlášení přes Microsoft, Google a Seznam.
+    </p>
+}
+else
+{
+    <form class="form-horizontal d-flex flex-wrap gap-2" action="Account/PerformExternalLogin" method="post">
+        <AntiforgeryToken />
+        <input type="hidden" name="ReturnUrl" value="@ReturnUrl" />
+
+        @foreach (var provider in externalLogins)
+        {
+            <button type="submit" class="btn btn-outline-primary btn-sm" name="provider" value="@provider.Name" title="Přihlásit se přes @provider.DisplayName">
+                @provider.DisplayName
+            </button>
+        }
+    </form>
+}
+
+@code {
+    private AuthenticationScheme[] externalLogins = [];
+
+    [SupplyParameterFromQuery]
+    private string? ReturnUrl { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        externalLogins = (await SignInManager.GetExternalAuthenticationSchemesAsync()).ToArray();
+    }
+}

@@ -1,0 +1,90 @@
+﻿@using System.Security.Claims
+@inherits LayoutComponentBase
+@inject NavigationManager NavigationManager
+
+<div class="app-shell">
+    @if (isInteractive)
+    {
+        <span data-testid="interactive-ready" hidden></span>
+    }
+
+    <header class="app-header border-bottom bg-white sticky-top">
+        <div class="container py-3 d-flex flex-column flex-lg-row align-items-lg-center justify-content-between gap-3">
+            <div class="d-flex flex-column">
+                <a class="brand-link" href="/">Ovčina registrace</a>
+                <span class="text-secondary">Přihlášky skupin a rodin, platby a práce organizátorů v jednom místě.</span>
+            </div>
+
+            <div class="d-flex flex-column flex-lg-row align-items-lg-center gap-3">
+                <nav class="d-flex flex-wrap gap-3">
+                    <a class="nav-link p-0" href="/">Domů</a>
+                    <AuthorizeView>
+                        <Authorized>
+                            <a class="nav-link p-0" href="/moje-prihlasky">Moje přihlášky</a>
+                        </Authorized>
+                    </AuthorizeView>
+                    <AuthorizeView Roles="@RoleNames.Admin">
+                        <Authorized>
+                            <a class="nav-link p-0" href="/admin/hry">Správa her</a>
+                        </Authorized>
+                    </AuthorizeView>
+                </nav>
+
+                <AuthorizeView>
+                    <Authorized Context="authState">
+                        <div class="d-flex flex-column flex-lg-row align-items-lg-center gap-2">
+                            <span class="text-secondary small">Přihlášen: @GetUserLabel(authState.User)</span>
+                            <form method="post" action="Account/Logout" class="d-inline">
+                                <AntiforgeryToken />
+                                <input type="hidden" name="returnUrl" value="@GetReturnUrl()" />
+                                <button type="submit" class="btn btn-outline-secondary btn-sm" data-testid="logout-button">Odhlásit</button>
+                            </form>
+                        </div>
+                    </Authorized>
+                    <NotAuthorized>
+                        <div class="d-flex gap-2">
+                            <a class="btn btn-outline-primary btn-sm" href="/Account/Login">Přihlášení</a>
+                            <a class="btn btn-primary btn-sm" href="/Account/Register">Vytvořit účet</a>
+                        </div>
+                    </NotAuthorized>
+                </AuthorizeView>
+            </div>
+        </div>
+    </header>
+
+    <main class="container py-4">
+        @Body
+    </main>
+</div>
+
+<div id="blazor-error-ui" data-nosnippet>
+    Došlo k neočekávané chybě.
+    <a href="." class="reload">Načíst znovu</a>
+    <span class="dismiss">🗙</span>
+</div>
+
+@code {
+    private bool isInteractive;
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (!firstRender || isInteractive)
+        {
+            return;
+        }
+
+        isInteractive = true;
+        StateHasChanged();
+    }
+
+    private string GetReturnUrl()
+    {
+        var relative = NavigationManager.ToBaseRelativePath(NavigationManager.Uri);
+        return string.IsNullOrWhiteSpace(relative) ? string.Empty : relative;
+    }
+
+    private static string GetUserLabel(ClaimsPrincipal user) =>
+        user.Identity?.Name
+        ?? user.FindFirst("name")?.Value
+        ?? "uživatel";
+}

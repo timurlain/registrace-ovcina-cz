@@ -1,0 +1,189 @@
+﻿@page "/admin/hry"
+@attribute [Authorize(Policy = AuthorizationPolicies.AdminOnly)]
+
+@inject GameService GameService
+
+<PageTitle>Správa her</PageTitle>
+
+<div class="row g-4">
+    <div class="col-xl-5">
+        <section class="card shadow-sm h-100">
+            <div class="card-body p-4">
+                <h1 class="h3 mb-2">Vytvořit hru</h1>
+                <p class="text-secondary">První administrátorský řez: založení termínu, uzávěrek, cen a platebních údajů.</p>
+
+                @if (!string.IsNullOrWhiteSpace(statusMessage))
+                {
+                    <div class="alert alert-success" role="status">@statusMessage</div>
+                }
+
+                @if (!string.IsNullOrWhiteSpace(errorMessage))
+                {
+                    <div class="alert alert-danger" role="alert">@errorMessage</div>
+                }
+
+                <form method="post" action="/admin/hry/vytvorit">
+                    <AntiforgeryToken />
+                    <div class="mb-3">
+                        <label class="form-label" for="game-name">Název hry</label>
+                        <input id="game-name" name="@nameof(CreateGameInput.Name)" value="@input.Name" class="form-control" data-testid="game-name" />
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label" for="game-description">Popis</label>
+                        <textarea id="game-description" name="@nameof(CreateGameInput.Description)" class="form-control" rows="3">@input.Description</textarea>
+                    </div>
+
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label" for="game-starts">Začátek hry</label>
+                            <input id="game-starts" name="@nameof(CreateGameInput.StartsAtLocalText)" type="datetime-local" value="@input.StartsAtLocalText" class="form-control" data-testid="game-starts" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label" for="game-ends">Konec hry</label>
+                            <input id="game-ends" name="@nameof(CreateGameInput.EndsAtLocalText)" type="datetime-local" value="@input.EndsAtLocalText" class="form-control" data-testid="game-ends" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label" for="registration-close">Uzávěrka registrace</label>
+                            <input id="registration-close" name="@nameof(CreateGameInput.RegistrationClosesAtLocalText)" type="datetime-local" value="@input.RegistrationClosesAtLocalText" class="form-control" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label" for="meal-close">Uzávěrka jídel</label>
+                            <input id="meal-close" name="@nameof(CreateGameInput.MealOrderingClosesAtLocalText)" type="datetime-local" value="@input.MealOrderingClosesAtLocalText" class="form-control" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label" for="payment-due">Termín platby</label>
+                            <input id="payment-due" name="@nameof(CreateGameInput.PaymentDueAtLocalText)" type="datetime-local" value="@input.PaymentDueAtLocalText" class="form-control" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label" for="assignment-freeze">Freeze přidělení (volitelné)</label>
+                            <input id="assignment-freeze" name="@nameof(CreateGameInput.AssignmentFreezeAtLocalText)" type="datetime-local" value="@input.AssignmentFreezeAtLocalText" class="form-control" />
+                        </div>
+                    </div>
+
+                    <div class="row g-3 mt-1">
+                        <div class="col-md-6">
+                            <label class="form-label" for="player-price">Cena hráče</label>
+                            <input id="player-price" name="@nameof(CreateGameInput.PlayerBasePrice)" type="number" step="0.01" value="@CreateGameInput.FormatDecimal(input.PlayerBasePrice)" class="form-control" data-testid="player-price" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label" for="helper-price">Cena pomocníka / NPC</label>
+                            <input id="helper-price" name="@nameof(CreateGameInput.AdultHelperBasePrice)" type="number" step="0.01" value="@CreateGameInput.FormatDecimal(input.AdultHelperBasePrice)" class="form-control" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label" for="target-players">Cílový počet hráčů</label>
+                            <input id="target-players" name="@nameof(CreateGameInput.TargetPlayerCountTotal)" type="number" value="@input.TargetPlayerCountTotal" class="form-control" />
+                        </div>
+                         <div class="col-md-6 d-flex align-items-end">
+                             <div class="form-check">
+                                 <input id="is-published" name="@nameof(CreateGameInput.IsPublished)" type="checkbox" value="true" checked="@input.IsPublished" class="form-check-input" />
+                                <input type="hidden" name="@nameof(CreateGameInput.IsPublished)" value="false" />
+                                 <label class="form-check-label" for="is-published">Zveřejnit hru ihned</label>
+                             </div>
+                         </div>
+                    </div>
+
+                    <div class="row g-3 mt-1">
+                        <div class="col-md-6">
+                            <label class="form-label" for="bank-account">Bankovní účet / IBAN</label>
+                            <input id="bank-account" name="@nameof(CreateGameInput.BankAccount)" value="@input.BankAccount" class="form-control" data-testid="bank-account" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label" for="bank-name">Název účtu</label>
+                            <input id="bank-name" name="@nameof(CreateGameInput.BankAccountName)" value="@input.BankAccountName" class="form-control" />
+                        </div>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary mt-4 w-100" data-testid="create-game-submit">Uložit hru</button>
+                </form>
+            </div>
+        </section>
+    </div>
+
+    <div class="col-xl-7">
+        <section class="card shadow-sm h-100">
+            <div class="card-body p-4">
+                <div class="d-flex justify-content-between align-items-end mb-3">
+                    <div>
+                        <h2 class="h4 mb-1">Přehled her</h2>
+                        <p class="text-secondary mb-0">V dalších iteracích sem doplníme kingdom cíle, jídla a pozvánky.</p>
+                    </div>
+                </div>
+
+                @if (games is null)
+                {
+                    <p class="text-secondary">Načítám seznam her...</p>
+                }
+                else if (games.Count == 0)
+                {
+                    <div class="empty-state">Zatím není založená žádná hra.</div>
+                }
+                else
+                {
+                    <div class="table-responsive">
+                        <table class="table align-middle">
+                            <thead>
+                                <tr>
+                                    <th>Hra</th>
+                                    <th>Termín</th>
+                                    <th>Registrace do</th>
+                                    <th>Místa</th>
+                                    <th>Stav</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var game in games)
+                                {
+                                    <tr data-testid="@($"game-row-{game.Id}")">
+                                        <td>
+                                            <div class="fw-semibold">@game.Name</div>
+                                            @if (!string.IsNullOrWhiteSpace(game.Description))
+                                            {
+                                                <div class="small text-secondary">@game.Description</div>
+                                            }
+                                        </td>
+                                        <td>@($"{CzechTime.Format(game.StartsAtUtc)} - {CzechTime.Format(game.EndsAtUtc)}")</td>
+                                        <td>@CzechTime.Format(game.RegistrationClosesAtUtc)</td>
+                                        <td>@game.RemainingPlayerSpots / @game.TargetPlayerCountTotal</td>
+                                        <td>@(game.IsPublished ? "Zveřejněno" : "Skryto")</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </div>
+        </section>
+    </div>
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "created")]
+    private int? created { get; set; }
+
+    [SupplyParameterFromQuery(Name = "error")]
+    private string? createError { get; set; }
+
+    private IReadOnlyList<GameSummary>? games;
+    private CreateGameInput input = CreateGameInput.CreateDefaults();
+    private string? statusMessage;
+    private string? errorMessage;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadGamesAsync();
+    }
+
+    protected override void OnParametersSet()
+    {
+        statusMessage = created == 1 ? "Hra byla uložená." : null;
+        errorMessage = createError;
+        input = CreateGameInput.CreateDefaults();
+    }
+
+    private async Task LoadGamesAsync()
+    {
+        games = await GameService.GetAdminGamesAsync();
+        StateHasChanged();
+    }
+}

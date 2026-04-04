@@ -1,0 +1,460 @@
+﻿@page "/prihlasky/{SubmissionId:int}"
+@attribute [Authorize]
+
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject SubmissionService SubmissionService
+@inject SubmissionPricingService SubmissionPricingService
+@inject SpaydPaymentQrService PaymentQrService
+@inject UserManager<ApplicationUser> UserManager
+
+<PageTitle>Přihláška</PageTitle>
+
+@if (submission is null)
+{
+    <div class="empty-state">
+        Přihláška nebyla nalezena nebo k ní nemáte přístup.
+    </div>
+}
+else
+{
+    <section class="mb-4">
+        <div class="d-flex flex-column flex-lg-row align-items-lg-end justify-content-between gap-3">
+            <div>
+                <h1 class="h3 mb-1">@submission.GameName</h1>
+                <div class="text-secondary">
+                    Stav: <strong>@GetSubmissionStatusLabel(submission.Status)</strong>
+                    · termín hry @CzechTime.Format(submission.GameStartsAtUtc)
+                </div>
+            </div>
+            <a class="btn btn-outline-secondary" href="/moje-prihlasky">Zpět na přehled</a>
+        </div>
+    </section>
+
+    @if (!string.IsNullOrWhiteSpace(statusMessage))
+    {
+        <div class="alert alert-success" role="status">@statusMessage</div>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(errorMessage))
+    {
+        <div class="alert alert-danger" role="alert">@errorMessage</div>
+    }
+
+    <div class="row g-4">
+        <div class="col-xl-8">
+            @if (submission.Status == SubmissionStatus.Draft)
+            {
+                <section class="card shadow-sm mb-4">
+                    <div class="card-body p-4">
+                        <h2 class="h4 mb-3">Kontakt skupiny nebo rodiny</h2>
+
+                        <form method="post" action="@($"/prihlasky/{SubmissionId}/kontakt")">
+                            <AntiforgeryToken />
+                            <div class="row g-3">
+                                <div class="col-md-6">
+                                    <label class="form-label" for="contact-name">Hlavní kontakt</label>
+                                    <input id="contact-name" name="@nameof(ContactInput.PrimaryContactName)" value="@contactInput.PrimaryContactName" class="form-control" data-testid="contact-name" />
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label" for="contact-email">Kontaktní e-mail</label>
+                                    <input id="contact-email" name="@nameof(ContactInput.PrimaryEmail)" value="@contactInput.PrimaryEmail" class="form-control" data-testid="contact-email" />
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label" for="contact-phone">Kontaktní telefon</label>
+                                    <input id="contact-phone" name="@nameof(ContactInput.PrimaryPhone)" value="@contactInput.PrimaryPhone" class="form-control" />
+                                </div>
+                                <div class="col-12">
+                                    <label class="form-label" for="registrant-note">Poznámka pro organizátory</label>
+                                    <textarea id="registrant-note" name="@nameof(ContactInput.RegistrantNote)" class="form-control" rows="3">@contactInput.RegistrantNote</textarea>
+                                </div>
+                            </div>
+
+                            <button type="submit" class="btn btn-outline-primary mt-3">Uložit kontakt</button>
+                        </form>
+                    </div>
+                </section>
+
+                <section class="card shadow-sm mb-4">
+                    <div class="card-body p-4">
+                        <div class="d-flex justify-content-between align-items-start gap-3 mb-3">
+                            <div>
+                                <h2 class="h4 mb-1">Účastníci</h2>
+                                <p class="text-secondary mb-0">Do jedné přihlášky můžete kombinovat hráče, NPC i technickou podporu.</p>
+                            </div>
+                            <span class="badge text-bg-light">@submission.Attendees.Count účastníků</span>
+                        </div>
+
+                        @if (submission.Attendees.Count == 0)
+                        {
+                            <div class="empty-state mb-3">Zatím jste nepřidali žádného účastníka.</div>
+                        }
+                        else
+                        {
+                            <div class="d-flex flex-column gap-3 mb-4">
+                                @foreach (var attendee in submission.Attendees)
+                                {
+                                    <article class="card border-0 bg-light" data-testid="@($"attendee-card-{attendee.RegistrationId}")">
+                                        <div class="card-body d-flex flex-column flex-lg-row justify-content-between gap-3">
+                                            <div>
+                                                <h3 class="h5 mb-1">@attendee.FullName</h3>
+                                                <div class="small text-secondary">@GetRoleLabel(attendee.Role) · ročník @attendee.BirthYear</div>
+                                                @if (!string.IsNullOrWhiteSpace(attendee.PreferredKingdom))
+                                                {
+                                                    <div class="small">Preferované království: <strong>@attendee.PreferredKingdom</strong></div>
+                                                }
+                                                @if (!string.IsNullOrWhiteSpace(attendee.ContactEmail) || !string.IsNullOrWhiteSpace(attendee.ContactPhone))
+                                                {
+                                                    <div class="small text-secondary">
+                                                        @attendee.ContactEmail
+                                                        @if (!string.IsNullOrWhiteSpace(attendee.ContactEmail) && !string.IsNullOrWhiteSpace(attendee.ContactPhone))
+                                                        {
+                                                            <span> · </span>
+                                                        }
+                                                        @attendee.ContactPhone
+                                                    </div>
+                                                }
+                                            </div>
+
+                                            <form method="post"
+                                                  action="@($"/prihlasky/{SubmissionId}/ucastnici/{attendee.RegistrationId}/odebrat")"
+                                                  class="align-self-start">
+                                                <AntiforgeryToken />
+                                                <button type="submit" class="btn btn-outline-danger">
+                                                    Odebrat
+                                                </button>
+                                            </form>
+                                        </div>
+                                    </article>
+                                }
+                            </div>
+                        }
+
+                        <form method="post" action="@($"/prihlasky/{SubmissionId}/ucastnici")">
+                            <AntiforgeryToken />
+                            <h3 class="h5 mb-3">Přidat účastníka</h3>
+
+                            <div class="row g-3">
+                                <div class="col-md-6">
+                                    <label class="form-label" for="attendee-first-name">Jméno</label>
+                                    <input id="attendee-first-name" name="@nameof(AttendeeInput.FirstName)" value="@attendeeInput.FirstName" class="form-control" data-testid="attendee-first-name" />
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label" for="attendee-last-name">Příjmení</label>
+                                    <input id="attendee-last-name" name="@nameof(AttendeeInput.LastName)" value="@attendeeInput.LastName" class="form-control" data-testid="attendee-last-name" />
+                                </div>
+                                <div class="col-md-4">
+                                    <label class="form-label" for="attendee-birth-year">Rok narození</label>
+                                    <input id="attendee-birth-year" name="@nameof(AttendeeInput.BirthYear)" type="number" value="@attendeeInput.BirthYear" class="form-control" data-testid="attendee-birth-year" />
+                                </div>
+                                <div class="col-md-4">
+                                    <label class="form-label" for="attendee-role">Role</label>
+                                    <select id="attendee-role" name="@nameof(AttendeeInput.Role)" class="form-select" data-testid="attendee-role">
+                                        @foreach (var role in Enum.GetValues<RegistrationRole>())
+                                        {
+                                            <option value="@role">@GetRoleLabel(role)</option>
+                                        }
+                                    </select>
+                                </div>
+                                <div class="col-md-4">
+                                    <label class="form-label" for="attendee-kingdom">Preferované království</label>
+                                    <select id="attendee-kingdom" name="@nameof(AttendeeInput.PreferredKingdomId)" class="form-select" disabled="@(submission.AvailableKingdoms.Count == 0)">
+                                        <option value="">Bez preference</option>
+                                        @foreach (var kingdom in submission.AvailableKingdoms)
+                                        {
+                                            <option value="@kingdom.Id">@kingdom.Name</option>
+                                        }
+                                    </select>
+                                    @if (submission.AvailableKingdoms.Count == 0)
+                                    {
+                                        <div class="form-text">Království ještě nejsou nastavená, preference doplníme později.</div>
+                                    }
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label" for="attendee-email">E-mail účastníka (volitelné)</label>
+                                    <input id="attendee-email" name="@nameof(AttendeeInput.ContactEmail)" value="@attendeeInput.ContactEmail" class="form-control" />
+                                </div>
+                                <div class="col-md-6">
+                                    <label class="form-label" for="attendee-phone">Telefon účastníka (volitelné)</label>
+                                    <input id="attendee-phone" name="@nameof(AttendeeInput.ContactPhone)" value="@attendeeInput.ContactPhone" class="form-control" />
+                                </div>
+                            </div>
+
+                            <div class="border rounded-3 p-3 mt-3 bg-light">
+                                <h4 class="h6 mb-3">Nezletilý účastník</h4>
+                                <div class="row g-3">
+                                    <div class="col-md-6">
+                                        <label class="form-label" for="guardian-name">Zákonný zástupce</label>
+                                        <input id="guardian-name" name="@nameof(AttendeeInput.GuardianName)" value="@attendeeInput.GuardianName" class="form-control" />
+                                    </div>
+                                    <div class="col-md-6">
+                                        <label class="form-label" for="guardian-relationship">Vztah k účastníkovi</label>
+                                        <input id="guardian-relationship" name="@nameof(AttendeeInput.GuardianRelationship)" value="@attendeeInput.GuardianRelationship" class="form-control" />
+                                    </div>
+                                    <div class="col-12">
+                                        <div class="form-check">
+                                            <input id="guardian-confirmed"
+                                                   name="@nameof(AttendeeInput.GuardianAuthorizationConfirmed)"
+                                                   type="checkbox"
+                                                   value="true"
+                                                   checked="@attendeeInput.GuardianAuthorizationConfirmed"
+                                                   class="form-check-input" />
+                                            <input type="hidden" name="@nameof(AttendeeInput.GuardianAuthorizationConfirmed)" value="false" />
+                                            <label class="form-check-label" for="guardian-confirmed">Potvrzuji souhlas zákonného zástupce.</label>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <button type="submit" class="btn btn-primary mt-4" data-testid="add-attendee-submit">Přidat účastníka</button>
+                        </form>
+                    </div>
+                </section>
+            }
+            else
+            {
+                <section class="card shadow-sm mb-4">
+                    <div class="card-body p-4">
+                        <h2 class="h4 mb-3">Odeslaná přihláška</h2>
+                        <p class="text-secondary">V tomto základním v1 řezu je po odeslání přihláška už jen ke čtení.</p>
+
+                        <dl class="row mb-4">
+                            <dt class="col-sm-4 text-secondary">Hlavní kontakt</dt>
+                            <dd class="col-sm-8">@submission.PrimaryContactName</dd>
+
+                            <dt class="col-sm-4 text-secondary">E-mail</dt>
+                            <dd class="col-sm-8">@submission.PrimaryEmail</dd>
+
+                            <dt class="col-sm-4 text-secondary">Telefon</dt>
+                            <dd class="col-sm-8">@submission.PrimaryPhone</dd>
+
+                            @if (!string.IsNullOrWhiteSpace(submission.RegistrantNote))
+                            {
+                                <dt class="col-sm-4 text-secondary">Poznámka</dt>
+                                <dd class="col-sm-8">@submission.RegistrantNote</dd>
+                            }
+
+                            @if (submission.SubmittedAtUtc is { } submittedAtUtc)
+                            {
+                                <dt class="col-sm-4 text-secondary">Odesláno</dt>
+                                <dd class="col-sm-8">@CzechTime.Format(submittedAtUtc)</dd>
+                            }
+                        </dl>
+
+                        <h3 class="h5 mb-3">Účastníci</h3>
+                        <div class="d-flex flex-column gap-3">
+                            @foreach (var attendee in submission.Attendees)
+                            {
+                                <article class="card border-0 bg-light">
+                                    <div class="card-body">
+                                        <div class="fw-semibold">@attendee.FullName</div>
+                                        <div class="small text-secondary">@GetRoleLabel(attendee.Role) · ročník @attendee.BirthYear</div>
+                                        @if (!string.IsNullOrWhiteSpace(attendee.PreferredKingdom))
+                                        {
+                                            <div class="small">Preferované království: <strong>@attendee.PreferredKingdom</strong></div>
+                                        }
+                                    </div>
+                                </article>
+                            }
+                        </div>
+                    </div>
+                </section>
+            }
+        </div>
+
+        <div class="col-xl-4">
+            <section class="card shadow-sm">
+                <div class="card-body p-4">
+                    <h2 class="h4 mb-3">Souhrn a platba</h2>
+
+                    <dl class="row mb-3">
+                        <dt class="col-sm-6 text-secondary">Aktuální částka</dt>
+                        <dd class="col-sm-6 fw-semibold" data-testid="submission-total">@submission.ExpectedTotalAmount.ToString("0.00") Kč</dd>
+
+                        <dt class="col-sm-6 text-secondary">Stav platby</dt>
+                        <dd class="col-sm-6">@GetBalanceLabel(submission.BalanceStatus)</dd>
+
+                        <dt class="col-sm-6 text-secondary">Splatnost</dt>
+                        <dd class="col-sm-6">@CzechTime.Format(submission.PaymentDueAtUtc)</dd>
+                    </dl>
+
+                    @if (submission.Status == SubmissionStatus.Draft)
+                    {
+                        <div class="alert alert-light border">
+                            Platební instrukce a QR se zobrazí až po odeslání finální přihlášky.
+                        </div>
+
+                        <form method="post" action="@($"/prihlasky/{SubmissionId}/odeslat")">
+                            <AntiforgeryToken />
+                            <button type="submit"
+                                    class="btn btn-success w-100"
+                                    data-testid="submit-submission">
+                                Odeslat přihlášku
+                            </button>
+                        </form>
+                    }
+                    else if (paymentQr is not null)
+                    {
+                        <div class="alert alert-success">
+                            Přihláška je odeslaná. Zaplaťte prosím převodem podle údajů níže.
+                        </div>
+
+                        <dl class="row small mb-3">
+                            <dt class="col-sm-5 text-secondary">Účet</dt>
+                            <dd class="col-sm-7">@paymentQr.NormalizedBankAccount</dd>
+
+                            <dt class="col-sm-5 text-secondary">VS</dt>
+                            <dd class="col-sm-7">@paymentQr.VariableSymbol</dd>
+                        </dl>
+
+                        <div class="qr-wrapper mb-3" data-testid="payment-qr">
+                            @((MarkupString)paymentQr.SvgMarkup)
+                        </div>
+
+                        <details>
+                            <summary>SPAYD payload</summary>
+                            <pre class="mt-2 p-2 small bg-light rounded border overflow-auto">@paymentQr.SpaydPayload</pre>
+                        </details>
+                    }
+                    else
+                    {
+                        <div class="alert alert-info mb-0">
+                            Tato přihláška nemá žádnou platbu k úhradě. Pokud se to změní, organizátor ji upraví ručně.
+                        </div>
+                    }
+                </div>
+            </section>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter]
+    public int SubmissionId { get; set; }
+
+    [SupplyParameterFromQuery(Name = "contactSaved")]
+    private int? contactSaved { get; set; }
+
+    [SupplyParameterFromQuery(Name = "attendeeAdded")]
+    private int? attendeeAdded { get; set; }
+
+    [SupplyParameterFromQuery(Name = "attendeeRemoved")]
+    private int? attendeeRemoved { get; set; }
+
+    [SupplyParameterFromQuery(Name = "submitted")]
+    private int? submitted { get; set; }
+
+    [SupplyParameterFromQuery(Name = "error")]
+    private string? queryError { get; set; }
+
+    private ContactInput contactInput = new();
+    private AttendeeInput attendeeInput = CreateDefaultAttendeeInput();
+    private string? errorMessage;
+    private PaymentQrModel? paymentQr;
+    private string? statusMessage;
+    private SubmissionEditorViewModel? submission;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        errorMessage = queryError;
+        statusMessage = null;
+
+        await LoadAsync();
+
+        if (submitted == 1 && submission?.Status == SubmissionStatus.Submitted)
+        {
+            statusMessage = "Přihláška byla odeslaná.";
+        }
+        else if (contactSaved == 1)
+        {
+            statusMessage = "Kontaktní údaje byly uložené.";
+        }
+        else if (attendeeAdded == 1)
+        {
+            statusMessage = "Účastník byl přidaný.";
+        }
+        else if (attendeeRemoved == 1)
+        {
+            statusMessage = "Účastník byl odebraný.";
+        }
+    }
+
+    private async Task LoadAsync()
+    {
+        var user = await GetCurrentUserAsync();
+        if (user is null)
+        {
+            errorMessage = "Nepodařilo se načíst přihlášeného uživatele.";
+            submission = null;
+            return;
+        }
+
+        submission = await SubmissionService.GetSubmissionAsync(SubmissionId, user.Id);
+        if (submission is null)
+        {
+            return;
+        }
+
+        contactInput = new ContactInput
+        {
+            PrimaryContactName = submission.PrimaryContactName,
+            PrimaryEmail = submission.PrimaryEmail,
+            PrimaryPhone = submission.PrimaryPhone,
+            RegistrantNote = submission.RegistrantNote
+        };
+        attendeeInput = CreateDefaultAttendeeInput();
+
+        paymentQr = submission.Status == SubmissionStatus.Submitted
+            ? PaymentQrService.Build(
+                new Game
+                {
+                    Name = submission.GameName,
+                    BankAccount = submission.BankAccount,
+                    BankAccountName = submission.BankAccountName
+                },
+                new RegistrationSubmission
+                {
+                    Id = submission.Id,
+                    ExpectedTotalAmount = submission.ExpectedTotalAmount,
+                    PaymentVariableSymbol = submission.PaymentVariableSymbol
+                })
+            : null;
+    }
+
+    private async Task<ApplicationUser?> GetCurrentUserAsync()
+    {
+        var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        return await UserManager.GetUserAsync(authState.User);
+    }
+
+    private static string GetRoleLabel(RegistrationRole role) => role switch
+    {
+        RegistrationRole.Player => "Hráč",
+        RegistrationRole.Npc => "NPC",
+        RegistrationRole.Monster => "Monstrum",
+        RegistrationRole.TechSupport => "Technická podpora",
+        _ => role.ToString()
+    };
+
+    private static string GetSubmissionStatusLabel(SubmissionStatus status) => status switch
+    {
+        SubmissionStatus.Draft => "Rozpracovaná",
+        SubmissionStatus.Submitted => "Odeslaná",
+        SubmissionStatus.Cancelled => "Zrušená",
+        _ => status.ToString()
+    };
+
+    private static string GetBalanceLabel(BalanceStatus balanceStatus) => balanceStatus switch
+    {
+        BalanceStatus.Unpaid => "Neuhrazeno",
+        BalanceStatus.Underpaid => "Nedoplatek",
+        BalanceStatus.Balanced => "Vyrovnáno",
+        BalanceStatus.Overpaid => "Přeplatek",
+        _ => balanceStatus.ToString()
+    };
+
+    private static AttendeeInput CreateDefaultAttendeeInput() => new()
+    {
+        BirthYear = DateTime.UtcNow.Year - 10,
+        Role = RegistrationRole.Player
+    };
+}
