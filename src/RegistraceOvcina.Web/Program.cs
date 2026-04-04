@@ -1,8 +1,10 @@
 using System.ComponentModel.DataAnnotations;
+using System.Globalization;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Localization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using RegistraceOvcina.Web.Components;
@@ -21,6 +23,10 @@ public class Program
     public static async Task Main(string[] args)
     {
         var builder = WebApplication.CreateBuilder(args);
+        var defaultCulture = new CultureInfo("cs-CZ");
+
+        CultureInfo.DefaultThreadCurrentCulture = defaultCulture;
+        CultureInfo.DefaultThreadCurrentUICulture = defaultCulture;
 
         if (builder.Environment.IsDevelopment() || builder.Environment.IsEnvironment("Testing"))
         {
@@ -45,6 +51,12 @@ public class Program
         {
             options.LoginPath = "/Account/Login";
             options.AccessDeniedPath = "/Account/AccessDenied";
+        });
+        builder.Services.Configure<RequestLocalizationOptions>(options =>
+        {
+            options.DefaultRequestCulture = new RequestCulture(defaultCulture);
+            options.SupportedCultures = [defaultCulture];
+            options.SupportedUICultures = [defaultCulture];
         });
         builder.Services.Configure<ForwardedHeadersOptions>(options =>
         {
@@ -117,6 +129,7 @@ public class Program
         var app = builder.Build();
 
         app.UseForwardedHeaders();
+        app.UseRequestLocalization();
 
         if (app.Environment.IsDevelopment() || app.Environment.IsEnvironment("Testing"))
         {
