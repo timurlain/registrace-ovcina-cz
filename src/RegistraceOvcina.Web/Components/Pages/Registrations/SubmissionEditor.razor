@@ -645,7 +645,7 @@ document.addEventListener('change', e => {
             PrimaryPhone = submission.PrimaryPhone,
             RegistrantNote = submission.RegistrantNote
         };
-        attendeeInput = CreateDefaultAttendeeInput();
+        attendeeInput = CreateDefaultAttendeeInput(attendeeInput);
 
         paymentQr = submission.Status == SubmissionStatus.Submitted
             ? PaymentQrService.Build(
@@ -753,9 +753,12 @@ document.addEventListener('change', e => {
         _ => balanceStatus.ToString()
     };
 
-    private static AttendeeInput CreateDefaultAttendeeInput() => new()
+    private static AttendeeInput CreateDefaultAttendeeInput(AttendeeInput? previous = null) => new()
     {
         BirthYear = DateTime.UtcNow.Year - 10,
-        AttendeeType = AttendeeType.Player
+        AttendeeType = AttendeeType.Player,
+        GuardianName = previous?.GuardianName,
+        GuardianRelationship = previous?.GuardianRelationship,
+        GuardianAuthorizationConfirmed = previous?.GuardianAuthorizationConfirmed ?? false
     };
 }
