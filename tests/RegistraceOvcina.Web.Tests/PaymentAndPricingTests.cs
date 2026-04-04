@@ -17,9 +17,9 @@ public sealed class PaymentAndPricingTests
 
         var registrations = new[]
         {
-            new Registration { Role = RegistrationRole.Player, Status = RegistrationStatus.Active },
-            new Registration { Role = RegistrationRole.Npc, Status = RegistrationStatus.Active },
-            new Registration { Role = RegistrationRole.TechSupport, Status = RegistrationStatus.Active }
+            new Registration { AttendeeType = AttendeeType.Player, Status = RegistrationStatus.Active },
+            new Registration { AttendeeType = AttendeeType.Adult, Status = RegistrationStatus.Active },
+            new Registration { AttendeeType = AttendeeType.Adult, Status = RegistrationStatus.Active }
         };
 
         var pricingService = new SubmissionPricingService(TimeProvider.System);
