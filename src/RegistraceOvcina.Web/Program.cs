@@ -1,6 +1,7 @@
 using System.ComponentModel.DataAnnotations;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Components.Authorization;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -44,6 +45,12 @@ public class Program
             options.LoginPath = "/Account/Login";
             options.AccessDeniedPath = "/Account/AccessDenied";
         });
+        builder.Services.Configure<ForwardedHeadersOptions>(options =>
+        {
+            options.ForwardedHeaders = ForwardedHeaders.XForwardedFor | ForwardedHeaders.XForwardedProto;
+            options.KnownNetworks.Clear();
+            options.KnownProxies.Clear();
+        });
 
         builder.Services.AddAuthorizationBuilder()
             .AddPolicy(AuthorizationPolicies.AdminOnly, policy => policy.RequireRole(RoleNames.Admin))
@@ -61,6 +68,11 @@ public class Program
 
         builder.Services.AddIdentityCore<ApplicationUser>(options =>
             {
+                options.Password.RequiredLength = 6;
+                options.Password.RequireDigit = false;
+                options.Password.RequireLowercase = false;
+                options.Password.RequireUppercase = false;
+                options.Password.RequireNonAlphanumeric = false;
                 options.SignIn.RequireConfirmedAccount = false;
                 options.Stores.SchemaVersion = IdentitySchemaVersions.Version3;
                 options.User.RequireUniqueEmail = true;
@@ -78,6 +90,8 @@ public class Program
         builder.Services.AddScoped<SubmissionService>();
 
         var app = builder.Build();
+
+        app.UseForwardedHeaders();
 
         if (app.Environment.IsDevelopment() || app.Environment.IsEnvironment("Testing"))
         {

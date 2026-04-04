@@ -1,0 +1,11 @@
+.git
+.github
+.vs
+**/bin
+**/obj
+tests
+docs
+*.md
+run-app.ps1
+run-app.bat
+start-db.ps1
