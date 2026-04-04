@@ -1,0 +1,166 @@
+@page "/admin/kralovstvi"
+@attribute [Authorize(Policy = AuthorizationPolicies.AdminOnly)]
+
+@using RegistraceOvcina.Web.Features.Kingdoms
+
+@inject KingdomService KingdomService
+
+<PageTitle>Království</PageTitle>
+
+<div class="row g-4">
+    <div class="col-xl-5">
+        <section class="card shadow-sm h-100">
+            <div class="card-body p-4">
+                <h1 class="h3 mb-2">@(editingKingdom is not null ? "Upravit království" : "Přidat království")</h1>
+
+                @if (!string.IsNullOrWhiteSpace(statusMessage))
+                {
+                    <div class="alert alert-success" role="status">@statusMessage</div>
+                }
+
+                @if (!string.IsNullOrWhiteSpace(errorMessage))
+                {
+                    <div class="alert alert-danger" role="alert">@errorMessage</div>
+                }
+
+                @if (editingKingdom is not null)
+                {
+                    <form method="post" action="/admin/kralovstvi/@editingKingdom.Id/upravit">
+                        <AntiforgeryToken />
+                        <div class="mb-3">
+                            <label class="form-label" for="kingdom-name">Název</label>
+                            <input id="kingdom-name" name="Name" value="@editingKingdom.Name" class="form-control" required />
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label" for="kingdom-display-name">Zobrazovaný název</label>
+                            <input id="kingdom-display-name" name="DisplayName" value="@editingKingdom.DisplayName" class="form-control" required />
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label" for="kingdom-color">Barva</label>
+                            <input id="kingdom-color" name="Color" type="color" value="@(editingKingdom.Color ?? "#6c757d")" class="form-control form-control-color" />
+                        </div>
+                        <div class="d-flex gap-2">
+                            <button type="submit" class="btn btn-primary flex-fill">Uložit</button>
+                            <a href="/admin/kralovstvi" class="btn btn-outline-secondary">Zrušit</a>
+                        </div>
+                    </form>
+                }
+                else
+                {
+                    <form method="post" action="/admin/kralovstvi/pridat">
+                        <AntiforgeryToken />
+                        <div class="mb-3">
+                            <label class="form-label" for="kingdom-name">Název</label>
+                            <input id="kingdom-name" name="Name" class="form-control" required />
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label" for="kingdom-display-name">Zobrazovaný název</label>
+                            <input id="kingdom-display-name" name="DisplayName" class="form-control" required />
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label" for="kingdom-color">Barva</label>
+                            <input id="kingdom-color" name="Color" type="color" value="#6c757d" class="form-control form-control-color" />
+                        </div>
+                        <button type="submit" class="btn btn-primary w-100">Přidat království</button>
+                    </form>
+                }
+            </div>
+        </section>
+    </div>
+
+    <div class="col-xl-7">
+        <section class="card shadow-sm h-100">
+            <div class="card-body p-4">
+                <h2 class="h4 mb-3">Přehled království</h2>
+
+                @if (kingdoms is null)
+                {
+                    <p class="text-secondary">Načítám seznam království...</p>
+                }
+                else if (kingdoms.Count == 0)
+                {
+                    <div class="empty-state">Zatím nejsou žádná království.</div>
+                }
+                else
+                {
+                    <div class="table-responsive">
+                        <table class="table align-middle">
+                            <thead>
+                                <tr>
+                                    <th>Barva</th>
+                                    <th>Název</th>
+                                    <th>Zobrazovaný název</th>
+                                    <th>Akce</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var kingdom in kingdoms)
+                                {
+                                    <tr data-testid="@($"kingdom-row-{kingdom.Id}")">
+                                        <td>
+                                            @if (!string.IsNullOrWhiteSpace(kingdom.Color))
+                                            {
+                                                <span class="d-inline-block rounded-circle" style="width:1.5rem;height:1.5rem;background-color:@kingdom.Color;border:1px solid rgba(0,0,0,.15);"></span>
+                                            }
+                                        </td>
+                                        <td class="fw-semibold">@kingdom.Name</td>
+                                        <td>@kingdom.DisplayName</td>
+                                        <td>
+                                            <div class="d-flex gap-1">
+                                                <a href="/admin/kralovstvi?edit=@kingdom.Id" class="btn btn-sm btn-outline-primary">Upravit</a>
+                                                <form method="post" action="/admin/kralovstvi/@kingdom.Id/smazat" onsubmit="return confirm('Opravdu smazat království &quot;@kingdom.DisplayName&quot;?');">
+                                                    <AntiforgeryToken />
+                                                    <button type="submit" class="btn btn-sm btn-outline-danger">Smazat</button>
+                                                </form>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </div>
+        </section>
+    </div>
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "created")]
+    private int? created { get; set; }
+
+    [SupplyParameterFromQuery(Name = "updated")]
+    private int? updated { get; set; }
+
+    [SupplyParameterFromQuery(Name = "deleted")]
+    private int? deleted { get; set; }
+
+    [SupplyParameterFromQuery(Name = "error")]
+    private string? queryError { get; set; }
+
+    [SupplyParameterFromQuery(Name = "edit")]
+    private int? editId { get; set; }
+
+    private IReadOnlyList<Kingdom>? kingdoms;
+    private Kingdom? editingKingdom;
+    private string? statusMessage;
+    private string? errorMessage;
+
+    protected override async Task OnInitializedAsync()
+    {
+        kingdoms = await KingdomService.GetAllKingdomsAsync();
+    }
+
+    protected override void OnParametersSet()
+    {
+        statusMessage = created == 1 ? "Království bylo vytvořeno."
+            : updated == 1 ? "Království bylo upraveno."
+            : deleted == 1 ? "Království bylo smazáno."
+            : null;
+        errorMessage = queryError;
+
+        editingKingdom = editId.HasValue && kingdoms is not null
+            ? kingdoms.FirstOrDefault(k => k.Id == editId.Value)
+            : null;
+    }
+}
