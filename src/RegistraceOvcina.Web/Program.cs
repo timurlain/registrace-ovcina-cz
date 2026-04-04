@@ -11,6 +11,7 @@ using RegistraceOvcina.Web.Components;
 using RegistraceOvcina.Web.Components.Account;
 using RegistraceOvcina.Web.Data;
 using RegistraceOvcina.Web.Features.Email;
+using RegistraceOvcina.Web.Features.Food;
 using RegistraceOvcina.Web.Features.Games;
 using RegistraceOvcina.Web.Features.Payments;
 using RegistraceOvcina.Web.Features.Kingdoms;
@@ -166,6 +167,7 @@ public class Program
 
         builder.Services.AddSingleton<SpaydPaymentQrService>();
         builder.Services.AddSingleton<SubmissionPricingService>();
+        builder.Services.AddScoped<FoodSummaryService>();
         builder.Services.AddScoped<GameService>();
         builder.Services.AddScoped<KingdomService>();
         builder.Services.AddScoped<SubmissionService>();
