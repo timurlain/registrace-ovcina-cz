@@ -53,7 +53,7 @@
                 </EditForm>
 
                 <div class="mt-3">
-                    <a href="@(NavigationManager.GetUriWithQueryParameters("Account/Login", new Dictionary<string, object?> { ["ReturnUrl"] = ReturnUrl }))">Máte účet? Přihlaste se.</a>
+                    <a href="@(NavigationManager.GetUriWithQueryParameters("/Account/Login", new Dictionary<string, object?> { ["ReturnUrl"] = ReturnUrl }))" data-enhance-nav="false">Máte účet? Přihlaste se.</a>
                 </div>
             </div>
         </section>

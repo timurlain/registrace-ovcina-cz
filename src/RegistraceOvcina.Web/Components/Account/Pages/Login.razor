@@ -45,7 +45,7 @@
                     <button type="submit" class="btn btn-primary w-100" data-testid="login-submit">Přihlásit se</button>
 
                     <div class="mt-3 d-flex flex-column gap-2">
-                        <a href="@(NavigationManager.GetUriWithQueryParameters("Account/Register", new Dictionary<string, object?> { ["ReturnUrl"] = ReturnUrl }))">Nemáte účet? Založte si ho.</a>
+                        <a href="@(NavigationManager.GetUriWithQueryParameters("/Account/Register", new Dictionary<string, object?> { ["ReturnUrl"] = ReturnUrl }))" data-enhance-nav="false">Nemáte účet? Založte si ho.</a>
                     </div>
                 </EditForm>
 
