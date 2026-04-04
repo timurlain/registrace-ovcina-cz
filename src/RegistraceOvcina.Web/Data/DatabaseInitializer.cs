@@ -66,6 +66,17 @@ public static class DatabaseInitializer
             nowUtc,
             [RoleNames.Registrant]);
 
+        // Production admin accounts (OAuth login, password is a fallback only)
+        var adminRoles = new[] { RoleNames.Registrant, RoleNames.Organizer, RoleNames.Admin };
+        var adminFallbackPassword = "OvcinaAdmin2026!Xk9$";
+
+        await EnsureUserAsync(userManager, "tomas.pajonk@hotmail.cz", adminFallbackPassword,
+            "Tomáš Pajonk", nowUtc, adminRoles);
+        await EnsureUserAsync(userManager, "stanam@email.cz", adminFallbackPassword,
+            "Stanam", nowUtc, adminRoles);
+        await EnsureUserAsync(userManager, "blanka.richtar@gmail.com", adminFallbackPassword,
+            "Blanka Richtar", nowUtc, adminRoles);
+
         await SeedGameDataAsync(db, nowUtc);
     }
 
