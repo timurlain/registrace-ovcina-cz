@@ -29,6 +29,8 @@ public static class DatabaseInitializer
 
         await db.Database.MigrateAsync();
 
+        await SeedKingdomsAsync(db);
+
         var seedDemoUsers = configuration.GetValue<bool?>("SeedData:SeedDemoUsers")
             ?? (environment.IsDevelopment() || environment.IsEnvironment("Testing"));
 
@@ -78,6 +80,32 @@ public static class DatabaseInitializer
             "Blanka Richtar", nowUtc, adminRoles);
 
         await SeedGameDataAsync(db, nowUtc);
+    }
+
+    private static async Task SeedKingdomsAsync(ApplicationDbContext db)
+    {
+        var canonical = new[]
+        {
+            ("Aradhryand",       "Aradhryand",       "#2E7D32"),
+            ("Azanulinbar-Dum",  "Azanulinbar-Dum",  "#C62828"),
+            ("Esgaroth",         "Esgaroth",         "#1565C0"),
+            ("Novy-Arnor",       "Nový Arnor",       "#F9A825"),
+        };
+
+        foreach (var (name, displayName, color) in canonical)
+        {
+            if (!await db.Kingdoms.AnyAsync(k => k.Name == name))
+            {
+                db.Kingdoms.Add(new Kingdom
+                {
+                    Name = name,
+                    DisplayName = displayName,
+                    Color = color
+                });
+            }
+        }
+
+        await db.SaveChangesAsync();
     }
 
     private static async Task SeedGameDataAsync(ApplicationDbContext db, DateTime nowUtc)
