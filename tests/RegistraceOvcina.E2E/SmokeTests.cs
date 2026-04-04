@@ -133,6 +133,51 @@ public sealed class SmokeTests : IClassFixture<AppFixture>
     }
 
     [Fact]
+    public async Task AdminCanManageOrganizerAndAdminRoles()
+    {
+        var adminPage = await _fixture.Browser.NewPageAsync();
+
+        await LoginAsync(adminPage, AdminEmail);
+        await adminPage.GotoAsync($"{_fixture.BaseUrl}/admin/organizatori", new PageGotoOptions
+        {
+            WaitUntil = WaitUntilState.NetworkIdle
+        });
+        await WaitForInteractiveReadyAsync(adminPage);
+
+        await adminPage.GetByTestId("user-management-title").WaitForAsync(new LocatorWaitForOptions
+        {
+            Timeout = 5000
+        });
+
+        await ToggleUserManagementActionAsync(
+            adminPage,
+            RegistrantEmail,
+            "Přidat organizátora",
+            "organizer-added",
+            "Role organizátora byla přidána.");
+
+        await ToggleUserManagementActionAsync(
+            adminPage,
+            RegistrantEmail,
+            "Přidat správce",
+            "admin-added",
+            "Role správce byla přidána.");
+
+        var managedRow = GetUserRow(adminPage, RegistrantEmail);
+        await managedRow.GetByRole(AriaRole.Button, new() { Name = "Odebrat organizátora" }).WaitForAsync(new LocatorWaitForOptions
+        {
+            Timeout = 5000
+        });
+        await managedRow.GetByRole(AriaRole.Button, new() { Name = "Odebrat správce" }).WaitForAsync(new LocatorWaitForOptions
+        {
+            Timeout = 5000
+        });
+
+        await AssertNoBlazorErrorsAsync(adminPage);
+        await adminPage.CloseAsync();
+    }
+
+    [Fact]
     public async Task AdminCanOpenFoodSummaryAndSeeAggregatedCounts()
     {
         var seeded = await SeedFoodSummaryAsync();
@@ -311,6 +356,32 @@ public sealed class SmokeTests : IClassFixture<AppFixture>
             WaitUntil = WaitUntilState.NetworkIdle
         });
         await page.WaitForLoadStateAsync(LoadState.DOMContentLoaded);
+    }
+
+    private static ILocator GetUserRow(IPage page, string email) =>
+        page.GetByText(email).Locator("xpath=ancestor::tr");
+
+    private async Task ToggleUserManagementActionAsync(
+        IPage page,
+        string email,
+        string buttonText,
+        string expectedStatusCode,
+        string expectedMessage)
+    {
+        var row = GetUserRow(page, email);
+
+        await Task.WhenAll(
+            page.WaitForURLAsync($"**/admin/organizatori?status={expectedStatusCode}", new PageWaitForURLOptions
+            {
+                Timeout = 5000
+            }),
+            row.GetByRole(AriaRole.Button, new() { Name = buttonText }).ClickAsync());
+
+        await WaitForInteractiveReadyAsync(page);
+        await page.GetByText(expectedMessage).WaitForAsync(new LocatorWaitForOptions
+        {
+            Timeout = 5000
+        });
     }
 
     private async Task<SeededFoodSummaryData> SeedFoodSummaryAsync()

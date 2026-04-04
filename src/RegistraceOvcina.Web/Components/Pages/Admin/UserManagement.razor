@@ -1,0 +1,277 @@
+@page "/admin/organizatori"
+@attribute [Authorize(Policy = AuthorizationPolicies.AdminOnly)]
+
+@using RegistraceOvcina.Web.Features.Users
+@using RegistraceOvcina.Web.Infrastructure
+
+@inject UserAdministrationService UserAdministrationService
+
+<PageTitle>Organizátoři a správci</PageTitle>
+
+<div class="row g-4">
+    <div class="col-12">
+        <section class="card shadow-sm">
+            <div class="card-body p-4">
+                <div class="d-flex flex-column flex-lg-row justify-content-between gap-3 mb-3">
+                    <div>
+                        <h1 class="h3 mb-2" data-testid="user-management-title">Organizátoři a správci</h1>
+                        <p class="text-secondary mb-0">Spravujte staff role a případné deaktivace přístupů na jednom místě.</p>
+                    </div>
+
+                    @if (pageModel is not null)
+                    {
+                        <div class="d-flex flex-wrap gap-4">
+                            <div>
+                                <div class="small text-secondary">Aktivní staff</div>
+                                <div class="h4 mb-0" data-testid="active-staff-count">@pageModel.ActiveStaffCount</div>
+                            </div>
+                            <div>
+                                <div class="small text-secondary">Aktivní správci</div>
+                                <div class="h4 mb-0" data-testid="active-admin-count">@pageModel.AdminCount</div>
+                            </div>
+                            <div>
+                                <div class="small text-secondary">Účty celkem</div>
+                                <div class="h4 mb-0" data-testid="user-count">@pageModel.TotalUsers</div>
+                            </div>
+                        </div>
+                    }
+                </div>
+
+                @if (!string.IsNullOrWhiteSpace(statusMessage))
+                {
+                    <div class="alert alert-success mb-0" role="status">@statusMessage</div>
+                }
+
+                @if (!string.IsNullOrWhiteSpace(errorMessage))
+                {
+                    <div class="alert alert-danger mb-0" role="alert">@errorMessage</div>
+                }
+            </div>
+        </section>
+    </div>
+
+    @if (pageModel is null)
+    {
+        <div class="col-12">
+            <p class="text-secondary">Načítám účty...</p>
+        </div>
+    }
+    else
+    {
+        <div class="col-12">
+            <section class="card shadow-sm">
+                <div class="card-body p-4">
+                    <h2 class="h4 mb-3">Aktuální staff</h2>
+
+                    @if (pageModel.StaffUsers.Count == 0)
+                    {
+                        <div class="empty-state">Zatím nejsou přiřazené žádné staff role.</div>
+                    }
+                    else
+                    {
+                        <div class="table-responsive">
+                            <table class="table align-middle">
+                                <thead>
+                                    <tr>
+                                        <th>Uživatel</th>
+                                        <th>Stav</th>
+                                        <th>Role</th>
+                                        <th>Poslední přihlášení</th>
+                                        <th class="text-end">Akce</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var user in pageModel.StaffUsers)
+                                    {
+                                        <tr data-testid="@($"user-row-{user.Id}")" class="@GetRowClass(user)">
+                                            <td>
+                                                <div class="fw-semibold">@user.DisplayLabel</div>
+                                                <div class="small text-secondary">@user.Email</div>
+                                            </td>
+                                            <td>
+                                                <span class="badge @(user.IsActive ? "text-bg-success" : "text-bg-secondary")">
+                                                    @(user.IsActive ? "Aktivní" : "Deaktivovaný")
+                                                </span>
+                                                <div class="small text-secondary mt-2">Vytvořen @CzechTime.Format(user.CreatedAtUtc)</div>
+                                            </td>
+                                            <td>
+                                                <div class="d-flex flex-wrap gap-1">
+                                                    @if (user.IsAdmin)
+                                                    {
+                                                        <span class="badge text-bg-danger">Správce</span>
+                                                    }
+                                                    @if (user.IsOrganizer)
+                                                    {
+                                                        <span class="badge text-bg-primary">Organizátor</span>
+                                                    }
+                                                </div>
+                                                @if (user.IsLastActiveAdmin)
+                                                {
+                                                    <div class="small text-secondary mt-2">Poslední aktivní správce musí zůstat dostupný.</div>
+                                                }
+                                            </td>
+                                            <td>@FormatLastLogin(user.LastLoginAtUtc)</td>
+                                            <td class="text-end">
+                                                <div class="d-flex flex-wrap justify-content-end gap-1">
+                                                    <form method="post" action="/admin/organizatori/@user.Id/organizator">
+                                                        <AntiforgeryToken />
+                                                        <button type="submit"
+                                                                class="btn btn-sm @(user.IsOrganizer ? "btn-outline-primary" : "btn-outline-secondary")"
+                                                                data-testid="@($"toggle-organizer-{user.Id}")">
+                                                            @(user.IsOrganizer ? "Odebrat organizátora" : "Přidat organizátora")
+                                                        </button>
+                                                    </form>
+                                                    <form method="post" action="/admin/organizatori/@user.Id/spravce">
+                                                        <AntiforgeryToken />
+                                                        <button type="submit"
+                                                                class="btn btn-sm @(user.IsAdmin ? "btn-outline-danger" : "btn-outline-secondary")"
+                                                                data-testid="@($"toggle-admin-{user.Id}")"
+                                                                title="@GetAdminActionTitle(user)"
+                                                                disabled="@(user.IsLastActiveAdmin && user.IsAdmin)">
+                                                            @(user.IsAdmin ? "Odebrat správce" : "Přidat správce")
+                                                        </button>
+                                                    </form>
+                                                    <form method="post"
+                                                          action="/admin/organizatori/@user.Id/aktivita"
+                                                          onsubmit="@(user.IsActive ? "return confirm('Opravdu deaktivovat tento účet?');" : null)">
+                                                        <AntiforgeryToken />
+                                                        <button type="submit"
+                                                                class="btn btn-sm @(user.IsActive ? "btn-outline-warning" : "btn-outline-success")"
+                                                                data-testid="@($"toggle-active-{user.Id}")"
+                                                                title="@GetActivityActionTitle(user)"
+                                                                disabled="@(user.IsLastActiveAdmin && user.IsActive)">
+                                                            @(user.IsActive ? "Deaktivovat" : "Aktivovat")
+                                                        </button>
+                                                    </form>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                </div>
+            </section>
+        </div>
+
+        <div class="col-12">
+            <section class="card shadow-sm">
+                <div class="card-body p-4">
+                    <h2 class="h4 mb-3">Ostatní účty</h2>
+
+                    @if (pageModel.OtherUsers.Count == 0)
+                    {
+                        <div class="empty-state">Všechny existující účty už mají staff roli.</div>
+                    }
+                    else
+                    {
+                        <div class="table-responsive">
+                            <table class="table align-middle">
+                                <thead>
+                                    <tr>
+                                        <th>Uživatel</th>
+                                        <th>Stav</th>
+                                        <th>Poslední přihlášení</th>
+                                        <th class="text-end">Akce</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var user in pageModel.OtherUsers)
+                                    {
+                                        <tr data-testid="@($"user-row-{user.Id}")" class="@GetRowClass(user)">
+                                            <td>
+                                                <div class="fw-semibold">@user.DisplayLabel</div>
+                                                <div class="small text-secondary">@user.Email</div>
+                                            </td>
+                                            <td>
+                                                <span class="badge @(user.IsActive ? "text-bg-success" : "text-bg-secondary")">
+                                                    @(user.IsActive ? "Aktivní" : "Deaktivovaný")
+                                                </span>
+                                                <div class="small text-secondary mt-2">Vytvořen @CzechTime.Format(user.CreatedAtUtc)</div>
+                                            </td>
+                                            <td>@FormatLastLogin(user.LastLoginAtUtc)</td>
+                                            <td class="text-end">
+                                                <div class="d-flex flex-wrap justify-content-end gap-1">
+                                                    <form method="post" action="/admin/organizatori/@user.Id/organizator">
+                                                        <AntiforgeryToken />
+                                                        <button type="submit"
+                                                                class="btn btn-sm btn-outline-secondary"
+                                                                data-testid="@($"toggle-organizer-{user.Id}")">
+                                                            Přidat organizátora
+                                                        </button>
+                                                    </form>
+                                                    <form method="post" action="/admin/organizatori/@user.Id/spravce">
+                                                        <AntiforgeryToken />
+                                                        <button type="submit"
+                                                                class="btn btn-sm btn-outline-secondary"
+                                                                data-testid="@($"toggle-admin-{user.Id}")">
+                                                            Přidat správce
+                                                        </button>
+                                                    </form>
+                                                    <form method="post"
+                                                          action="/admin/organizatori/@user.Id/aktivita"
+                                                          onsubmit="@(user.IsActive ? "return confirm('Opravdu deaktivovat tento účet?');" : null)">
+                                                        <AntiforgeryToken />
+                                                        <button type="submit"
+                                                                class="btn btn-sm @(user.IsActive ? "btn-outline-warning" : "btn-outline-success")"
+                                                                data-testid="@($"toggle-active-{user.Id}")">
+                                                            @(user.IsActive ? "Deaktivovat" : "Aktivovat")
+                                                        </button>
+                                                    </form>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                </div>
+            </section>
+        </div>
+    }
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "status")]
+    private string? status { get; set; }
+
+    [SupplyParameterFromQuery(Name = "error")]
+    private string? queryError { get; set; }
+
+    private UserAdministrationPage? pageModel;
+    private string? statusMessage;
+    private string? errorMessage;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        pageModel = await UserAdministrationService.GetPageAsync();
+        statusMessage = status switch
+        {
+            "organizer-added" => "Role organizátora byla přidána.",
+            "organizer-removed" => "Role organizátora byla odebrána.",
+            "admin-added" => "Role správce byla přidána.",
+            "admin-removed" => "Role správce byla odebrána.",
+            "user-activated" => "Účet byl znovu aktivován.",
+            "user-deactivated" => "Účet byl deaktivován.",
+            _ => null
+        };
+        errorMessage = queryError;
+    }
+
+    private static string FormatLastLogin(DateTime? lastLoginAtUtc) =>
+        lastLoginAtUtc is null ? "Nikdy" : CzechTime.Format(lastLoginAtUtc.Value);
+
+    private static string GetActivityActionTitle(ManagedUserSummary user) =>
+        user.IsLastActiveAdmin && user.IsActive
+            ? "Posledního aktivního správce nelze deaktivovat."
+            : string.Empty;
+
+    private static string GetAdminActionTitle(ManagedUserSummary user) =>
+        user.IsLastActiveAdmin && user.IsAdmin
+            ? "Poslední aktivní role správce musí zůstat přiřazená."
+            : string.Empty;
+
+    private static string GetRowClass(ManagedUserSummary user) => user.IsActive ? string.Empty : "table-light";
+}

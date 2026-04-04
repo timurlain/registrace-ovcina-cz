@@ -16,6 +16,7 @@ using RegistraceOvcina.Web.Features.Games;
 using RegistraceOvcina.Web.Features.Payments;
 using RegistraceOvcina.Web.Features.Kingdoms;
 using RegistraceOvcina.Web.Features.Submissions;
+using RegistraceOvcina.Web.Features.Users;
 using RegistraceOvcina.Web.Security;
 
 namespace RegistraceOvcina.Web;
@@ -172,6 +173,7 @@ public class Program
         builder.Services.AddScoped<GameService>();
         builder.Services.AddScoped<KingdomService>();
         builder.Services.AddScoped<SubmissionService>();
+        builder.Services.AddScoped<UserAdministrationService>();
 
         var app = builder.Build();
 
@@ -384,6 +386,69 @@ public class Program
                     catch (ValidationException ex)
                     {
                         return Results.LocalRedirect($"/admin/hry/{gameId}/kralovstvi?error={Uri.EscapeDataString(ex.Message)}");
+                     }
+                 })
+             .RequireAuthorization(AuthorizationPolicies.AdminOnly);
+        app.MapPost(
+                "/admin/organizatori/{userId}/organizator",
+                async (string userId, HttpContext httpContext, UserManager<ApplicationUser> userManager, UserAdministrationService userAdministrationService) =>
+                {
+                    var user = await userManager.GetUserAsync(httpContext.User);
+                    if (user is null)
+                    {
+                        return Results.LocalRedirect($"/Account/Login?ReturnUrl={Uri.EscapeDataString("/admin/organizatori")}");
+                    }
+
+                    try
+                    {
+                        var result = await userAdministrationService.ToggleRoleAsync(userId, RoleNames.Organizer, user.Id);
+                        return Results.LocalRedirect($"/admin/organizatori?status={Uri.EscapeDataString(result.StatusCode)}");
+                    }
+                    catch (ValidationException ex)
+                    {
+                        return Results.LocalRedirect($"/admin/organizatori?error={Uri.EscapeDataString(ex.Message)}");
+                    }
+                })
+            .RequireAuthorization(AuthorizationPolicies.AdminOnly);
+        app.MapPost(
+                "/admin/organizatori/{userId}/spravce",
+                async (string userId, HttpContext httpContext, UserManager<ApplicationUser> userManager, UserAdministrationService userAdministrationService) =>
+                {
+                    var user = await userManager.GetUserAsync(httpContext.User);
+                    if (user is null)
+                    {
+                        return Results.LocalRedirect($"/Account/Login?ReturnUrl={Uri.EscapeDataString("/admin/organizatori")}");
+                    }
+
+                    try
+                    {
+                        var result = await userAdministrationService.ToggleRoleAsync(userId, RoleNames.Admin, user.Id);
+                        return Results.LocalRedirect($"/admin/organizatori?status={Uri.EscapeDataString(result.StatusCode)}");
+                    }
+                    catch (ValidationException ex)
+                    {
+                        return Results.LocalRedirect($"/admin/organizatori?error={Uri.EscapeDataString(ex.Message)}");
+                    }
+                })
+            .RequireAuthorization(AuthorizationPolicies.AdminOnly);
+        app.MapPost(
+                "/admin/organizatori/{userId}/aktivita",
+                async (string userId, HttpContext httpContext, UserManager<ApplicationUser> userManager, UserAdministrationService userAdministrationService) =>
+                {
+                    var user = await userManager.GetUserAsync(httpContext.User);
+                    if (user is null)
+                    {
+                        return Results.LocalRedirect($"/Account/Login?ReturnUrl={Uri.EscapeDataString("/admin/organizatori")}");
+                    }
+
+                    try
+                    {
+                        var result = await userAdministrationService.ToggleActiveAsync(userId, user.Id);
+                        return Results.LocalRedirect($"/admin/organizatori?status={Uri.EscapeDataString(result.StatusCode)}");
+                    }
+                    catch (ValidationException ex)
+                    {
+                        return Results.LocalRedirect($"/admin/organizatori?error={Uri.EscapeDataString(ex.Message)}");
                     }
                 })
             .RequireAuthorization(AuthorizationPolicies.AdminOnly);
