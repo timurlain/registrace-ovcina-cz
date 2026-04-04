@@ -11,8 +11,10 @@ using RegistraceOvcina.Web.Components;
 using RegistraceOvcina.Web.Components.Account;
 using RegistraceOvcina.Web.Data;
 using RegistraceOvcina.Web.Features.Email;
+using RegistraceOvcina.Web.Features.Food;
 using RegistraceOvcina.Web.Features.Games;
 using RegistraceOvcina.Web.Features.Payments;
+using RegistraceOvcina.Web.Features.Kingdoms;
 using RegistraceOvcina.Web.Features.Submissions;
 using RegistraceOvcina.Web.Security;
 
@@ -165,7 +167,9 @@ public class Program
 
         builder.Services.AddSingleton<SpaydPaymentQrService>();
         builder.Services.AddSingleton<SubmissionPricingService>();
+        builder.Services.AddScoped<FoodSummaryService>();
         builder.Services.AddScoped<GameService>();
+        builder.Services.AddScoped<KingdomService>();
         builder.Services.AddScoped<SubmissionService>();
 
         var app = builder.Build();
@@ -282,6 +286,103 @@ public class Program
                     catch (ValidationException ex)
                     {
                         return Results.LocalRedirect($"/admin/hry?error={Uri.EscapeDataString(ex.Message)}");
+                    }
+                })
+            .RequireAuthorization(AuthorizationPolicies.AdminOnly);
+        app.MapPost(
+                "/admin/kralovstvi/pridat",
+                async ([FromForm] string name, [FromForm] string displayName, [FromForm] string? color, HttpContext httpContext, UserManager<ApplicationUser> userManager, KingdomService kingdomService) =>
+                {
+                    var user = await userManager.GetUserAsync(httpContext.User);
+                    if (user is null)
+                    {
+                        return Results.LocalRedirect($"/Account/Login?ReturnUrl={Uri.EscapeDataString("/admin/kralovstvi")}");
+                    }
+
+                    try
+                    {
+                        await kingdomService.CreateKingdomAsync(name, displayName, color, user.Id);
+                        return Results.LocalRedirect("/admin/kralovstvi?created=1");
+                    }
+                    catch (ValidationException ex)
+                    {
+                        return Results.LocalRedirect($"/admin/kralovstvi?error={Uri.EscapeDataString(ex.Message)}");
+                    }
+                })
+            .RequireAuthorization(AuthorizationPolicies.AdminOnly);
+        app.MapPost(
+                "/admin/kralovstvi/{id:int}/upravit",
+                async (int id, [FromForm] string name, [FromForm] string displayName, [FromForm] string? color, HttpContext httpContext, UserManager<ApplicationUser> userManager, KingdomService kingdomService) =>
+                {
+                    var user = await userManager.GetUserAsync(httpContext.User);
+                    if (user is null)
+                    {
+                        return Results.LocalRedirect($"/Account/Login?ReturnUrl={Uri.EscapeDataString("/admin/kralovstvi")}");
+                    }
+
+                    try
+                    {
+                        await kingdomService.UpdateKingdomAsync(id, name, displayName, color, user.Id);
+                        return Results.LocalRedirect("/admin/kralovstvi?updated=1");
+                    }
+                    catch (ValidationException ex)
+                    {
+                        return Results.LocalRedirect($"/admin/kralovstvi?error={Uri.EscapeDataString(ex.Message)}");
+                    }
+                })
+            .RequireAuthorization(AuthorizationPolicies.AdminOnly);
+        app.MapPost(
+                "/admin/kralovstvi/{id:int}/smazat",
+                async (int id, HttpContext httpContext, UserManager<ApplicationUser> userManager, KingdomService kingdomService) =>
+                {
+                    var user = await userManager.GetUserAsync(httpContext.User);
+                    if (user is null)
+                    {
+                        return Results.LocalRedirect($"/Account/Login?ReturnUrl={Uri.EscapeDataString("/admin/kralovstvi")}");
+                    }
+
+                    try
+                    {
+                        await kingdomService.DeleteKingdomAsync(id, user.Id);
+                        return Results.LocalRedirect("/admin/kralovstvi?deleted=1");
+                    }
+                    catch (ValidationException ex)
+                    {
+                        return Results.LocalRedirect($"/admin/kralovstvi?error={Uri.EscapeDataString(ex.Message)}");
+                    }
+                })
+            .RequireAuthorization(AuthorizationPolicies.AdminOnly);
+        app.MapPost(
+                "/admin/hry/{gameId:int}/kralovstvi/ulozit",
+                async (int gameId, HttpContext httpContext, UserManager<ApplicationUser> userManager, KingdomService kingdomService) =>
+                {
+                    var user = await userManager.GetUserAsync(httpContext.User);
+                    if (user is null)
+                    {
+                        return Results.LocalRedirect($"/Account/Login?ReturnUrl={Uri.EscapeDataString($"/admin/hry/{gameId}/kralovstvi")}");
+                    }
+
+                    try
+                    {
+                        var targets = new List<GameKingdomTargetInput>();
+                        foreach (var key in httpContext.Request.Form.Keys)
+                        {
+                            if (!key.StartsWith("active_")) continue;
+                            var kingdomIdStr = key["active_".Length..];
+                            if (!int.TryParse(kingdomIdStr, out var kingdomId)) continue;
+
+                            var targetCountStr = httpContext.Request.Form[$"target_{kingdomId}"];
+                            var targetCount = int.TryParse(targetCountStr, out var tc) ? tc : 0;
+
+                            targets.Add(new GameKingdomTargetInput(kingdomId, targetCount));
+                        }
+
+                        await kingdomService.SaveGameKingdomTargetsAsync(gameId, targets, user.Id);
+                        return Results.LocalRedirect($"/admin/hry/{gameId}/kralovstvi?saved=1");
+                    }
+                    catch (ValidationException ex)
+                    {
+                        return Results.LocalRedirect($"/admin/hry/{gameId}/kralovstvi?error={Uri.EscapeDataString(ex.Message)}");
                     }
                 })
             .RequireAuthorization(AuthorizationPolicies.AdminOnly);

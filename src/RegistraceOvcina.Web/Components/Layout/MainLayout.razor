@@ -23,9 +23,15 @@
                             <a class="nav-link" href="/moje-prihlasky">Moje přihlášky</a>
                         </Authorized>
                     </AuthorizeView>
+                    <AuthorizeView Roles="@StaffRoles">
+                        <Authorized>
+                            <a class="nav-link" href="/organizace/strava">Přehled stravy</a>
+                        </Authorized>
+                    </AuthorizeView>
                     <AuthorizeView Roles="@RoleNames.Admin">
                         <Authorized>
                             <a class="nav-link" href="/admin/hry">Správa her</a>
+                            <a class="nav-link" href="/admin/kralovstvi">Království</a>
                         </Authorized>
                     </AuthorizeView>
                 </nav>
@@ -74,6 +80,7 @@
 </div>
 
 @code {
+    private const string StaffRoles = $"{RoleNames.Admin},{RoleNames.Organizer}";
     private bool isInteractive;
 
     protected override void OnAfterRender(bool firstRender)

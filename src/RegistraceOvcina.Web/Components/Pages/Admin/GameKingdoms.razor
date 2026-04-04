@@ -1,0 +1,127 @@
+@page "/admin/hry/{gameId:int}/kralovstvi"
+@attribute [Authorize(Policy = AuthorizationPolicies.AdminOnly)]
+
+@using RegistraceOvcina.Web.Features.Kingdoms
+
+@inject KingdomService KingdomService
+
+<PageTitle>Království — @(game?.Name ?? "Hra")</PageTitle>
+
+<div class="row g-4">
+    <div class="col-xl-8">
+        <section class="card shadow-sm">
+            <div class="card-body p-4">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <div>
+                        <h1 class="h3 mb-1">Království pro hru: @(game?.Name ?? "...")</h1>
+                        <p class="text-secondary mb-0">Aktivujte království a nastavte cílový počet hráčů pro každé z nich.</p>
+                    </div>
+                    <a href="/admin/hry" class="btn btn-outline-secondary btn-sm">Zpět na hry</a>
+                </div>
+
+                @if (!string.IsNullOrWhiteSpace(statusMessage))
+                {
+                    <div class="alert alert-success" role="status">@statusMessage</div>
+                }
+
+                @if (!string.IsNullOrWhiteSpace(errorMessage))
+                {
+                    <div class="alert alert-danger" role="alert">@errorMessage</div>
+                }
+
+                @if (allKingdoms is null)
+                {
+                    <p class="text-secondary">Načítám...</p>
+                }
+                else if (allKingdoms.Count == 0)
+                {
+                    <div class="empty-state">
+                        Zatím nejsou žádná království. <a href="/admin/kralovstvi">Vytvořte je nejprve.</a>
+                    </div>
+                }
+                else
+                {
+                    <form method="post" action="/admin/hry/@GameId/kralovstvi/ulozit">
+                        <AntiforgeryToken />
+                        <div class="table-responsive">
+                            <table class="table align-middle">
+                                <thead>
+                                    <tr>
+                                        <th style="width:3rem;">Aktivní</th>
+                                        <th>Barva</th>
+                                        <th>Království</th>
+                                        <th>Cílový počet hráčů</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var kingdom in allKingdoms)
+                                    {
+                                        var target = existingTargets?.FirstOrDefault(t => t.KingdomId == kingdom.Id);
+                                        var isActive = target is not null;
+                                        var targetCount = target?.TargetPlayerCount ?? 0;
+
+                                        <tr data-testid="@($"gk-row-{kingdom.Id}")">
+                                            <td>
+                                                <input type="checkbox"
+                                                       name="active_@kingdom.Id"
+                                                       value="true"
+                                                       checked="@isActive"
+                                                       class="form-check-input" />
+                                            </td>
+                                            <td>
+                                                @if (!string.IsNullOrWhiteSpace(kingdom.Color))
+                                                {
+                                                    <span class="d-inline-block rounded-circle" style="width:1.5rem;height:1.5rem;background-color:@kingdom.Color;border:1px solid rgba(0,0,0,.15);"></span>
+                                                }
+                                            </td>
+                                            <td class="fw-semibold">@kingdom.DisplayName</td>
+                                            <td>
+                                                <input type="number"
+                                                       name="target_@kingdom.Id"
+                                                       value="@targetCount"
+                                                       min="0"
+                                                       class="form-control"
+                                                       style="max-width:10rem;" />
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                        <button type="submit" class="btn btn-primary mt-2">Uložit</button>
+                    </form>
+                }
+            </div>
+        </section>
+    </div>
+</div>
+
+@code {
+    [Parameter]
+    public int GameId { get; set; }
+
+    [SupplyParameterFromQuery(Name = "saved")]
+    private int? saved { get; set; }
+
+    [SupplyParameterFromQuery(Name = "error")]
+    private string? queryError { get; set; }
+
+    private Game? game;
+    private IReadOnlyList<Kingdom>? allKingdoms;
+    private IReadOnlyList<GameKingdomTarget>? existingTargets;
+    private string? statusMessage;
+    private string? errorMessage;
+
+    protected override async Task OnInitializedAsync()
+    {
+        game = await KingdomService.GetGameAsync(GameId);
+        allKingdoms = await KingdomService.GetAllKingdomsAsync();
+        existingTargets = await KingdomService.GetGameKingdomTargetsAsync(GameId);
+    }
+
+    protected override void OnParametersSet()
+    {
+        statusMessage = saved == 1 ? "Království pro hru byla uložena." : null;
+        errorMessage = queryError;
+    }
+}
