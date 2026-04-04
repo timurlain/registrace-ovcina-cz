@@ -134,6 +134,27 @@ public sealed class SubmissionService(
             .Select(x => new LookupItem(x.Id, x.DisplayName))
             .ToListAsync(cancellationToken);
 
+        var mealOptions = await db.MealOptions
+            .AsNoTracking()
+            .Where(x => x.GameId == submission.GameId && x.IsActive)
+            .OrderBy(x => x.Id)
+            .ToListAsync(cancellationToken);
+
+        var gameDays = new List<DateTime>();
+        var current = submission.Game.StartsAtUtc.Date;
+        var end = submission.Game.EndsAtUtc.Date;
+        while (current <= end)
+        {
+            gameDays.Add(current);
+            current = current.AddDays(1);
+        }
+
+        var existingFoodOrders = await db.FoodOrders
+            .AsNoTracking()
+            .Where(x => x.Registration.SubmissionId == submission.Id)
+            .Select(x => new FoodOrderViewModel(x.RegistrationId, x.MealOptionId, x.MealDayUtc))
+            .ToListAsync(cancellationToken);
+
         return new SubmissionEditorViewModel
         {
             Id = submission.Id,
@@ -177,7 +198,13 @@ public sealed class SubmissionService(
                     x.GuardianAuthorizationConfirmed,
                     x.ContactEmail,
                     x.ContactPhone))
-                .ToList()
+                .ToList(),
+            MealDays = gameDays.Select(day => new MealDayViewModel(
+                day,
+                day.ToString("dddd d. M.", new System.Globalization.CultureInfo("cs-CZ")),
+                mealOptions.Select(mo => new MealOptionViewModel(mo.Id, mo.Name, mo.Price)).ToList()
+            )).ToList(),
+            ExistingFoodOrders = existingFoodOrders,
         };
     }
 
@@ -391,6 +418,49 @@ public sealed class SubmissionService(
         await db.SaveChangesAsync(cancellationToken);
     }
 
+    public async Task SaveFoodOrdersAsync(
+        int submissionId,
+        string userId,
+        List<FoodOrderInput> orders,
+        CancellationToken cancellationToken = default)
+    {
+        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+        var submission = await db.RegistrationSubmissions
+            .Include(x => x.Registrations).ThenInclude(x => x.FoodOrders)
+            .Include(x => x.Game).ThenInclude(x => x.MealOptions)
+            .FirstOrDefaultAsync(x => x.Id == submissionId && x.RegistrantUserId == userId, cancellationToken)
+            ?? throw new ValidationException("Přihláška nebyla nalezena.");
+
+        EnsureDraft(submission);
+
+        var validRegistrationIds = submission.Registrations.Select(x => x.Id).ToHashSet();
+        var validMealOptionIds = submission.Game.MealOptions.Where(x => x.IsActive).ToDictionary(x => x.Id);
+
+        // Remove existing food orders for this submission
+        foreach (var reg in submission.Registrations)
+        {
+            db.FoodOrders.RemoveRange(reg.FoodOrders);
+        }
+
+        // Add new ones
+        foreach (var order in orders)
+        {
+            if (!validRegistrationIds.Contains(order.RegistrationId)) continue;
+            if (!validMealOptionIds.TryGetValue(order.MealOptionId, out var mealOption)) continue;
+
+            db.FoodOrders.Add(new FoodOrder
+            {
+                RegistrationId = order.RegistrationId,
+                MealOptionId = order.MealOptionId,
+                MealDayUtc = order.MealDayUtc,
+                Price = mealOption.Price
+            });
+        }
+
+        submission.LastEditedAtUtc = timeProvider.GetUtcNow().UtcDateTime;
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
     public async Task SubmitAsync(
         int submissionId,
         string userId,
@@ -518,6 +588,8 @@ public sealed class SubmissionEditorViewModel
     public BalanceStatus BalanceStatus { get; init; }
     public IReadOnlyList<LookupItem> AvailableKingdoms { get; init; } = [];
     public IReadOnlyList<AttendeeViewModel> Attendees { get; init; } = [];
+    public IReadOnlyList<MealDayViewModel> MealDays { get; init; } = [];
+    public IReadOnlyList<FoodOrderViewModel> ExistingFoodOrders { get; init; } = [];
 }
 
 public sealed class ContactInput
@@ -636,3 +708,14 @@ public sealed class AttendeeInput : IValidatableObject
         }
     }
 }
+
+public sealed record MealDayViewModel(
+    DateTime DayUtc,
+    string DayLabel,
+    IReadOnlyList<MealOptionViewModel> Options);
+
+public sealed record MealOptionViewModel(int Id, string Name, decimal Price);
+
+public sealed record FoodOrderViewModel(int RegistrationId, int MealOptionId, DateTime MealDayUtc);
+
+public sealed record FoodOrderInput(int RegistrationId, int MealOptionId, DateTime MealDayUtc);

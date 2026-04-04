@@ -332,6 +332,60 @@ else
                         </form>
                     </div>
                 </section>
+
+                @if (submission.Attendees.Count > 0 && submission.MealDays.Count > 0)
+                {
+                    <section class="card shadow-sm mb-4">
+                        <div class="card-body p-4">
+                            <h2 class="h4 mb-3">Stravování</h2>
+                            <p class="text-secondary">Vyberte stravování pro každého účastníka a den.</p>
+
+                            <form method="post" action="@($"/prihlasky/{SubmissionId}/strava")">
+                                <AntiforgeryToken />
+
+                                @foreach (var attendee in submission.Attendees)
+                                {
+                                    <div class="mb-4">
+                                        <h3 class="h6 mb-2">@attendee.FullName</h3>
+                                        @foreach (var day in submission.MealDays)
+                                        {
+                                            var fieldName = $"food_{attendee.RegistrationId}_{day.DayUtc.Ticks}";
+                                            var existingOrder = submission.ExistingFoodOrders
+                                                .FirstOrDefault(x => x.RegistrationId == attendee.RegistrationId
+                                                    && x.MealDayUtc.Date == day.DayUtc.Date);
+
+                                            <div class="ms-3 mb-3">
+                                                <div class="fw-semibold small mb-1">@day.DayLabel</div>
+                                                @foreach (var option in day.Options)
+                                                {
+                                                    var radioId = $"{fieldName}_{option.Id}";
+                                                    <div class="form-check">
+                                                        <input class="form-check-input" type="radio"
+                                                               name="@fieldName" value="@option.Id" id="@radioId"
+                                                               checked="@(existingOrder?.MealOptionId == option.Id)" />
+                                                        <label class="form-check-label" for="@radioId">
+                                                            @option.Name (@option.Price.ToString("0") Kč)
+                                                        </label>
+                                                    </div>
+                                                }
+                                                <div class="form-check">
+                                                    <input class="form-check-input" type="radio"
+                                                           name="@fieldName" value="" id="@($"{fieldName}_none")"
+                                                           checked="@(existingOrder is null)" />
+                                                    <label class="form-check-label" for="@($"{fieldName}_none")">
+                                                        Bez stravování
+                                                    </label>
+                                                </div>
+                                            </div>
+                                        }
+                                    </div>
+                                }
+
+                                <button type="submit" class="btn btn-outline-primary">Uložit stravování</button>
+                            </form>
+                        </div>
+                    </section>
+                }
             }
             else
             {
@@ -478,6 +532,9 @@ document.addEventListener('change', e => {
     [SupplyParameterFromQuery(Name = "attendeeUpdated")]
     private int? attendeeUpdated { get; set; }
 
+    [SupplyParameterFromQuery(Name = "foodSaved")]
+    private int? foodSaved { get; set; }
+
     [SupplyParameterFromQuery(Name = "error")]
     private string? queryError { get; set; }
 
@@ -515,6 +572,10 @@ document.addEventListener('change', e => {
         else if (attendeeUpdated == 1)
         {
             statusMessage = "Účastník byl upravený.";
+        }
+        else if (foodSaved == 1)
+        {
+            statusMessage = "Stravování bylo uložené.";
         }
     }
 
