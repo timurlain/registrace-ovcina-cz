@@ -42,7 +42,15 @@ else
 
     <div class="row g-4">
         <div class="col-xl-8">
-            @if (submission.Status == SubmissionStatus.Draft)
+            @if (submission.Status == SubmissionStatus.Submitted)
+            {
+                <div class="alert alert-info">
+                    Přihláška je odeslaná. Můžete ji ještě upravovat do uzávěrky registrace.
+                    Po úpravě se celková částka automaticky přepočítá.
+                </div>
+            }
+
+            @if (submission.CanEditRegistration || submission.Status == SubmissionStatus.Draft)
             {
                 <section class="card shadow-sm mb-4">
                     <div class="card-body p-4">
@@ -333,7 +341,7 @@ else
                     </div>
                 </section>
 
-                @if (submission.Attendees.Count > 0 && submission.MealDays.Count > 0)
+                @if (submission.Attendees.Count > 0 && submission.MealDays.Count > 0 && submission.CanEditMeals)
                 {
                     <section class="card shadow-sm mb-4">
                         <div class="card-body p-4">
@@ -391,8 +399,8 @@ else
             {
                 <section class="card shadow-sm mb-4">
                     <div class="card-body p-4">
-                        <h2 class="h4 mb-3">Odeslaná přihláška</h2>
-                        <p class="text-secondary">V tomto základním v1 řezu je po odeslání přihláška už jen ke čtení.</p>
+                        <h2 class="h4 mb-3">Přihláška — pouze ke čtení</h2>
+                        <p class="text-secondary">Uzávěrka registrace vypršela, přihlášku už nelze měnit.</p>
 
                         <dl class="row mb-4">
                             <dt class="col-sm-4 text-secondary">Hlavní kontakt</dt>
@@ -535,7 +543,7 @@ else
                             <pre class="mt-2 p-2 small bg-light rounded border overflow-auto">@paymentQr.SpaydPayload</pre>
                         </details>
                     }
-                    else
+                    else if (submission.Status != SubmissionStatus.Draft)
                     {
                         <div class="alert alert-info mb-0">
                             Tato přihláška nemá žádnou platbu k úhradě. Pokud se to změní, organizátor ji upraví ručně.

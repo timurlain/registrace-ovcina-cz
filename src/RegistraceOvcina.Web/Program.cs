@@ -11,9 +11,12 @@ using RegistraceOvcina.Web.Components;
 using RegistraceOvcina.Web.Components.Account;
 using RegistraceOvcina.Web.Data;
 using RegistraceOvcina.Web.Features.Email;
+using RegistraceOvcina.Web.Features.Food;
 using RegistraceOvcina.Web.Features.Games;
 using RegistraceOvcina.Web.Features.Payments;
+using RegistraceOvcina.Web.Features.Kingdoms;
 using RegistraceOvcina.Web.Features.Submissions;
+using RegistraceOvcina.Web.Features.Users;
 using RegistraceOvcina.Web.Security;
 
 namespace RegistraceOvcina.Web;
@@ -165,8 +168,18 @@ public class Program
 
         builder.Services.AddSingleton<SpaydPaymentQrService>();
         builder.Services.AddSingleton<SubmissionPricingService>();
+        builder.Services.AddScoped<FoodSummaryService>();
+        builder.Services.AddScoped<MealOptionService>();
         builder.Services.AddScoped<GameService>();
+        builder.Services.AddScoped<InboxService>();
+        builder.Services.AddScoped<KingdomService>();
         builder.Services.AddScoped<SubmissionService>();
+        builder.Services.AddScoped<UserAdministrationService>();
+
+        if (mailboxEmailOptions.IsConfigured)
+        {
+            builder.Services.AddScoped<MailboxSyncService>();
+        }
 
         var app = builder.Build();
 
@@ -282,6 +295,229 @@ public class Program
                     catch (ValidationException ex)
                     {
                         return Results.LocalRedirect($"/admin/hry?error={Uri.EscapeDataString(ex.Message)}");
+                    }
+                })
+            .RequireAuthorization(AuthorizationPolicies.AdminOnly);
+        app.MapPost(
+                "/admin/kralovstvi/pridat",
+                async ([FromForm] string name, [FromForm] string displayName, [FromForm] string? color, HttpContext httpContext, UserManager<ApplicationUser> userManager, KingdomService kingdomService) =>
+                {
+                    var user = await userManager.GetUserAsync(httpContext.User);
+                    if (user is null)
+                    {
+                        return Results.LocalRedirect($"/Account/Login?ReturnUrl={Uri.EscapeDataString("/admin/kralovstvi")}");
+                    }
+
+                    try
+                    {
+                        await kingdomService.CreateKingdomAsync(name, displayName, color, user.Id);
+                        return Results.LocalRedirect("/admin/kralovstvi?created=1");
+                    }
+                    catch (ValidationException ex)
+                    {
+                        return Results.LocalRedirect($"/admin/kralovstvi?error={Uri.EscapeDataString(ex.Message)}");
+                    }
+                })
+            .RequireAuthorization(AuthorizationPolicies.AdminOnly);
+        app.MapPost(
+                "/admin/kralovstvi/{id:int}/upravit",
+                async (int id, [FromForm] string name, [FromForm] string displayName, [FromForm] string? color, HttpContext httpContext, UserManager<ApplicationUser> userManager, KingdomService kingdomService) =>
+                {
+                    var user = await userManager.GetUserAsync(httpContext.User);
+                    if (user is null)
+                    {
+                        return Results.LocalRedirect($"/Account/Login?ReturnUrl={Uri.EscapeDataString("/admin/kralovstvi")}");
+                    }
+
+                    try
+                    {
+                        await kingdomService.UpdateKingdomAsync(id, name, displayName, color, user.Id);
+                        return Results.LocalRedirect("/admin/kralovstvi?updated=1");
+                    }
+                    catch (ValidationException ex)
+                    {
+                        return Results.LocalRedirect($"/admin/kralovstvi?error={Uri.EscapeDataString(ex.Message)}");
+                    }
+                })
+            .RequireAuthorization(AuthorizationPolicies.AdminOnly);
+        app.MapPost(
+                "/admin/kralovstvi/{id:int}/smazat",
+                async (int id, HttpContext httpContext, UserManager<ApplicationUser> userManager, KingdomService kingdomService) =>
+                {
+                    var user = await userManager.GetUserAsync(httpContext.User);
+                    if (user is null)
+                    {
+                        return Results.LocalRedirect($"/Account/Login?ReturnUrl={Uri.EscapeDataString("/admin/kralovstvi")}");
+                    }
+
+                    try
+                    {
+                        await kingdomService.DeleteKingdomAsync(id, user.Id);
+                        return Results.LocalRedirect("/admin/kralovstvi?deleted=1");
+                    }
+                    catch (ValidationException ex)
+                    {
+                        return Results.LocalRedirect($"/admin/kralovstvi?error={Uri.EscapeDataString(ex.Message)}");
+                    }
+                })
+            .RequireAuthorization(AuthorizationPolicies.AdminOnly);
+        app.MapPost(
+                "/admin/hry/{gameId:int}/kralovstvi/ulozit",
+                async (int gameId, HttpContext httpContext, UserManager<ApplicationUser> userManager, KingdomService kingdomService) =>
+                {
+                    var user = await userManager.GetUserAsync(httpContext.User);
+                    if (user is null)
+                    {
+                        return Results.LocalRedirect($"/Account/Login?ReturnUrl={Uri.EscapeDataString($"/admin/hry/{gameId}/kralovstvi")}");
+                    }
+
+                    try
+                    {
+                        var targets = new List<GameKingdomTargetInput>();
+                        foreach (var key in httpContext.Request.Form.Keys)
+                        {
+                            if (!key.StartsWith("active_")) continue;
+                            var kingdomIdStr = key["active_".Length..];
+                            if (!int.TryParse(kingdomIdStr, out var kingdomId)) continue;
+
+                            var targetCountStr = httpContext.Request.Form[$"target_{kingdomId}"];
+                            var targetCount = int.TryParse(targetCountStr, out var tc) ? tc : 0;
+
+                            targets.Add(new GameKingdomTargetInput(kingdomId, targetCount));
+                        }
+
+                        await kingdomService.SaveGameKingdomTargetsAsync(gameId, targets, user.Id);
+                        return Results.LocalRedirect($"/admin/hry/{gameId}/kralovstvi?saved=1");
+                    }
+                    catch (ValidationException ex)
+                    {
+                        return Results.LocalRedirect($"/admin/hry/{gameId}/kralovstvi?error={Uri.EscapeDataString(ex.Message)}");
+                     }
+                 })
+             .RequireAuthorization(AuthorizationPolicies.AdminOnly);
+        app.MapPost(
+                "/admin/organizatori/{userId}/organizator",
+                async (string userId, HttpContext httpContext, UserManager<ApplicationUser> userManager, UserAdministrationService userAdministrationService) =>
+                {
+                    var user = await userManager.GetUserAsync(httpContext.User);
+                    if (user is null)
+                    {
+                        return Results.LocalRedirect($"/Account/Login?ReturnUrl={Uri.EscapeDataString("/admin/organizatori")}");
+                    }
+
+                    try
+                    {
+                        var result = await userAdministrationService.ToggleRoleAsync(userId, RoleNames.Organizer, user.Id);
+                        return Results.LocalRedirect($"/admin/organizatori?status={Uri.EscapeDataString(result.StatusCode)}");
+                    }
+                    catch (ValidationException ex)
+                    {
+                        return Results.LocalRedirect($"/admin/organizatori?error={Uri.EscapeDataString(ex.Message)}");
+                    }
+                })
+            .RequireAuthorization(AuthorizationPolicies.AdminOnly);
+        app.MapPost(
+                "/admin/organizatori/{userId}/spravce",
+                async (string userId, HttpContext httpContext, UserManager<ApplicationUser> userManager, UserAdministrationService userAdministrationService) =>
+                {
+                    var user = await userManager.GetUserAsync(httpContext.User);
+                    if (user is null)
+                    {
+                        return Results.LocalRedirect($"/Account/Login?ReturnUrl={Uri.EscapeDataString("/admin/organizatori")}");
+                    }
+
+                    try
+                    {
+                        var result = await userAdministrationService.ToggleRoleAsync(userId, RoleNames.Admin, user.Id);
+                        return Results.LocalRedirect($"/admin/organizatori?status={Uri.EscapeDataString(result.StatusCode)}");
+                    }
+                    catch (ValidationException ex)
+                    {
+                        return Results.LocalRedirect($"/admin/organizatori?error={Uri.EscapeDataString(ex.Message)}");
+                    }
+                })
+            .RequireAuthorization(AuthorizationPolicies.AdminOnly);
+        app.MapPost(
+                "/admin/organizatori/{userId}/aktivita",
+                async (string userId, HttpContext httpContext, UserManager<ApplicationUser> userManager, UserAdministrationService userAdministrationService) =>
+                {
+                    var user = await userManager.GetUserAsync(httpContext.User);
+                    if (user is null)
+                    {
+                        return Results.LocalRedirect($"/Account/Login?ReturnUrl={Uri.EscapeDataString("/admin/organizatori")}");
+                    }
+
+                    try
+                    {
+                        var result = await userAdministrationService.ToggleActiveAsync(userId, user.Id);
+                        return Results.LocalRedirect($"/admin/organizatori?status={Uri.EscapeDataString(result.StatusCode)}");
+                    }
+                    catch (ValidationException ex)
+                    {
+                        return Results.LocalRedirect($"/admin/organizatori?error={Uri.EscapeDataString(ex.Message)}");
+                    }
+                })
+            .RequireAuthorization(AuthorizationPolicies.AdminOnly);
+        app.MapPost(
+                "/admin/hry/{gameId:int}/jidla/pridat",
+                async (int gameId, [FromForm] string name, [FromForm] decimal price, HttpContext httpContext, UserManager<ApplicationUser> userManager, MealOptionService mealOptionService) =>
+                {
+                    var user = await userManager.GetUserAsync(httpContext.User);
+                    if (user is null)
+                    {
+                        return Results.LocalRedirect($"/Account/Login?ReturnUrl={Uri.EscapeDataString($"/admin/hry/{gameId}/jidla")}");
+                    }
+
+                    try
+                    {
+                        await mealOptionService.CreateMealOptionAsync(gameId, name, price, user.Id);
+                        return Results.LocalRedirect($"/admin/hry/{gameId}/jidla?created=1");
+                    }
+                    catch (ValidationException ex)
+                    {
+                        return Results.LocalRedirect($"/admin/hry/{gameId}/jidla?error={Uri.EscapeDataString(ex.Message)}");
+                    }
+                })
+            .RequireAuthorization(AuthorizationPolicies.AdminOnly);
+        app.MapPost(
+                "/admin/hry/{gameId:int}/jidla/{id:int}/upravit",
+                async (int gameId, int id, [FromForm] string name, [FromForm] decimal price, [FromForm] bool isActive, HttpContext httpContext, UserManager<ApplicationUser> userManager, MealOptionService mealOptionService) =>
+                {
+                    var user = await userManager.GetUserAsync(httpContext.User);
+                    if (user is null)
+                    {
+                        return Results.LocalRedirect($"/Account/Login?ReturnUrl={Uri.EscapeDataString($"/admin/hry/{gameId}/jidla")}");
+                    }
+
+                    try
+                    {
+                        await mealOptionService.UpdateMealOptionAsync(id, name, price, isActive, user.Id);
+                        return Results.LocalRedirect($"/admin/hry/{gameId}/jidla?updated=1");
+                    }
+                    catch (ValidationException ex)
+                    {
+                        return Results.LocalRedirect($"/admin/hry/{gameId}/jidla?error={Uri.EscapeDataString(ex.Message)}");
+                    }
+                })
+            .RequireAuthorization(AuthorizationPolicies.AdminOnly);
+        app.MapPost(
+                "/admin/hry/{gameId:int}/jidla/{id:int}/smazat",
+                async (int gameId, int id, HttpContext httpContext, UserManager<ApplicationUser> userManager, MealOptionService mealOptionService) =>
+                {
+                    var user = await userManager.GetUserAsync(httpContext.User);
+                    if (user is null)
+                    {
+                        return Results.LocalRedirect($"/Account/Login?ReturnUrl={Uri.EscapeDataString($"/admin/hry/{gameId}/jidla")}");
+                    }
+
+                    try
+                    {
+                        await mealOptionService.DeleteMealOptionAsync(id, user.Id);
+                        return Results.LocalRedirect($"/admin/hry/{gameId}/jidla?deleted=1");
+                    }
+                    catch (ValidationException ex)
+                    {
+                        return Results.LocalRedirect($"/admin/hry/{gameId}/jidla?error={Uri.EscapeDataString(ex.Message)}");
                     }
                 })
             .RequireAuthorization(AuthorizationPolicies.AdminOnly);
@@ -459,6 +695,61 @@ public class Program
                     }
                 })
             .RequireAuthorization();
+        app.MapPost(
+                "/organizace/posta/sync",
+                async (HttpContext httpContext, MailboxSyncService? syncService) =>
+                {
+                    if (syncService is null)
+                    {
+                        return Results.LocalRedirect("/organizace/posta");
+                    }
+
+                    await syncService.SyncInboxAsync(httpContext.RequestAborted);
+                    return Results.LocalRedirect("/organizace/posta?synced=1");
+                })
+            .RequireAuthorization(AuthorizationPolicies.StaffOnly);
+        app.MapPost(
+                "/organizace/posta/{messageId:int}/propojit-prihlasku",
+                async ([FromForm] int submissionId, int messageId, HttpContext httpContext, UserManager<ApplicationUser> userManager, InboxService inboxService) =>
+                {
+                    var user = await userManager.GetUserAsync(httpContext.User);
+                    if (user is null)
+                    {
+                        return Results.LocalRedirect($"/Account/Login?ReturnUrl={Uri.EscapeDataString($"/organizace/posta/{messageId}")}");
+                    }
+
+                    await inboxService.LinkToSubmissionAsync(messageId, submissionId, user.Id);
+                    return Results.LocalRedirect($"/organizace/posta/{messageId}?linked=1");
+                })
+            .RequireAuthorization(AuthorizationPolicies.StaffOnly);
+        app.MapPost(
+                "/organizace/posta/{messageId:int}/propojit-osobu",
+                async ([FromForm] int personId, int messageId, HttpContext httpContext, UserManager<ApplicationUser> userManager, InboxService inboxService) =>
+                {
+                    var user = await userManager.GetUserAsync(httpContext.User);
+                    if (user is null)
+                    {
+                        return Results.LocalRedirect($"/Account/Login?ReturnUrl={Uri.EscapeDataString($"/organizace/posta/{messageId}")}");
+                    }
+
+                    await inboxService.LinkToPersonAsync(messageId, personId, user.Id);
+                    return Results.LocalRedirect($"/organizace/posta/{messageId}?linked=1");
+                })
+            .RequireAuthorization(AuthorizationPolicies.StaffOnly);
+        app.MapPost(
+                "/organizace/posta/{messageId:int}/odpojit",
+                async (int messageId, HttpContext httpContext, UserManager<ApplicationUser> userManager, InboxService inboxService) =>
+                {
+                    var user = await userManager.GetUserAsync(httpContext.User);
+                    if (user is null)
+                    {
+                        return Results.LocalRedirect($"/Account/Login?ReturnUrl={Uri.EscapeDataString($"/organizace/posta/{messageId}")}");
+                    }
+
+                    await inboxService.UnlinkAsync(messageId, user.Id);
+                    return Results.LocalRedirect($"/organizace/posta/{messageId}?unlinked=1");
+                })
+            .RequireAuthorization(AuthorizationPolicies.StaffOnly);
         app.MapStaticAssets();
         app.MapRazorComponents<App>()
             .AddInteractiveServerRenderMode();

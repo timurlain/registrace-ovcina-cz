@@ -486,6 +486,49 @@ code, pre, .font-mono {
 .kingdom-col-header-arnor   { background: var(--color-kingdom-arnor); }
 
 
+/* --- Footer --- */
+
+.app-footer {
+  background: var(--color-header);
+  border-top: 3px solid var(--color-card-border);
+  color: #C4A882;
+  font-size: 0.85rem;
+  margin-top: 3rem;
+}
+
+.app-footer a {
+  color: var(--color-header-text);
+  text-decoration: none;
+}
+
+.app-footer a:hover {
+  text-decoration: underline;
+  color: var(--color-header-text);
+}
+
+
+/* --- Privacy Policy --- */
+
+.privacy-policy h1 {
+  margin-bottom: 1.5rem;
+}
+
+.privacy-policy h2 {
+  margin-top: 2rem;
+  margin-bottom: 0.75rem;
+  padding-bottom: 0.35rem;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.privacy-policy address {
+  background: var(--color-surface-alt);
+  border-left: 4px solid var(--color-card-border);
+  padding: 1rem 1.25rem;
+  border-radius: var(--radius-button);
+  font-style: normal;
+}
+
+
 /* --- Status Badges --- */
 
 .status-badge {

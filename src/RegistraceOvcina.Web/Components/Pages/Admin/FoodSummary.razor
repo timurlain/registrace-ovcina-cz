@@ -1,0 +1,182 @@
+@page "/organizace/strava"
+@attribute [Authorize(Policy = AuthorizationPolicies.StaffOnly)]
+
+@using RegistraceOvcina.Web.Features.Food
+@using RegistraceOvcina.Web.Infrastructure
+
+@inject FoodSummaryService FoodSummaryService
+
+<PageTitle>Přehled stravy</PageTitle>
+
+@if (summary is null)
+{
+    <p class="text-secondary">Načítám přehled stravy...</p>
+}
+else
+{
+    <div class="row g-4">
+        <div class="col-12">
+            <section class="card shadow-sm">
+                <div class="card-body p-4">
+                    <div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-end gap-3">
+                        <div>
+                            <h1 class="h3 mb-2">Přehled stravy</h1>
+                            <p class="text-secondary mb-0">Operativní souhrn jídel podle dne a volby pro jednu hru.</p>
+                        </div>
+
+                        @if (summary.Games.Count > 0)
+                        {
+                            <form method="get" class="row g-2 align-items-end">
+                                <div class="col-sm-auto">
+                                    <label class="form-label" for="food-summary-game">Hra</label>
+                                    <select id="food-summary-game" name="gameId" class="form-select" data-testid="food-summary-game-select">
+                                        @foreach (var game in summary.Games)
+                                        {
+                                            <option selected="@(summary.SelectedGame?.Id == game.Id)" value="@game.Id">
+                                                @($"{game.Name} ({CzechTime.Format(game.StartsAtUtc)} - {CzechTime.Format(game.EndsAtUtc)})")
+                                            </option>
+                                        }
+                                    </select>
+                                </div>
+                                <div class="col-sm-auto">
+                                    <button type="submit" class="btn btn-outline-primary">Zobrazit</button>
+                                </div>
+                            </form>
+                        }
+                    </div>
+                </div>
+            </section>
+        </div>
+
+        @if (summary.SelectedGame is null)
+        {
+            <div class="col-12">
+                <div class="empty-state">Zatím není založená žádná hra.</div>
+            </div>
+        }
+        else
+        {
+            <div class="col-12">
+                <section class="card shadow-sm">
+                    <div class="card-body p-4">
+                        <div class="d-flex flex-column flex-lg-row justify-content-between gap-3">
+                            <div>
+                                <h2 class="h4 mb-1" data-testid="food-summary-game-title">@summary.SelectedGame.Name</h2>
+                                <div class="text-secondary">@($"{CzechTime.Format(summary.SelectedGame.StartsAtUtc)} - {CzechTime.Format(summary.SelectedGame.EndsAtUtc)}")</div>
+                                <div class="small text-secondary">Uzávěrka jídel: @CzechTime.Format(summary.SelectedGame.MealOrderingClosesAtUtc)</div>
+                            </div>
+                            <div class="d-flex flex-wrap gap-4">
+                                <div>
+                                    <div class="small text-secondary">Celkem výběrů</div>
+                                    <div class="h4 mb-0" data-testid="food-summary-total-selections">@summary.TotalSelections</div>
+                                </div>
+                                <div>
+                                    <div class="small text-secondary">Účastníků s objednávkou</div>
+                                    <div class="h4 mb-0" data-testid="food-summary-registration-count">@summary.RegistrationsWithOrders</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+            </div>
+
+            @if (summary.OverallTotals.Count == 0)
+            {
+                <div class="col-12">
+                    <div class="empty-state">Vybraná hra zatím nemá aktivní jídelní volby.</div>
+                </div>
+            }
+            else
+            {
+                <div class="col-12">
+                    <section class="card shadow-sm">
+                        <div class="card-body p-4">
+                            <h2 class="h5 mb-3">Celkové součty</h2>
+
+                            @if (summary.TotalSelections == 0)
+                            {
+                                <div class="alert alert-info" role="status">
+                                    Zatím nejsou uložené žádné objednávky stravy. Přehled níže ukazuje nulové stavy pro aktivní volby.
+                                </div>
+                            }
+
+                            <div class="table-responsive">
+                                <table class="table align-middle" data-testid="food-summary-overall-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Volba</th>
+                                            <th class="text-end">Počet</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        @foreach (var total in summary.OverallTotals)
+                                        {
+                                            <tr data-testid="@($"food-summary-overall-{total.MealOptionId}")">
+                                                <td>@total.MealOptionName</td>
+                                                <td class="text-end">@total.Count</td>
+                                            </tr>
+                                        }
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </section>
+                </div>
+
+                @foreach (var day in summary.Days)
+                {
+                    <div class="col-12 col-xl-6">
+                        <section class="card shadow-sm h-100" data-testid="@($"food-summary-day-{day.MealDayUtc:yyyyMMdd}")">
+                            <div class="card-body p-4">
+                                <div class="d-flex justify-content-between align-items-start gap-3 mb-3">
+                                    <div>
+                                        <h3 class="h5 mb-1">@day.Label</h3>
+                                        <div class="small text-secondary">@day.MealDayUtc.ToString("d. M. yyyy")</div>
+                                    </div>
+                                    <div class="text-end">
+                                        <div class="small text-secondary">Denní součet</div>
+                                        <div class="fw-semibold" data-testid="@($"food-day-total-{day.MealDayUtc:yyyyMMdd}")">@day.TotalSelections</div>
+                                    </div>
+                                </div>
+
+                                <div class="table-responsive">
+                                    <table class="table align-middle mb-0">
+                                        <thead>
+                                            <tr>
+                                                <th>Volba</th>
+                                                <th class="text-end">Počet</th>
+                                                <th class="text-end">Cena</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            @foreach (var option in day.Options)
+                                            {
+                                                <tr data-testid="@($"food-summary-row-{day.MealDayUtc:yyyyMMdd}-{option.MealOptionId}")">
+                                                    <td>@option.MealOptionName</td>
+                                                    <td class="text-end" data-testid="@($"food-count-{day.MealDayUtc:yyyyMMdd}-{option.MealOptionId}")">@option.Count</td>
+                                                    <td class="text-end">@($"{option.Price:N2} Kč")</td>
+                                                </tr>
+                                            }
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </section>
+                    </div>
+                }
+            }
+        }
+    </div>
+}
+
+@code {
+    [SupplyParameterFromQuery(Name = "gameId")]
+    private int? gameId { get; set; }
+
+    private FoodSummaryPageViewModel? summary;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        summary = await FoodSummaryService.GetPageAsync(gameId);
+    }
+}

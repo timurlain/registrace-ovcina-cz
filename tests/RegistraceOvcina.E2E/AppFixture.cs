@@ -16,6 +16,8 @@ public sealed class AppFixture : IAsyncLifetime
 
     public string BaseUrl { get; private set; } = string.Empty;
 
+    public string ConnectionString { get; private set; } = string.Empty;
+
     public IBrowser Browser { get; private set; } = default!;
 
     public async Task InitializeAsync()
@@ -24,8 +26,8 @@ public sealed class AppFixture : IAsyncLifetime
         BaseUrl = $"http://127.0.0.1:{GetFreePort()}";
         var buildConfiguration = DetectBuildConfiguration();
 
-        var connectionString = Environment.GetEnvironmentVariable("OVCINA_E2E_CONNECTION_STRING");
-        if (string.IsNullOrWhiteSpace(connectionString))
+        ConnectionString = Environment.GetEnvironmentVariable("OVCINA_E2E_CONNECTION_STRING") ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(ConnectionString))
         {
             _postgresContainer = new PostgreSqlBuilder("postgres:16-alpine")
                 .WithDatabase($"registrace_ovcina_e2e_{Guid.NewGuid():N}")
@@ -34,7 +36,7 @@ public sealed class AppFixture : IAsyncLifetime
                 .Build();
 
             await _postgresContainer.StartAsync();
-            connectionString = _postgresContainer.GetConnectionString();
+            ConnectionString = _postgresContainer.GetConnectionString();
         }
 
         var startInfo = new ProcessStartInfo(
@@ -49,7 +51,7 @@ public sealed class AppFixture : IAsyncLifetime
 
         startInfo.Environment["ASPNETCORE_ENVIRONMENT"] = "Testing";
         startInfo.Environment["ASPNETCORE_URLS"] = BaseUrl;
-        startInfo.Environment["ConnectionStrings__DefaultConnection"] = connectionString;
+        startInfo.Environment["ConnectionStrings__DefaultConnection"] = ConnectionString;
         startInfo.Environment["DOTNET_NOLOGO"] = "1";
 
         _process = Process.Start(startInfo)

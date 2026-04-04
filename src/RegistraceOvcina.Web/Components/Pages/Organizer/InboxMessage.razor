@@ -1,0 +1,158 @@
+@page "/organizace/posta/{messageId:int}"
+@attribute [Authorize(Policy = AuthorizationPolicies.StaffOnly)]
+
+@using RegistraceOvcina.Web.Features.Email
+
+@inject InboxService InboxService
+
+<PageTitle>Detail zprávy</PageTitle>
+
+@if (message is null)
+{
+    <p class="text-secondary">Načítám zprávu...</p>
+}
+else
+{
+    <div class="row g-4">
+        <div class="col-12">
+            <a href="/organizace/posta" class="btn btn-sm btn-outline-secondary mb-3">&larr; Zpět na poštu</a>
+
+            <section class="card shadow-sm">
+                <div class="card-body p-4">
+                    <h1 class="h4 mb-3" data-testid="message-subject">
+                        @(string.IsNullOrWhiteSpace(message.Subject) ? "(bez předmětu)" : message.Subject)
+                    </h1>
+
+                    <dl class="row mb-0">
+                        <dt class="col-sm-2">Od</dt>
+                        <dd class="col-sm-10" data-testid="message-from">@message.From</dd>
+
+                        <dt class="col-sm-2">Komu</dt>
+                        <dd class="col-sm-10" data-testid="message-to">@message.To</dd>
+
+                        <dt class="col-sm-2">Datum</dt>
+                        <dd class="col-sm-10" data-testid="message-date">
+                            @(message.ReceivedAtUtc?.ToLocalTime().ToString("d.M.yyyy H:mm") ?? "—")
+                        </dd>
+                    </dl>
+                </div>
+            </section>
+        </div>
+
+        <div class="col-12">
+            <section class="card shadow-sm">
+                <div class="card-body p-4">
+                    <h2 class="h5 mb-3">Obsah zprávy</h2>
+                    <pre class="mb-0" style="white-space: pre-wrap; font-family: inherit;" data-testid="message-body">@(message.BodyText ?? "")</pre>
+                </div>
+            </section>
+        </div>
+
+        <div class="col-12">
+            <section class="card shadow-sm">
+                <div class="card-body p-4">
+                    <h2 class="h5 mb-3">Propojení</h2>
+
+                    @if (linked)
+                    {
+                        <div class="alert alert-success">Propojení uloženo.</div>
+                    }
+                    @if (unlinked)
+                    {
+                        <div class="alert alert-info">Propojení odstraněno.</div>
+                    }
+
+                    @if (message.LinkedSubmission is not null)
+                    {
+                        <div class="mb-3">
+                            <span class="badge bg-primary">Propojeno s přihláškou #@message.LinkedSubmissionId — @message.LinkedSubmission.PrimaryContactName</span>
+                        </div>
+                        <form method="post" action="/organizace/posta/@messageId/odpojit">
+                            <AntiforgeryToken />
+                            <button type="submit" class="btn btn-outline-danger btn-sm" data-testid="unlink-button">Odpojit</button>
+                        </form>
+                    }
+                    else if (message.LinkedPerson is not null)
+                    {
+                        <div class="mb-3">
+                            <span class="badge bg-info">Propojeno s osobou: @message.LinkedPerson.LastName @message.LinkedPerson.FirstName</span>
+                        </div>
+                        <form method="post" action="/organizace/posta/@messageId/odpojit">
+                            <AntiforgeryToken />
+                            <button type="submit" class="btn btn-outline-danger btn-sm" data-testid="unlink-button">Odpojit</button>
+                        </form>
+                    }
+                    else
+                    {
+                        <p class="text-secondary mb-3">Zpráva není propojena s žádnou přihláškou ani osobou.</p>
+
+                        <div class="row g-3">
+                            <div class="col-12 col-md-6">
+                                <form method="post" action="/organizace/posta/@messageId/propojit-prihlasku">
+                                    <AntiforgeryToken />
+                                    <label class="form-label" for="submission-select">Propojit s přihláškou</label>
+                                    <div class="d-flex gap-2">
+                                        <select id="submission-select" name="submissionId" class="form-select" data-testid="link-submission-select">
+                                            @if (submissions is not null)
+                                            {
+                                                @foreach (var s in submissions)
+                                                {
+                                                    <option value="@s.Id">@s.Label</option>
+                                                }
+                                            }
+                                        </select>
+                                        <button type="submit" class="btn btn-outline-primary" data-testid="link-submission-button">Propojit</button>
+                                    </div>
+                                </form>
+                            </div>
+                            <div class="col-12 col-md-6">
+                                <form method="post" action="/organizace/posta/@messageId/propojit-osobu">
+                                    <AntiforgeryToken />
+                                    <label class="form-label" for="person-select">Propojit s osobou</label>
+                                    <div class="d-flex gap-2">
+                                        <select id="person-select" name="personId" class="form-select" data-testid="link-person-select">
+                                            @if (people is not null)
+                                            {
+                                                @foreach (var p in people)
+                                                {
+                                                    <option value="@p.Id">@p.Name</option>
+                                                }
+                                            }
+                                        </select>
+                                        <button type="submit" class="btn btn-outline-primary" data-testid="link-person-button">Propojit</button>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+                    }
+                </div>
+            </section>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter]
+    public int messageId { get; set; }
+
+    [SupplyParameterFromQuery(Name = "linked")]
+    private bool linked { get; set; }
+
+    [SupplyParameterFromQuery(Name = "unlinked")]
+    private bool unlinked { get; set; }
+
+    private EmailMessage? message;
+    private List<SubmissionLookupItem>? submissions;
+    private List<PersonLookupItem>? people;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        message = await InboxService.GetMessageAsync(messageId);
+
+        if (message is not null && message.LinkedSubmissionId is null && message.LinkedPersonId is null)
+        {
+            submissions = await InboxService.GetSubmissionLookupAsync();
+            people = await InboxService.GetPersonLookupAsync();
+        }
+    }
+}
