@@ -131,6 +131,9 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
             entity.Property(x => x.ContactPhone).HasMaxLength(40);
             entity.Property(x => x.GuardianName).HasMaxLength(200);
             entity.Property(x => x.GuardianRelationship).HasMaxLength(100);
+            entity.Property(x => x.AttendeeType).HasDefaultValue(AttendeeType.Player);
+            entity.Property(x => x.AdultRoles).HasDefaultValue(AdultRoleFlags.None);
+            entity.Property(x => x.CharacterName).HasMaxLength(200);
             entity.Property(x => x.RegistrantNote).HasMaxLength(4000);
             entity.HasOne(x => x.Person)
                 .WithMany(x => x.Registrations)
