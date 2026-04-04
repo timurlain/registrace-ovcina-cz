@@ -163,6 +163,16 @@ jobs:
         run: |
           secret_args=("default-connection=$AZURE_POSTGRES_CONNECTION_STRING")
 
+          if [ -n "$EXTERNALAUTH__MICROSOFT__CLIENTSECRET" ]; then
+            secret_args+=("externalauth-microsoft-clientsecret=$EXTERNALAUTH__MICROSOFT__CLIENTSECRET")
+          fi
+          if [ -n "$EXTERNALAUTH__GOOGLE__CLIENTSECRET" ]; then
+            secret_args+=("externalauth-google-clientsecret=$EXTERNALAUTH__GOOGLE__CLIENTSECRET")
+          fi
+          if [ -n "$EXTERNALAUTH__SEZNAM__CLIENTSECRET" ]; then
+            secret_args+=("externalauth-seznam-clientsecret=$EXTERNALAUTH__SEZNAM__CLIENTSECRET")
+          fi
+
           if [ -n "$Email__SharedMailboxAddress" ]; then
             secret_args+=("email-graph-client-secret=$Email__Graph__ClientSecret")
           fi
@@ -187,6 +197,25 @@ jobs:
             )
           fi
 
+          if [ -n "$EXTERNALAUTH__MICROSOFT__CLIENTID" ]; then
+            env_args+=(
+              "ExternalAuth__Microsoft__ClientId=$EXTERNALAUTH__MICROSOFT__CLIENTID"
+              "ExternalAuth__Microsoft__ClientSecret=secretref:externalauth-microsoft-clientsecret"
+            )
+          fi
+          if [ -n "$EXTERNALAUTH__GOOGLE__CLIENTID" ]; then
+            env_args+=(
+              "ExternalAuth__Google__ClientId=$EXTERNALAUTH__GOOGLE__CLIENTID"
+              "ExternalAuth__Google__ClientSecret=secretref:externalauth-google-clientsecret"
+            )
+          fi
+          if [ -n "$EXTERNALAUTH__SEZNAM__CLIENTID" ]; then
+            env_args+=(
+              "ExternalAuth__Seznam__ClientId=$EXTERNALAUTH__SEZNAM__CLIENTID"
+              "ExternalAuth__Seznam__ClientSecret=secretref:externalauth-seznam-clientsecret"
+            )
+          fi
+
           az containerapp update -n "$AZURE_CONTAINER_APP_NAME" -g "$AZURE_RESOURCE_GROUP" \
             --set-env-vars "${env_args[@]}" \
             --output none
@@ -196,6 +225,12 @@ jobs:
           Email__Graph__TenantId: ${{ vars.Email__Graph__TenantId }}
           Email__Graph__ClientId: ${{ vars.Email__Graph__ClientId }}
           Email__Graph__ClientSecret: ${{ secrets.Email__Graph__ClientSecret }}
+          EXTERNALAUTH__MICROSOFT__CLIENTID: ${{ secrets.EXTERNALAUTH__MICROSOFT__CLIENTID }}
+          EXTERNALAUTH__MICROSOFT__CLIENTSECRET: ${{ secrets.EXTERNALAUTH__MICROSOFT__CLIENTSECRET }}
+          EXTERNALAUTH__GOOGLE__CLIENTID: ${{ secrets.EXTERNALAUTH__GOOGLE__CLIENTID }}
+          EXTERNALAUTH__GOOGLE__CLIENTSECRET: ${{ secrets.EXTERNALAUTH__GOOGLE__CLIENTSECRET }}
+          EXTERNALAUTH__SEZNAM__CLIENTID: ${{ secrets.EXTERNALAUTH__SEZNAM__CLIENTID }}
+          EXTERNALAUTH__SEZNAM__CLIENTSECRET: ${{ secrets.EXTERNALAUTH__SEZNAM__CLIENTSECRET }}
 
       - name: Verify latest revision is healthy
         shell: bash
