@@ -174,6 +174,7 @@ public class Program
         builder.Services.AddScoped<KingdomService>();
         builder.Services.AddScoped<SubmissionService>();
         builder.Services.AddScoped<OrganizerSubmissionService>();
+        builder.Services.AddScoped<PaymentService>();
         builder.Services.AddScoped<UserAdministrationService>();
 
         var app = builder.Build();
@@ -713,6 +714,38 @@ public class Program
                     catch (InvalidOperationException ex)
                     {
                         return Results.LocalRedirect($"/organizace/prihlasky/{submissionId}?error={Uri.EscapeDataString(ex.Message)}");
+                    }
+                })
+            .RequireAuthorization(AuthorizationPolicies.StaffOnly);
+        app.MapPost(
+                "/organizace/platby/{submissionId:int}/zaznamenat",
+                async ([FromForm] decimal amount, [FromForm] int method, [FromForm] string? reference, [FromForm] string? note, int submissionId, HttpContext httpContext, UserManager<ApplicationUser> userManager, PaymentService paymentService) =>
+                {
+                    var user = await userManager.GetUserAsync(httpContext.User);
+                    if (user is null)
+                    {
+                        return Results.LocalRedirect($"/Account/Login?ReturnUrl={Uri.EscapeDataString("/organizace/platby")}");
+                    }
+
+                    if (amount <= 0)
+                    {
+                        return Results.LocalRedirect($"/organizace/platby?error={Uri.EscapeDataString("Částka musí být kladná.")}");
+                    }
+
+                    try
+                    {
+                        await paymentService.RecordPaymentAsync(
+                            submissionId,
+                            amount,
+                            (PaymentMethod)method,
+                            reference,
+                            note,
+                            user.Id);
+                        return Results.LocalRedirect("/organizace/platby?recorded=1");
+                    }
+                    catch (InvalidOperationException ex)
+                    {
+                        return Results.LocalRedirect($"/organizace/platby?error={Uri.EscapeDataString(ex.Message)}");
                     }
                 })
             .RequireAuthorization(AuthorizationPolicies.StaffOnly);
