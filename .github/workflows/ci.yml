@@ -9,6 +9,7 @@ on:
   pull_request:
 
 env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
   DOTNET_VERSION: 10.0.x
   BUILD_CONFIGURATION: Release
   CONTAINER_IMAGE_NAME: registrace-ovcina-web

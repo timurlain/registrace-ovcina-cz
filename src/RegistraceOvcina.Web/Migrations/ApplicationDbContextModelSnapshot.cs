@@ -832,11 +832,6 @@ namespace RegistraceOvcina.Web.Migrations
                         .HasMaxLength(4000)
                         .HasColumnType("character varying(4000)");
 
-                    b.Property<string>("Role")
-                        .IsRequired()
-                        .HasMaxLength(32)
-                        .HasColumnType("character varying(32)");
-
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasMaxLength(32)

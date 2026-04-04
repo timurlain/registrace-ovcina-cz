@@ -28,15 +28,6 @@ public enum PaymentMethod
     ManualAdjustment = 2
 }
 
-[Obsolete("Use AttendeeType + PlayerSubType + AdultRoleFlags instead")]
-public enum RegistrationRole
-{
-    Player = 0,
-    Npc = 1,
-    Monster = 2,
-    TechSupport = 3
-}
-
 public enum AttendeeType
 {
     Player = 0,
@@ -189,7 +180,6 @@ public sealed class Registration
     public int Id { get; set; }
     public int SubmissionId { get; set; }
     public int PersonId { get; set; }
-    public RegistrationRole Role { get; set; }
     public AttendeeType AttendeeType { get; set; }
     public PlayerSubType? PlayerSubType { get; set; }
     public AdultRoleFlags AdultRoles { get; set; }

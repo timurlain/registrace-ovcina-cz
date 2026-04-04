@@ -270,9 +270,6 @@ public sealed class SubmissionService(
         {
             Person = person,
             SubmissionId = submission.Id,
-#pragma warning disable CS0618 // Keep old Role populated for backward compat
-            Role = input.AttendeeType == AttendeeType.Player ? RegistrationRole.Player : RegistrationRole.Npc,
-#pragma warning restore CS0618
             AttendeeType = input.AttendeeType,
             PlayerSubType = input.AttendeeType == AttendeeType.Player ? input.PlayerSubType : null,
             AdultRoles = input.AttendeeType == AttendeeType.Adult ? input.ComputedAdultRoles : AdultRoleFlags.None,
@@ -350,9 +347,6 @@ public sealed class SubmissionService(
         registration.Person.UpdatedAtUtc = nowUtc;
 
         // Update Registration
-#pragma warning disable CS0618 // Keep old Role populated for backward compat
-        registration.Role = input.AttendeeType == AttendeeType.Player ? RegistrationRole.Player : RegistrationRole.Npc;
-#pragma warning restore CS0618
         registration.AttendeeType = input.AttendeeType;
         registration.PlayerSubType = input.AttendeeType == AttendeeType.Player ? input.PlayerSubType : null;
         registration.AdultRoles = input.AttendeeType == AttendeeType.Adult ? input.ComputedAdultRoles : AdultRoleFlags.None;
