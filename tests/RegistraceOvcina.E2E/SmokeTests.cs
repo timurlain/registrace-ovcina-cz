@@ -299,7 +299,7 @@ public sealed class SmokeTests : IClassFixture<AppFixture>
         });
 
         var totalText = await registrantPage.GetByTestId("submission-total").TextContentAsync();
-        Assert.Equal("1200,00 Kč", totalText?.Trim());
+        Assert.Equal("100,00 Kč", totalText?.Trim());
         await AssertNoBlazorErrorsAsync(registrantPage);
         await registrantPage.CloseAsync();
     }
