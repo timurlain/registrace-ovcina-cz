@@ -16,6 +16,7 @@ using RegistraceOvcina.Web.Features.Games;
 using RegistraceOvcina.Web.Features.Payments;
 using RegistraceOvcina.Web.Features.Kingdoms;
 using RegistraceOvcina.Web.Features.Submissions;
+using RegistraceOvcina.Web.Features.Integration;
 using RegistraceOvcina.Web.Features.Users;
 using RegistraceOvcina.Web.Security;
 
@@ -178,6 +179,8 @@ public class Program
         builder.Services.AddScoped<OrganizerSubmissionService>();
         builder.Services.AddScoped<PaymentService>();
         builder.Services.AddScoped<UserAdministrationService>();
+        builder.Services.Configure<IntegrationApiOptions>(
+            builder.Configuration.GetSection(IntegrationApiOptions.SectionName));
 
         if (mailboxEmailOptions.IsConfigured)
         {
@@ -256,6 +259,7 @@ public class Program
         await DatabaseInitializer.InitializeAsync(app);
 
         app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
+        app.MapIntegrationApi();
         if (app.Environment.IsEnvironment("Testing"))
         {
             app.MapGet(
