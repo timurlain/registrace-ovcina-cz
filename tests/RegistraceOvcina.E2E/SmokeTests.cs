@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Playwright;
+using ClosedXML.Excel;
 using RegistraceOvcina.Web.Data;
 using Xunit.Sdk;
 
@@ -175,6 +176,60 @@ public sealed class SmokeTests : IClassFixture<AppFixture>
 
         await AssertNoBlazorErrorsAsync(adminPage);
         await adminPage.CloseAsync();
+    }
+
+    [Fact]
+    public async Task AdminCanUploadHistoricalImportWorkbook()
+    {
+        var adminPage = await _fixture.Browser.NewPageAsync();
+        var workbookPath = CreateHistoricalImportWorkbookFile();
+
+        try
+        {
+            await LoginAsync(adminPage, AdminEmail);
+            await adminPage.GotoAsync($"{_fixture.BaseUrl}/admin/importy", new PageGotoOptions
+            {
+                WaitUntil = WaitUntilState.NetworkIdle
+            });
+            await WaitForInteractiveReadyAsync(adminPage);
+
+            await adminPage.GetByTestId("historical-import-title").WaitForAsync(new LocatorWaitForOptions
+            {
+                Timeout = 5000
+            });
+
+            await FillAndCommitAsync(adminPage.GetByTestId("historical-import-label"), $"E2E historie {Guid.NewGuid():N}"[..18]);
+            await FillAndCommitAsync(adminPage.GetByTestId("historical-import-game-name"), $"Historie E2E {DateTime.UtcNow:HHmmss}");
+            await FillAndCommitAsync(adminPage.GetByTestId("historical-import-starts"), "2025-05-03T08:00");
+            await FillAndCommitAsync(adminPage.GetByTestId("historical-import-ends"), "2025-05-04T16:00");
+            await adminPage.GetByTestId("historical-import-file").SetInputFilesAsync(workbookPath);
+
+            await Task.WhenAll(
+                adminPage.WaitForURLAsync("**/admin/importy?status=imported&batchId=*", new PageWaitForURLOptions
+                {
+                    Timeout = 10000
+                }),
+                adminPage.GetByTestId("historical-import-submit").ClickAsync());
+
+            await WaitForInteractiveReadyAsync(adminPage);
+            await adminPage.GetByText("Historický import byl dokončen.").WaitForAsync(new LocatorWaitForOptions
+            {
+                Timeout = 5000
+            });
+
+            Assert.Equal("2", (await adminPage.GetByTestId("historical-import-total-rows").TextContentAsync())?.Trim());
+            Assert.Equal("0", (await adminPage.GetByTestId("historical-import-warning-count").TextContentAsync())?.Trim());
+
+            await AssertNoBlazorErrorsAsync(adminPage);
+        }
+        finally
+        {
+            await adminPage.CloseAsync();
+            if (File.Exists(workbookPath))
+            {
+                File.Delete(workbookPath);
+            }
+        }
     }
 
     [Fact]
@@ -509,6 +564,68 @@ public sealed class SmokeTests : IClassFixture<AppFixture>
     private static async Task FillAndCommitAsync(ILocator locator, string value)
     {
         await locator.FillAsync(value);
+    }
+
+    private static string CreateHistoricalImportWorkbookFile()
+    {
+        using var workbook = new XLWorkbook();
+        var sheet = workbook.AddWorksheet("Registrační formulář");
+        var headers = new[]
+        {
+            "Časová značka",
+            "Název skupiny",
+            "Jméno a Příjmení",
+            "Jméno hrané postavy.",
+            "Věk účastníka",
+            "Typ účastníka",
+            "Osobní quest",
+            "Představa osobního questu",
+            "Jídlo sobota",
+            "Jídlo neděle",
+            "Zákonný zástupce",
+            "Poznámka",
+            "Kontaktní email",
+            "Kontaktní telefon",
+            "Hráč",
+            "NPC",
+            "Příšera",
+            "Technická pomoc",
+            "Národ",
+            "Osobní quest vytvořený",
+            "Link na quest"
+        };
+
+        for (var index = 0; index < headers.Length; index++)
+        {
+            sheet.Cell(1, index + 1).Value = headers[index];
+        }
+
+        sheet.Cell(2, 1).Value = "2025-03-31 11:17:46";
+        sheet.Cell(2, 2).Value = "Kopečci";
+        sheet.Cell(2, 3).Value = "Tomáš Kopecký";
+        sheet.Cell(2, 4).Value = "Tomas";
+        sheet.Cell(2, 5).Value = "15";
+        sheet.Cell(2, 6).Value = "hrající samostatné dítě (cca 10+ , které chce naplno soutěžit s dalšími - PVP hráč)";
+        sheet.Cell(2, 11).Value = "Magda Kopecká";
+        sheet.Cell(2, 12).Value = "Nový Arnor";
+        sheet.Cell(2, 13).Value = "magda.kopecka@email.cz";
+        sheet.Cell(2, 14).Value = "603356214";
+        sheet.Cell(2, 15).Value = true;
+        sheet.Cell(2, 19).Value = "Nový Arnor";
+
+        sheet.Cell(3, 1).Value = "2025-03-31 11:02:44";
+        sheet.Cell(3, 2).Value = "Kopečci";
+        sheet.Cell(3, 3).Value = "Magda Kopecká";
+        sheet.Cell(3, 5).Value = "45";
+        sheet.Cell(3, 6).Value = "dospělý se zájmem hrát cizí postavu - příšeru (např. skřet, kostlivec, vlci.)";
+        sheet.Cell(3, 13).Value = "magda.kopecka@email.cz";
+        sheet.Cell(3, 14).Value = "603356214";
+        sheet.Cell(3, 17).Value = true;
+        sheet.Cell(3, 19).Value = "Příšera";
+
+        var path = Path.Combine(Path.GetTempPath(), $"historical-import-{Guid.NewGuid():N}.xlsx");
+        workbook.SaveAs(path);
+        return path;
     }
 
     private static async Task WaitForInteractiveReadyAsync(IPage page)
