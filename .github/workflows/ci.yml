@@ -202,9 +202,6 @@ jobs:
 
           az containerapp update -n "$AZURE_CONTAINER_APP_NAME" -g "$AZURE_RESOURCE_GROUP" \
             --set-env-vars "${env_args[@]}" \
-            --ingress external \
-            --target-port 8080 \
-            --min-replicas 1 \
             --output none
         env:
           AZURE_POSTGRES_CONNECTION_STRING: ${{ secrets.AZURE_POSTGRES_CONNECTION_STRING }}
