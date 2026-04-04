@@ -97,7 +97,30 @@ else
                                         <div class="card-body d-flex flex-column flex-lg-row justify-content-between gap-3">
                                             <div>
                                                 <h3 class="h5 mb-1">@attendee.FullName</h3>
-                                                <div class="small text-secondary">@GetAttendeeTypeLabel(attendee.AttendeeType) · ročník @attendee.BirthYear</div>
+                                                <div class="small text-secondary">
+                                                    @GetAttendeeTypeLabel(attendee.AttendeeType)
+                                                    @if (attendee.AttendeeType == AttendeeType.Player && attendee.PlayerSubType is { } pst)
+                                                    {
+                                                        <span> · @GetPlayerSubTypeLabel(pst)</span>
+                                                    }
+                                                    @if (attendee.AttendeeType == AttendeeType.Adult && attendee.AdultRoles != AdultRoleFlags.None)
+                                                    {
+                                                        <span> · @GetAdultRolesLabel(attendee.AdultRoles)</span>
+                                                    }
+                                                    · ročník @attendee.BirthYear
+                                                </div>
+                                                @if (!string.IsNullOrWhiteSpace(attendee.CharacterName))
+                                                {
+                                                    <div class="small">Postava: <strong>@attendee.CharacterName</strong></div>
+                                                }
+                                                @if (attendee.LodgingPreference is { } lp)
+                                                {
+                                                    <div class="small">Ubytování: @GetLodgingLabel(lp)</div>
+                                                }
+                                                @if (!string.IsNullOrWhiteSpace(attendee.AttendeeNote))
+                                                {
+                                                    <div class="small text-secondary fst-italic">@attendee.AttendeeNote</div>
+                                                }
                                                 @if (!string.IsNullOrWhiteSpace(attendee.PreferredKingdom))
                                                 {
                                                     <div class="small">Preferované království: <strong>@attendee.PreferredKingdom</strong></div>
@@ -115,45 +138,38 @@ else
                                                 }
                                             </div>
 
-                                            <form method="post"
-                                                  action="@($"/prihlasky/{SubmissionId}/ucastnici/{attendee.RegistrationId}/odebrat")"
-                                                  class="align-self-start">
-                                                <AntiforgeryToken />
-                                                <button type="submit" class="btn btn-outline-danger">
-                                                    Odebrat
-                                                </button>
-                                            </form>
+                                            <div class="d-flex gap-2 align-self-start">
+                                                <button type="button" class="btn btn-outline-secondary" @onclick="() => StartEditing(attendee)">Upravit</button>
+                                                <form method="post"
+                                                      action="@($"/prihlasky/{SubmissionId}/ucastnici/{attendee.RegistrationId}/odebrat")">
+                                                    <AntiforgeryToken />
+                                                    <button type="submit" class="btn btn-outline-danger">
+                                                        Odebrat
+                                                    </button>
+                                                </form>
+                                            </div>
                                         </div>
                                     </article>
                                 }
                             </div>
                         }
 
-                        <form method="post" action="@($"/prihlasky/{SubmissionId}/ucastnici")">
+                        <form method="post" action="@(editingRegistrationId is not null ? $"/prihlasky/{SubmissionId}/ucastnici/{editingRegistrationId}/upravit" : $"/prihlasky/{SubmissionId}/ucastnici")">
                             <AntiforgeryToken />
-                            <h3 class="h5 mb-3">Přidat účastníka</h3>
+                            <h3 class="h5 mb-3">@(editingRegistrationId is not null ? "Upravit účastníka" : "Přidat účastníka")</h3>
 
                             <div class="row g-3">
                                 <div class="col-md-6">
-                                    <label class="form-label" for="attendee-first-name">Jméno</label>
+                                    <label class="form-label required" for="attendee-first-name">Jméno</label>
                                     <input id="attendee-first-name" name="@nameof(AttendeeInput.FirstName)" value="@attendeeInput.FirstName" class="form-control" placeholder="např. Jan" data-testid="attendee-first-name" />
                                 </div>
                                 <div class="col-md-6">
-                                    <label class="form-label" for="attendee-last-name">Příjmení</label>
+                                    <label class="form-label required" for="attendee-last-name">Příjmení</label>
                                     <input id="attendee-last-name" name="@nameof(AttendeeInput.LastName)" value="@attendeeInput.LastName" class="form-control" placeholder="např. Novák" data-testid="attendee-last-name" />
                                 </div>
                                 <div class="col-md-4">
-                                    <label class="form-label" for="attendee-birth-year">Rok narození</label>
+                                    <label class="form-label required" for="attendee-birth-year">Rok narození</label>
                                     <input id="attendee-birth-year" name="@nameof(AttendeeInput.BirthYear)" type="number" value="@attendeeInput.BirthYear" class="form-control" placeholder="např. 2015" data-testid="attendee-birth-year" />
-                                </div>
-                                <div class="col-md-4">
-                                    <label class="form-label" for="attendee-role">Role</label>
-                                    <select id="attendee-role" name="@nameof(AttendeeInput.AttendeeType)" class="form-select" data-testid="attendee-role">
-                                        @foreach (var type in Enum.GetValues<AttendeeType>())
-                                        {
-                                            <option value="@type">@GetAttendeeTypeLabel(type)</option>
-                                        }
-                                    </select>
                                 </div>
                                 <div class="col-md-4">
                                     <label class="form-label" for="attendee-kingdom">Preferované království</label>
@@ -169,6 +185,75 @@ else
                                         <div class="form-text">Království ještě nejsou nastavená, preference doplníme později.</div>
                                     }
                                 </div>
+
+                                <div class="col-12">
+                                    <label class="form-label required">Typ účastníka</label>
+                                    <div class="d-flex gap-4 mb-2">
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="radio" name="AttendeeType" id="type-player" value="Player" checked="@(attendeeInput.AttendeeType == AttendeeType.Player)" data-testid="type-player" />
+                                            <label class="form-check-label" for="type-player">Hráč (dítě)</label>
+                                        </div>
+                                        <div class="form-check">
+                                            <input class="form-check-input" type="radio" name="AttendeeType" id="type-adult" value="Adult" checked="@(attendeeInput.AttendeeType == AttendeeType.Adult)" data-testid="type-adult" />
+                                            <label class="form-check-label" for="type-adult">Dospělý</label>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div class="col-12 @(attendeeInput.AttendeeType == AttendeeType.Adult ? "d-none" : "")" id="player-subtype-section">
+                                    <label class="form-label required">Kategorie hráče</label>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="radio" name="PlayerSubType" id="pst-pvp" value="Pvp" checked="@(attendeeInput.PlayerSubType == PlayerSubType.Pvp)" />
+                                        <label class="form-check-label" for="pst-pvp">hrající samostatné dítě (cca 10+, které chce naplno soutěžit s dalšími — PVP hráč)</label>
+                                    </div>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="radio" name="PlayerSubType" id="pst-independent" value="Independent" checked="@(attendeeInput.PlayerSubType == PlayerSubType.Independent)" />
+                                        <label class="form-check-label" for="pst-independent">hrající samostatné dítě (cca 8+)</label>
+                                    </div>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="radio" name="PlayerSubType" id="pst-ranger" value="WithRanger" checked="@(attendeeInput.PlayerSubType == PlayerSubType.WithRanger)" />
+                                        <label class="form-check-label" for="pst-ranger">hrající dítě ve skupince s hraničárem (cca 5–7)</label>
+                                    </div>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="radio" name="PlayerSubType" id="pst-parent" value="WithParent" checked="@(attendeeInput.PlayerSubType == PlayerSubType.WithParent)" />
+                                        <label class="form-check-label" for="pst-parent">hrající dítě v doprovodu rodiče (cca 4+)</label>
+                                    </div>
+                                </div>
+
+                                <div class="col-12 @(attendeeInput.AttendeeType == AttendeeType.Player ? "d-none" : "")" id="adult-roles-section">
+                                    <label class="form-label required">Role dospělého (lze vybrat více)</label>
+                                    <div class="form-check">
+                                        <input type="hidden" name="AdultRole_PlayMonster" value="false" />
+                                        <input class="form-check-input" type="checkbox" name="AdultRole_PlayMonster" value="true" id="ar-monster" checked="@attendeeInput.AdultRole_PlayMonster" />
+                                        <label class="form-check-label" for="ar-monster">se zájmem hrát cizí postavu — příšeru (např. skřet, kostlivec, vlci...)</label>
+                                    </div>
+                                    <div class="form-check">
+                                        <input type="hidden" name="AdultRole_OrganizationHelper" value="false" />
+                                        <input class="form-check-input" type="checkbox" name="AdultRole_OrganizationHelper" value="true" id="ar-org" checked="@attendeeInput.AdultRole_OrganizationHelper" />
+                                        <label class="form-check-label" for="ar-org">se zájmem pomoci organizaci (ve městech hráčů jako obchodník, či příručí)</label>
+                                    </div>
+                                    <div class="form-check">
+                                        <input type="hidden" name="AdultRole_TechSupport" value="false" />
+                                        <input class="form-check-input" type="checkbox" name="AdultRole_TechSupport" value="true" id="ar-tech" checked="@attendeeInput.AdultRole_TechSupport" />
+                                        <label class="form-check-label" for="ar-tech">se zájmem pomoci s technickou organizací (chystání svačiny, rozvoz jídla, spojka...)</label>
+                                    </div>
+                                    <div class="form-check">
+                                        <input type="hidden" name="AdultRole_RangerLeader" value="false" />
+                                        <input class="form-check-input" type="checkbox" name="AdultRole_RangerLeader" value="true" id="ar-ranger" checked="@attendeeInput.AdultRole_RangerLeader" />
+                                        <label class="form-check-label" for="ar-ranger">se zájmem vést skupinku menších dětí (hraničář)</label>
+                                    </div>
+                                    <div class="form-check">
+                                        <input type="hidden" name="AdultRole_Spectator" value="false" />
+                                        <input class="form-check-input" type="checkbox" name="AdultRole_Spectator" value="true" id="ar-spectator" checked="@attendeeInput.AdultRole_Spectator" />
+                                        <label class="form-check-label" for="ar-spectator">pouze přihlížející</label>
+                                    </div>
+                                </div>
+
+                                <div class="col-md-6">
+                                    <label class="form-label" for="attendee-character-name">Jméno postavy</label>
+                                    <input id="attendee-character-name" name="CharacterName" value="@attendeeInput.CharacterName" class="form-control" placeholder="např. Thorin Pavéza" />
+                                </div>
+
                                 <div class="col-md-6">
                                     <label class="form-label" for="attendee-email">E-mail účastníka (volitelné)</label>
                                     <input id="attendee-email" name="@nameof(AttendeeInput.ContactEmail)" value="@attendeeInput.ContactEmail" class="form-control" placeholder="např. jan@email.cz" />
@@ -176,6 +261,36 @@ else
                                 <div class="col-md-6">
                                     <label class="form-label" for="attendee-phone">Telefon účastníka (volitelné)</label>
                                     <input id="attendee-phone" name="@nameof(AttendeeInput.ContactPhone)" value="@attendeeInput.ContactPhone" class="form-control" placeholder="např. 721 123 456" />
+                                </div>
+
+                                <div class="col-12">
+                                    <label class="form-label" for="attendee-note">Poznámka pro organizátory</label>
+                                    <div class="form-text mb-1">
+                                        Zejména v jaké skupině a národu děti chtějí nebo naopak nechtějí být.
+                                        Napište i pokud je vám to jedno — velmi nám to usnadní třídění, aby byly národy vyrovnané.
+                                    </div>
+                                    <textarea id="attendee-note" name="AttendeeNote" class="form-control" rows="3"
+                                              placeholder="např. Chceme být s kamarády z oddílu ve stejném národě.">@attendeeInput.AttendeeNote</textarea>
+                                </div>
+
+                                <div class="col-12">
+                                    <label class="form-label">Ubytování</label>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="radio" name="LodgingPreference" id="lodge-indoor" value="Indoor" checked="@(attendeeInput.LodgingPreference == LodgingPreference.Indoor)" />
+                                        <label class="form-check-label" for="lodge-indoor">Chci spát uvnitř (budova)</label>
+                                    </div>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="radio" name="LodgingPreference" id="lodge-tent" value="OwnTent" checked="@(attendeeInput.LodgingPreference == LodgingPreference.OwnTent)" />
+                                        <label class="form-check-label" for="lodge-tent">Mám vlastní stan</label>
+                                    </div>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="radio" name="LodgingPreference" id="lodge-outdoor" value="CampOutdoor" checked="@(attendeeInput.LodgingPreference == LodgingPreference.CampOutdoor)" />
+                                        <label class="form-check-label" for="lodge-outdoor">Mohu spát venku / pod širákem</label>
+                                    </div>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="radio" name="LodgingPreference" id="lodge-none" value="NotStaying" checked="@(attendeeInput.LodgingPreference == LodgingPreference.NotStaying)" />
+                                        <label class="form-check-label" for="lodge-none">Neplánuji přenocovat</label>
+                                    </div>
                                 </div>
                             </div>
 
@@ -205,7 +320,15 @@ else
                                 </div>
                             </div>
 
-                            <button type="submit" class="btn btn-primary mt-4" data-testid="add-attendee-submit">Přidat účastníka</button>
+                            <div class="d-flex gap-2">
+                                <button type="submit" class="btn btn-primary mt-4" data-testid="add-attendee-submit">
+                                    @(editingRegistrationId is not null ? "Uložit změny" : "Přidat účastníka")
+                                </button>
+                                @if (editingRegistrationId is not null)
+                                {
+                                    <button type="button" class="btn btn-outline-secondary mt-4" @onclick="CancelEditing">Zrušit</button>
+                                }
+                            </div>
                         </form>
                     </div>
                 </section>
@@ -327,6 +450,15 @@ else
     </div>
 }
 
+<script>
+document.addEventListener('change', e => {
+    if (e.target.name !== 'AttendeeType') return;
+    const isPlayer = e.target.value === 'Player';
+    document.getElementById('player-subtype-section')?.classList.toggle('d-none', !isPlayer);
+    document.getElementById('adult-roles-section')?.classList.toggle('d-none', isPlayer);
+});
+</script>
+
 @code {
     [Parameter]
     public int SubmissionId { get; set; }
@@ -343,11 +475,15 @@ else
     [SupplyParameterFromQuery(Name = "submitted")]
     private int? submitted { get; set; }
 
+    [SupplyParameterFromQuery(Name = "attendeeUpdated")]
+    private int? attendeeUpdated { get; set; }
+
     [SupplyParameterFromQuery(Name = "error")]
     private string? queryError { get; set; }
 
     private ContactInput contactInput = new();
     private AttendeeInput attendeeInput = CreateDefaultAttendeeInput();
+    private int? editingRegistrationId;
     private string? errorMessage;
     private PaymentQrModel? paymentQr;
     private string? statusMessage;
@@ -375,6 +511,10 @@ else
         else if (attendeeRemoved == 1)
         {
             statusMessage = "Účastník byl odebraný.";
+        }
+        else if (attendeeUpdated == 1)
+        {
+            statusMessage = "Účastník byl upravený.";
         }
     }
 
@@ -426,11 +566,69 @@ else
         return await UserManager.GetUserAsync(authState.User);
     }
 
+    private void StartEditing(AttendeeViewModel attendee)
+    {
+        editingRegistrationId = attendee.RegistrationId;
+        attendeeInput = new AttendeeInput
+        {
+            FirstName = attendee.FirstName,
+            LastName = attendee.LastName,
+            BirthYear = attendee.BirthYear,
+            AttendeeType = attendee.AttendeeType,
+            PlayerSubType = attendee.PlayerSubType,
+            CharacterName = attendee.CharacterName,
+            LodgingPreference = attendee.LodgingPreference,
+            AttendeeNote = attendee.AttendeeNote,
+            ContactEmail = attendee.ContactEmail,
+            ContactPhone = attendee.ContactPhone,
+            AdultRole_PlayMonster = attendee.AdultRoles.HasFlag(AdultRoleFlags.PlayMonster),
+            AdultRole_OrganizationHelper = attendee.AdultRoles.HasFlag(AdultRoleFlags.OrganizationHelper),
+            AdultRole_TechSupport = attendee.AdultRoles.HasFlag(AdultRoleFlags.TechSupport),
+            AdultRole_RangerLeader = attendee.AdultRoles.HasFlag(AdultRoleFlags.RangerLeader),
+            AdultRole_Spectator = attendee.AdultRoles.HasFlag(AdultRoleFlags.Spectator),
+        };
+    }
+
+    private void CancelEditing()
+    {
+        editingRegistrationId = null;
+        attendeeInput = CreateDefaultAttendeeInput();
+    }
+
     private static string GetAttendeeTypeLabel(AttendeeType type) => type switch
     {
-        AttendeeType.Player => "Hráč (dítě)",
+        AttendeeType.Player => "Hráč",
         AttendeeType.Adult => "Dospělý",
         _ => type.ToString()
+    };
+
+    private static string GetPlayerSubTypeLabel(PlayerSubType pst) => pst switch
+    {
+        PlayerSubType.Pvp => "PVP hráč (10+)",
+        PlayerSubType.Independent => "Samostatný hráč (8+)",
+        PlayerSubType.WithRanger => "Ve skupince s hraničárem (5–7)",
+        PlayerSubType.WithParent => "S rodičem (4+)",
+        _ => pst.ToString()
+    };
+
+    private static string GetAdultRolesLabel(AdultRoleFlags roles)
+    {
+        var labels = new List<string>();
+        if (roles.HasFlag(AdultRoleFlags.PlayMonster)) labels.Add("příšera/NPC");
+        if (roles.HasFlag(AdultRoleFlags.OrganizationHelper)) labels.Add("organizace");
+        if (roles.HasFlag(AdultRoleFlags.TechSupport)) labels.Add("tech. podpora");
+        if (roles.HasFlag(AdultRoleFlags.RangerLeader)) labels.Add("hraničář");
+        if (roles.HasFlag(AdultRoleFlags.Spectator)) labels.Add("přihlížející");
+        return string.Join(", ", labels);
+    }
+
+    private static string GetLodgingLabel(LodgingPreference lp) => lp switch
+    {
+        LodgingPreference.Indoor => "Uvnitř",
+        LodgingPreference.OwnTent => "Vlastní stan",
+        LodgingPreference.CampOutdoor => "Venku / pod širákem",
+        LodgingPreference.NotStaying => "Bez přenocování",
+        _ => lp.ToString()
     };
 
     private static string GetSubmissionStatusLabel(SubmissionStatus status) => status switch

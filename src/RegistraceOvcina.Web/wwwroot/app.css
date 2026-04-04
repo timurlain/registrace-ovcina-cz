@@ -68,6 +68,11 @@ h1:focus {
     outline: none;
 }
 
+.form-label.required::after {
+    content: " *";
+    color: var(--color-accent);
+}
+
 .valid.modified:not([type=checkbox]) {
     outline: 1px solid #26b050;
 }

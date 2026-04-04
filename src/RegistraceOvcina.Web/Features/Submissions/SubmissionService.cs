@@ -247,7 +247,7 @@ public sealed class SubmissionService(
 #pragma warning restore CS0618
             AttendeeType = input.AttendeeType,
             PlayerSubType = input.AttendeeType == AttendeeType.Player ? input.PlayerSubType : null,
-            AdultRoles = input.AttendeeType == AttendeeType.Adult ? input.AdultRoles : AdultRoleFlags.None,
+            AdultRoles = input.AttendeeType == AttendeeType.Adult ? input.ComputedAdultRoles : AdultRoleFlags.None,
             CharacterName = string.IsNullOrWhiteSpace(input.CharacterName) ? null : input.CharacterName.Trim(),
             LodgingPreference = input.LodgingPreference,
             RegistrantNote = string.IsNullOrWhiteSpace(input.AttendeeNote) ? null : input.AttendeeNote.Trim(),
@@ -327,7 +327,7 @@ public sealed class SubmissionService(
 #pragma warning restore CS0618
         registration.AttendeeType = input.AttendeeType;
         registration.PlayerSubType = input.AttendeeType == AttendeeType.Player ? input.PlayerSubType : null;
-        registration.AdultRoles = input.AttendeeType == AttendeeType.Adult ? input.AdultRoles : AdultRoleFlags.None;
+        registration.AdultRoles = input.AttendeeType == AttendeeType.Adult ? input.ComputedAdultRoles : AdultRoleFlags.None;
         registration.PreferredKingdomId = input.AttendeeType == AttendeeType.Player ? input.PreferredKingdomId : null;
         registration.CharacterName = string.IsNullOrWhiteSpace(input.CharacterName) ? null : input.CharacterName.Trim();
         registration.LodgingPreference = input.LodgingPreference;
@@ -576,6 +576,21 @@ public sealed class AttendeeInput : IValidatableObject
 
     public bool GuardianAuthorizationConfirmed { get; set; }
 
+    // Individual bool properties for multi-checkbox AdultRoles binding
+    public bool AdultRole_PlayMonster { get; set; }
+    public bool AdultRole_OrganizationHelper { get; set; }
+    public bool AdultRole_TechSupport { get; set; }
+    public bool AdultRole_RangerLeader { get; set; }
+    public bool AdultRole_Spectator { get; set; }
+
+    // Computed from individual bools
+    public AdultRoleFlags ComputedAdultRoles =>
+        (AdultRole_PlayMonster ? AdultRoleFlags.PlayMonster : 0) |
+        (AdultRole_OrganizationHelper ? AdultRoleFlags.OrganizationHelper : 0) |
+        (AdultRole_TechSupport ? AdultRoleFlags.TechSupport : 0) |
+        (AdultRole_RangerLeader ? AdultRoleFlags.RangerLeader : 0) |
+        (AdultRole_Spectator ? AdultRoleFlags.Spectator : 0);
+
     public bool IsMinor => DateTime.UtcNow.Year - BirthYear < 18;
 
     public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
@@ -590,7 +605,7 @@ public sealed class AttendeeInput : IValidatableObject
             yield return new ValidationResult("Vyberte kategorii hráče.", [nameof(PlayerSubType)]);
         }
 
-        if (AttendeeType == AttendeeType.Adult && AdultRoles == AdultRoleFlags.None)
+        if (AttendeeType == AttendeeType.Adult && ComputedAdultRoles == AdultRoleFlags.None)
         {
             yield return new ValidationResult("Vyberte alespoň jednu roli dospělého.", [nameof(AdultRoles)]);
         }
