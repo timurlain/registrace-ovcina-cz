@@ -28,12 +28,59 @@ public enum PaymentMethod
     ManualAdjustment = 2
 }
 
+[Obsolete("Use AttendeeType + PlayerSubType + AdultRoleFlags instead")]
 public enum RegistrationRole
 {
     Player = 0,
     Npc = 1,
     Monster = 2,
     TechSupport = 3
+}
+
+public enum AttendeeType
+{
+    Player = 0,
+    Adult = 1
+}
+
+public enum PlayerSubType
+{
+    /// <summary>hrající samostatné dítě (cca 10+, PVP hráč)</summary>
+    Pvp = 0,
+    /// <summary>hrající samostatné dítě (cca 8+)</summary>
+    Independent = 1,
+    /// <summary>hrající dítě ve skupince s hraničárem (cca 5–7)</summary>
+    WithRanger = 2,
+    /// <summary>hrající dítě v doprovodu rodiče (cca 4+)</summary>
+    WithParent = 3
+}
+
+[Flags]
+public enum AdultRoleFlags
+{
+    None = 0,
+    /// <summary>hrát cizí postavu / příšeru (skřet, kostlivec, vlci…)</summary>
+    PlayMonster = 1,
+    /// <summary>pomoci organizaci (obchodník, příručí ve městech)</summary>
+    OrganizationHelper = 2,
+    /// <summary>technická organizace (svačiny, rozvoz jídla, spojka)</summary>
+    TechSupport = 4,
+    /// <summary>vést skupinku menších dětí (hraničář)</summary>
+    RangerLeader = 8,
+    /// <summary>pouze přihlížející</summary>
+    Spectator = 16
+}
+
+public enum LodgingPreference
+{
+    /// <summary>Chci spát uvnitř (budova)</summary>
+    Indoor = 0,
+    /// <summary>Mám vlastní stan</summary>
+    OwnTent = 1,
+    /// <summary>Mohu spát venku / pod širákem</summary>
+    CampOutdoor = 2,
+    /// <summary>Neplánuji přenocovat</summary>
+    NotStaying = 3
 }
 
 public enum RegistrationStatus
@@ -143,6 +190,11 @@ public sealed class Registration
     public int SubmissionId { get; set; }
     public int PersonId { get; set; }
     public RegistrationRole Role { get; set; }
+    public AttendeeType AttendeeType { get; set; }
+    public PlayerSubType? PlayerSubType { get; set; }
+    public AdultRoleFlags AdultRoles { get; set; }
+    public string? CharacterName { get; set; }
+    public LodgingPreference? LodgingPreference { get; set; }
     public RegistrationStatus Status { get; set; } = RegistrationStatus.Active;
     public int? PreferredKingdomId { get; set; }
     public string? ContactEmail { get; set; }

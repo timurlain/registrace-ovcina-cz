@@ -134,6 +134,27 @@ public sealed class SubmissionService(
             .Select(x => new LookupItem(x.Id, x.DisplayName))
             .ToListAsync(cancellationToken);
 
+        var mealOptions = await db.MealOptions
+            .AsNoTracking()
+            .Where(x => x.GameId == submission.GameId && x.IsActive)
+            .OrderBy(x => x.Id)
+            .ToListAsync(cancellationToken);
+
+        var gameDays = new List<DateTime>();
+        var current = submission.Game.StartsAtUtc.Date;
+        var end = submission.Game.EndsAtUtc.Date;
+        while (current <= end)
+        {
+            gameDays.Add(current);
+            current = current.AddDays(1);
+        }
+
+        var existingFoodOrders = await db.FoodOrders
+            .AsNoTracking()
+            .Where(x => x.Registration.SubmissionId == submission.Id)
+            .Select(x => new FoodOrderViewModel(x.RegistrationId, x.MealOptionId, x.MealDayUtc))
+            .ToListAsync(cancellationToken);
+
         return new SubmissionEditorViewModel
         {
             Id = submission.Id,
@@ -162,14 +183,28 @@ public sealed class SubmissionService(
                 .OrderBy(x => x.CreatedAtUtc)
                 .Select(x => new AttendeeViewModel(
                     x.Id,
+                    x.Person.FirstName,
+                    x.Person.LastName,
                     $"{x.Person.FirstName} {x.Person.LastName}",
                     x.Person.BirthYear,
-                    x.Role,
+                    x.AttendeeType,
+                    x.PlayerSubType,
+                    x.AdultRoles,
                     x.PreferredKingdom?.DisplayName,
+                    x.PreferredKingdomId,
+                    x.CharacterName,
+                    x.LodgingPreference,
+                    x.RegistrantNote,
                     x.GuardianAuthorizationConfirmed,
                     x.ContactEmail,
                     x.ContactPhone))
-                .ToList()
+                .ToList(),
+            MealDays = gameDays.Select(day => new MealDayViewModel(
+                day,
+                day.ToString("dddd d. M.", new System.Globalization.CultureInfo("cs-CZ")),
+                mealOptions.Select(mo => new MealOptionViewModel(mo.Id, mo.Name, mo.Price)).ToList()
+            )).ToList(),
+            ExistingFoodOrders = existingFoodOrders,
         };
     }
 
@@ -235,9 +270,17 @@ public sealed class SubmissionService(
         {
             Person = person,
             SubmissionId = submission.Id,
-            Role = input.Role,
+#pragma warning disable CS0618 // Keep old Role populated for backward compat
+            Role = input.AttendeeType == AttendeeType.Player ? RegistrationRole.Player : RegistrationRole.Npc,
+#pragma warning restore CS0618
+            AttendeeType = input.AttendeeType,
+            PlayerSubType = input.AttendeeType == AttendeeType.Player ? input.PlayerSubType : null,
+            AdultRoles = input.AttendeeType == AttendeeType.Adult ? input.ComputedAdultRoles : AdultRoleFlags.None,
+            CharacterName = string.IsNullOrWhiteSpace(input.CharacterName) ? null : input.CharacterName.Trim(),
+            LodgingPreference = input.LodgingPreference,
+            RegistrantNote = string.IsNullOrWhiteSpace(input.AttendeeNote) ? null : input.AttendeeNote.Trim(),
             Status = RegistrationStatus.Active,
-            PreferredKingdomId = input.Role == RegistrationRole.Player ? input.PreferredKingdomId : null,
+            PreferredKingdomId = input.AttendeeType == AttendeeType.Player ? input.PreferredKingdomId : null,
             ContactEmail = string.IsNullOrWhiteSpace(input.ContactEmail) ? null : input.ContactEmail.Trim(),
             ContactPhone = string.IsNullOrWhiteSpace(input.ContactPhone) ? null : input.ContactPhone.Trim(),
             GuardianName = string.IsNullOrWhiteSpace(input.GuardianName) ? null : input.GuardianName.Trim(),
@@ -263,7 +306,82 @@ public sealed class SubmissionService(
                 registration.SubmissionId,
                 person.FirstName,
                 person.LastName,
-                registration.Role
+                registration.AttendeeType
+            })
+        });
+
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task UpdateAttendeeAsync(
+        int submissionId,
+        int registrationId,
+        string userId,
+        AttendeeInput input,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(input);
+
+        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+        var submission = await LoadOwnedSubmissionAsync(db, submissionId, userId, cancellationToken);
+        EnsureDraft(submission);
+
+        var registration = await db.Registrations
+            .Include(x => x.Person)
+            .FirstOrDefaultAsync(x => x.Id == registrationId && x.SubmissionId == submissionId, cancellationToken)
+            ?? throw new ValidationException("Účastník nebyl nalezen.");
+
+        if (pricingService.RequiresGuardianData(input.BirthYear))
+        {
+            if (string.IsNullOrWhiteSpace(input.GuardianName) || string.IsNullOrWhiteSpace(input.GuardianRelationship) || !input.GuardianAuthorizationConfirmed)
+            {
+                throw new ValidationException("Nezletilý účastník musí mít vyplněného zákonného zástupce a potvrzení souhlasu.");
+            }
+        }
+
+        var nowUtc = timeProvider.GetUtcNow().UtcDateTime;
+
+        // Update Person
+        registration.Person.FirstName = input.FirstName.Trim();
+        registration.Person.LastName = input.LastName.Trim();
+        registration.Person.BirthYear = input.BirthYear;
+        registration.Person.Email = string.IsNullOrWhiteSpace(input.ContactEmail) ? null : input.ContactEmail.Trim();
+        registration.Person.Phone = string.IsNullOrWhiteSpace(input.ContactPhone) ? null : input.ContactPhone.Trim();
+        registration.Person.UpdatedAtUtc = nowUtc;
+
+        // Update Registration
+#pragma warning disable CS0618 // Keep old Role populated for backward compat
+        registration.Role = input.AttendeeType == AttendeeType.Player ? RegistrationRole.Player : RegistrationRole.Npc;
+#pragma warning restore CS0618
+        registration.AttendeeType = input.AttendeeType;
+        registration.PlayerSubType = input.AttendeeType == AttendeeType.Player ? input.PlayerSubType : null;
+        registration.AdultRoles = input.AttendeeType == AttendeeType.Adult ? input.ComputedAdultRoles : AdultRoleFlags.None;
+        registration.PreferredKingdomId = input.AttendeeType == AttendeeType.Player ? input.PreferredKingdomId : null;
+        registration.CharacterName = string.IsNullOrWhiteSpace(input.CharacterName) ? null : input.CharacterName.Trim();
+        registration.LodgingPreference = input.LodgingPreference;
+        registration.RegistrantNote = string.IsNullOrWhiteSpace(input.AttendeeNote) ? null : input.AttendeeNote.Trim();
+        registration.ContactEmail = string.IsNullOrWhiteSpace(input.ContactEmail) ? null : input.ContactEmail.Trim();
+        registration.ContactPhone = string.IsNullOrWhiteSpace(input.ContactPhone) ? null : input.ContactPhone.Trim();
+        registration.GuardianName = string.IsNullOrWhiteSpace(input.GuardianName) ? null : input.GuardianName.Trim();
+        registration.GuardianRelationship = string.IsNullOrWhiteSpace(input.GuardianRelationship) ? null : input.GuardianRelationship.Trim();
+        registration.GuardianAuthorizationConfirmed = input.GuardianAuthorizationConfirmed;
+        registration.UpdatedAtUtc = nowUtc;
+
+        submission.LastEditedAtUtc = nowUtc;
+
+        db.AuditLogs.Add(new AuditLog
+        {
+            EntityType = nameof(Registration),
+            EntityId = registration.Id.ToString(),
+            Action = "AttendeeUpdated",
+            ActorUserId = userId,
+            CreatedAtUtc = nowUtc,
+            DetailsJson = JsonSerializer.Serialize(new
+            {
+                registration.SubmissionId,
+                registration.Person.FirstName,
+                registration.Person.LastName,
+                registration.AttendeeType
             })
         });
 
@@ -294,6 +412,49 @@ public sealed class SubmissionService(
         if (!hasOtherRegistrations && registration.Person is not null)
         {
             db.People.Remove(registration.Person);
+        }
+
+        submission.LastEditedAtUtc = timeProvider.GetUtcNow().UtcDateTime;
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task SaveFoodOrdersAsync(
+        int submissionId,
+        string userId,
+        List<FoodOrderInput> orders,
+        CancellationToken cancellationToken = default)
+    {
+        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+        var submission = await db.RegistrationSubmissions
+            .Include(x => x.Registrations).ThenInclude(x => x.FoodOrders)
+            .Include(x => x.Game).ThenInclude(x => x.MealOptions)
+            .FirstOrDefaultAsync(x => x.Id == submissionId && x.RegistrantUserId == userId, cancellationToken)
+            ?? throw new ValidationException("Přihláška nebyla nalezena.");
+
+        EnsureDraft(submission);
+
+        var validRegistrationIds = submission.Registrations.Select(x => x.Id).ToHashSet();
+        var validMealOptionIds = submission.Game.MealOptions.Where(x => x.IsActive).ToDictionary(x => x.Id);
+
+        // Remove existing food orders for this submission
+        foreach (var reg in submission.Registrations)
+        {
+            db.FoodOrders.RemoveRange(reg.FoodOrders);
+        }
+
+        // Add new ones
+        foreach (var order in orders)
+        {
+            if (!validRegistrationIds.Contains(order.RegistrationId)) continue;
+            if (!validMealOptionIds.TryGetValue(order.MealOptionId, out var mealOption)) continue;
+
+            db.FoodOrders.Add(new FoodOrder
+            {
+                RegistrationId = order.RegistrationId,
+                MealOptionId = order.MealOptionId,
+                MealDayUtc = order.MealDayUtc,
+                Price = mealOption.Price
+            });
         }
 
         submission.LastEditedAtUtc = timeProvider.GetUtcNow().UtcDateTime;
@@ -388,10 +549,18 @@ public sealed record SubmissionSummary(
 
 public sealed record AttendeeViewModel(
     int RegistrationId,
+    string FirstName,
+    string LastName,
     string FullName,
     int BirthYear,
-    RegistrationRole Role,
+    AttendeeType AttendeeType,
+    PlayerSubType? PlayerSubType,
+    AdultRoleFlags AdultRoles,
     string? PreferredKingdom,
+    int? PreferredKingdomId,
+    string? CharacterName,
+    LodgingPreference? LodgingPreference,
+    string? AttendeeNote,
     bool GuardianAuthorizationConfirmed,
     string? ContactEmail,
     string? ContactPhone);
@@ -419,6 +588,8 @@ public sealed class SubmissionEditorViewModel
     public BalanceStatus BalanceStatus { get; init; }
     public IReadOnlyList<LookupItem> AvailableKingdoms { get; init; } = [];
     public IReadOnlyList<AttendeeViewModel> Attendees { get; init; } = [];
+    public IReadOnlyList<MealDayViewModel> MealDays { get; init; } = [];
+    public IReadOnlyList<FoodOrderViewModel> ExistingFoodOrders { get; init; } = [];
 }
 
 public sealed class ContactInput
@@ -452,7 +623,17 @@ public sealed class AttendeeInput : IValidatableObject
     [Range(1900, 2100, ErrorMessage = "Rok narození není platný.")]
     public int BirthYear { get; set; }
 
-    public RegistrationRole Role { get; set; } = RegistrationRole.Player;
+    public AttendeeType AttendeeType { get; set; } = AttendeeType.Player;
+    public PlayerSubType? PlayerSubType { get; set; }
+    public AdultRoleFlags AdultRoles { get; set; }
+
+    [StringLength(200)]
+    public string? CharacterName { get; set; }
+
+    public LodgingPreference? LodgingPreference { get; set; }
+
+    [StringLength(4000)]
+    public string? AttendeeNote { get; set; }
 
     public int? PreferredKingdomId { get; set; }
 
@@ -469,6 +650,21 @@ public sealed class AttendeeInput : IValidatableObject
 
     public bool GuardianAuthorizationConfirmed { get; set; }
 
+    // Individual bool properties for multi-checkbox AdultRoles binding
+    public bool AdultRole_PlayMonster { get; set; }
+    public bool AdultRole_OrganizationHelper { get; set; }
+    public bool AdultRole_TechSupport { get; set; }
+    public bool AdultRole_RangerLeader { get; set; }
+    public bool AdultRole_Spectator { get; set; }
+
+    // Computed from individual bools
+    public AdultRoleFlags ComputedAdultRoles =>
+        (AdultRole_PlayMonster ? AdultRoleFlags.PlayMonster : 0) |
+        (AdultRole_OrganizationHelper ? AdultRoleFlags.OrganizationHelper : 0) |
+        (AdultRole_TechSupport ? AdultRoleFlags.TechSupport : 0) |
+        (AdultRole_RangerLeader ? AdultRoleFlags.RangerLeader : 0) |
+        (AdultRole_Spectator ? AdultRoleFlags.Spectator : 0);
+
     public bool IsMinor => DateTime.UtcNow.Year - BirthYear < 18;
 
     public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
@@ -476,6 +672,16 @@ public sealed class AttendeeInput : IValidatableObject
         if (BirthYear > DateTime.UtcNow.Year + 1)
         {
             yield return new ValidationResult("Rok narození nemůže být v budoucnu.", [nameof(BirthYear)]);
+        }
+
+        if (AttendeeType == AttendeeType.Player && PlayerSubType is null)
+        {
+            yield return new ValidationResult("Vyberte kategorii hráče.", [nameof(PlayerSubType)]);
+        }
+
+        if (AttendeeType == AttendeeType.Adult && ComputedAdultRoles == AdultRoleFlags.None)
+        {
+            yield return new ValidationResult("Vyberte alespoň jednu roli dospělého.", [nameof(AdultRoles)]);
         }
 
         if (IsMinor)
@@ -502,3 +708,14 @@ public sealed class AttendeeInput : IValidatableObject
         }
     }
 }
+
+public sealed record MealDayViewModel(
+    DateTime DayUtc,
+    string DayLabel,
+    IReadOnlyList<MealOptionViewModel> Options);
+
+public sealed record MealOptionViewModel(int Id, string Name, decimal Price);
+
+public sealed record FoodOrderViewModel(int RegistrationId, int MealOptionId, DateTime MealDayUtc);
+
+public sealed record FoodOrderInput(int RegistrationId, int MealOptionId, DateTime MealDayUtc);
