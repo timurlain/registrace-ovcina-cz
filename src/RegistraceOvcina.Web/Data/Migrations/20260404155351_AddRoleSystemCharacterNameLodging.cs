@@ -44,12 +44,13 @@ namespace RegistraceOvcina.Web.Data.Migrations
                 nullable: true);
 
             // Migrate old Role values to new AttendeeType + AdultRoles
+            // Role is stored as varchar (EF string conversion), not integer
             migrationBuilder.Sql("""
-                UPDATE "Registrations" SET "AttendeeType" = 0 WHERE "Role" = 0;
-                UPDATE "Registrations" SET "AttendeeType" = 1 WHERE "Role" IN (1, 2, 3);
-                UPDATE "Registrations" SET "AdultRoles" = 1 WHERE "Role" = 2;
-                UPDATE "Registrations" SET "AdultRoles" = 2 WHERE "Role" = 1;
-                UPDATE "Registrations" SET "AdultRoles" = 4 WHERE "Role" = 3;
+                UPDATE "Registrations" SET "AttendeeType" = 0 WHERE "Role" = 'Player';
+                UPDATE "Registrations" SET "AttendeeType" = 1 WHERE "Role" IN ('Npc', 'Monster', 'TechSupport');
+                UPDATE "Registrations" SET "AdultRoles" = 1 WHERE "Role" = 'Monster';
+                UPDATE "Registrations" SET "AdultRoles" = 2 WHERE "Role" = 'Npc';
+                UPDATE "Registrations" SET "AdultRoles" = 4 WHERE "Role" = 'TechSupport';
                 """);
         }
 

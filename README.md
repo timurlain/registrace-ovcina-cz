@@ -55,6 +55,14 @@ Recommended:
 
 That script ensures the Docker database is available and starts the app with the local development connection string.
 
+Windows batch alternative that builds the solution, starts the app, and opens Chrome:
+
+```bat
+run-app.bat
+```
+
+That launcher also stops the currently running local app instance first, so it can rebuild and restart cleanly.
+
 Manual alternative:
 
 ```powershell

@@ -1,71 +1,322 @@
+/* ============================================================
+   Ovčina — Registration App Theme
+   Warm parchment / fantasy aesthetic for a 30-year LARP tradition
+   ============================================================ */
+
+/* --- Custom Properties --- */
+
+:root {
+  /* Core palette */
+  --color-text-primary: #2C1810;
+  --color-text-secondary: #8B4513;
+  --color-accent: #B22222;
+  --color-border: #D4C4B0;
+  --color-surface: #FFF8F0;
+  --color-surface-alt: #F5EDE3;
+  --color-header: #3C2415;
+  --color-header-text: #FFF8F0;
+  --color-card-border: #B26223;
+
+  /* Kingdom colors */
+  --color-kingdom-elves: #2E7D32;
+  --color-kingdom-dwarves: #C62828;
+  --color-kingdom-lake: #1565C0;
+  --color-kingdom-arnor: #F9A825;
+
+  /* Status colors */
+  --color-status-draft: #8B4513;
+  --color-status-submitted: #1565C0;
+  --color-status-paid: #2E7D32;
+  --color-status-cancelled: #9E9E9E;
+
+  /* Functional */
+  --color-success: #2E7D32;
+  --color-warning: #F9A825;
+  --color-error: #C62828;
+  --color-info: #1565C0;
+
+  /* Typography */
+  --font-heading: 'Merriweather', 'Georgia', serif;
+  --font-body: 'Inter', 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono', 'Consolas', monospace;
+
+  /* Spacing & radius */
+  --radius-card: 8px;
+  --radius-button: 6px;
+  --shadow-card: 0 2px 8px rgba(44, 24, 16, 0.12);
+  --shadow-elevated: 0 4px 16px rgba(44, 24, 16, 0.18);
+}
+
+
+/* --- Base & Typography --- */
+
 html,
 body {
-    background: #f5f7fb;
-    color: #13233b;
-    min-height: 100%;
+  background: var(--color-surface-alt);
+  color: var(--color-text-primary);
+  min-height: 100%;
 }
 
 body {
-    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+  font-family: var(--font-body);
+  font-size: 1rem;
+  line-height: 1.6;
 }
 
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-heading);
+  font-weight: 700;
+  color: var(--color-text-primary);
+  line-height: 1.3;
+}
+
+h1 { font-size: 2rem; }
+h2 { font-size: 1.625rem; }
+h3 { font-size: 1.325rem; }
+
+h1:focus { outline: none; }
+
 a {
-    color: #1955d6;
-    text-decoration: none;
+  color: var(--color-accent);
+  text-decoration: none;
+  transition: color 0.15s ease;
 }
 
 a:hover {
-    text-decoration: underline;
+  color: #8B1A1A;
+  text-decoration: underline;
 }
 
-.brand-link {
-    color: #13233b;
-    font-size: 1.25rem;
-    font-weight: 700;
-    text-decoration: none;
+code, pre, .font-mono {
+  font-family: var(--font-mono);
 }
+
+
+/* --- Brand & Navigation --- */
+
+.brand-link {
+  color: var(--color-header-text);
+  font-family: var(--font-heading);
+  font-size: 1.4rem;
+  font-weight: 900;
+  text-decoration: none;
+  letter-spacing: 0.02em;
+}
+
+.brand-link:hover {
+  color: var(--color-header-text);
+  text-decoration: none;
+  opacity: 0.9;
+}
+
+.app-header {
+  background: var(--color-header) !important;
+  border-bottom: 3px solid var(--color-card-border) !important;
+}
+
+.app-header .text-secondary {
+  color: #C4A882 !important;
+  font-size: 0.85rem;
+}
+
+.app-header .nav-link {
+  color: var(--color-header-text) !important;
+  font-weight: 500;
+  font-size: 0.95rem;
+  padding: 0.25rem 0.5rem !important;
+  border-radius: var(--radius-button);
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.app-header .nav-link:hover {
+  background: rgba(255, 248, 240, 0.12);
+  text-decoration: none;
+}
+
+.app-header .btn-outline-secondary,
+.app-header .btn-outline-primary {
+  color: var(--color-header-text);
+  border-color: #C4A882;
+  background: transparent;
+  font-size: 0.85rem;
+}
+
+.app-header .btn-outline-secondary:hover,
+.app-header .btn-outline-primary:hover {
+  background: rgba(255, 248, 240, 0.15);
+  color: var(--color-header-text);
+  border-color: var(--color-header-text);
+}
+
+.app-header .btn-primary {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: #fff;
+  font-size: 0.85rem;
+}
+
+.app-header .btn-primary:hover {
+  background: #8B1A1A;
+  border-color: #8B1A1A;
+}
+
+.app-header .small {
+  color: #C4A882 !important;
+}
+
+
+/* --- Parchment Cards & Panels --- */
 
 .hero-card,
 .info-panel,
 .empty-state,
 .qr-wrapper {
-    border-radius: 1rem;
+  border-radius: var(--radius-card);
 }
 
 .hero-card {
-    background: linear-gradient(135deg, #ffffff, #eef4ff);
-    border: 1px solid #d8e4ff;
-    padding: 2rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-card-border);
+  border-left: 4px solid var(--color-card-border);
+  padding: 2rem;
+  box-shadow: var(--shadow-card);
 }
 
 .info-panel {
-    background: rgba(25, 85, 214, 0.08);
-    border: 1px solid rgba(25, 85, 214, 0.15);
-    padding: 1.25rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-left: 4px solid var(--color-text-secondary);
+  padding: 1.25rem;
+  box-shadow: var(--shadow-card);
 }
 
 .empty-state {
-    background: #ffffff;
-    border: 1px dashed #bfd0ea;
-    color: #49627f;
-    padding: 1rem 1.25rem;
+  background: var(--color-surface);
+  border: 2px dashed var(--color-border);
+  color: var(--color-text-secondary);
+  padding: 2rem 1.5rem;
+  text-align: center;
 }
 
 .qr-wrapper {
-    background: #fff;
-    border: 1px solid #dbe5f2;
-    display: flex;
-    justify-content: center;
-    padding: 1rem;
+  background: #fff;
+  border: 2px solid var(--color-border);
+  display: flex;
+  justify-content: center;
+  padding: 1.5rem;
+  box-shadow: var(--shadow-card);
 }
 
 .qr-wrapper svg {
-    height: auto;
-    max-width: 100%;
+  height: auto;
+  max-width: 100%;
 }
 
-h1:focus {
-    outline: none;
+/* Generic parchment card — use for any content box */
+.card-parchment {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+  padding: 1.5rem;
+}
+
+.card-parchment-accent {
+  background: var(--color-surface);
+  border: 1px solid var(--color-card-border);
+  border-top: 3px solid var(--color-card-border);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+  padding: 1.5rem;
+}
+
+
+/* --- Buttons --- */
+
+.btn-primary,
+.btn-accent {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: #fff;
+  font-weight: 600;
+  border-radius: var(--radius-button);
+  padding: 0.5rem 1.25rem;
+  transition: background 0.2s ease, box-shadow 0.2s ease;
+}
+
+.btn-primary:hover,
+.btn-accent:hover {
+  background: #8B1A1A;
+  border-color: #8B1A1A;
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(178, 34, 34, 0.25);
+}
+
+.btn-primary:focus-visible,
+.btn-accent:focus-visible {
+  box-shadow: 0 0 0 3px rgba(178, 34, 34, 0.35);
+}
+
+.btn-outline-primary {
+  color: var(--color-accent);
+  border-color: var(--color-accent);
+  border-radius: var(--radius-button);
+  font-weight: 600;
+}
+
+.btn-outline-primary:hover {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: #fff;
+}
+
+.btn-warm {
+  background: var(--color-card-border);
+  border-color: var(--color-card-border);
+  color: #fff;
+  font-weight: 600;
+  border-radius: var(--radius-button);
+}
+
+.btn-warm:hover {
+  background: #8B4513;
+  border-color: #8B4513;
+  color: #fff;
+}
+
+
+/* --- Forms --- */
+
+.form-control,
+.form-select {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  color: var(--color-text-primary);
+  border-radius: var(--radius-button);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.form-control:focus,
+.form-select:focus {
+  background: #fff;
+  border-color: var(--color-card-border);
+  box-shadow: 0 0 0 3px rgba(178, 98, 35, 0.15);
+}
+
+.form-control::placeholder {
+  color: #B8A692;
+}
+
+.form-label {
+  color: var(--color-text-secondary);
+  font-weight: 600;
+  font-size: 0.9rem;
+  margin-bottom: 0.35rem;
+}
+
+.form-check-input:checked {
+  background-color: var(--color-accent);
+  border-color: var(--color-accent);
 }
 
 .form-label.required::after {
@@ -74,43 +325,425 @@ h1:focus {
 }
 
 .valid.modified:not([type=checkbox]) {
-    outline: 1px solid #26b050;
+  outline: 1px solid var(--color-success);
 }
 
 .invalid {
-    outline: 1px solid #e50000;
+  outline: 1px solid var(--color-error);
 }
 
 .validation-message {
-    color: #e50000;
+  color: var(--color-error);
+  font-size: 0.85rem;
+  margin-top: 0.25rem;
 }
 
+
+/* --- Tables --- */
+
+.table-warm {
+  --bs-table-bg: var(--color-surface);
+  --bs-table-striped-bg: var(--color-surface-alt);
+  --bs-table-hover-bg: #EDE4D8;
+  --bs-table-border-color: var(--color-border);
+  font-size: 0.95rem;
+}
+
+.table-warm thead th {
+  background: var(--color-header);
+  color: var(--color-header-text);
+  font-family: var(--font-heading);
+  font-weight: 700;
+  font-size: 0.85rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0.75rem;
+  border-bottom: 2px solid var(--color-card-border);
+}
+
+.table-warm tbody td {
+  padding: 0.65rem 0.75rem;
+  vertical-align: middle;
+}
+
+.table-warm tbody tr {
+  transition: background 0.1s ease;
+}
+
+.table-warm .accent-number {
+  color: var(--color-accent);
+  font-family: var(--font-heading);
+  font-weight: 700;
+  font-size: 1.1em;
+}
+
+
+/* --- Kingdom Colors --- */
+
+.kingdom-elves     { color: var(--color-kingdom-elves); }
+.kingdom-dwarves   { color: var(--color-kingdom-dwarves); }
+.kingdom-lake      { color: var(--color-kingdom-lake); }
+.kingdom-arnor     { color: var(--color-kingdom-arnor); }
+
+.kingdom-badge {
+  display: inline-block;
+  padding: 0.2rem 0.6rem;
+  border-radius: 4px;
+  font-weight: 600;
+  font-size: 0.8rem;
+  color: #fff;
+}
+
+.kingdom-badge-elves   { background: var(--color-kingdom-elves); }
+.kingdom-badge-dwarves { background: var(--color-kingdom-dwarves); }
+.kingdom-badge-lake    { background: var(--color-kingdom-lake); }
+.kingdom-badge-arnor   { background: var(--color-kingdom-arnor); }
+
+/* Kingdom column headers (for assignment board) */
+.kingdom-col-header {
+  padding: 0.75rem 1rem;
+  color: #fff;
+  font-family: var(--font-heading);
+  font-weight: 700;
+  border-radius: var(--radius-card) var(--radius-card) 0 0;
+}
+
+.kingdom-col-header-elves   { background: var(--color-kingdom-elves); }
+.kingdom-col-header-dwarves { background: var(--color-kingdom-dwarves); }
+.kingdom-col-header-lake    { background: var(--color-kingdom-lake); }
+.kingdom-col-header-arnor   { background: var(--color-kingdom-arnor); }
+
+
+/* --- Status Badges --- */
+
+.status-badge {
+  display: inline-block;
+  padding: 0.2rem 0.65rem;
+  border-radius: 12px;
+  font-weight: 600;
+  font-size: 0.8rem;
+  color: #fff;
+}
+
+.status-draft      { background: var(--color-status-draft); }
+.status-submitted  { background: var(--color-status-submitted); }
+.status-paid       { background: var(--color-status-paid); }
+.status-cancelled  { background: var(--color-status-cancelled); }
+
+
+/* --- Wizard / Stepper (Registration Flow) --- */
+
+.wizard-steps {
+  display: flex;
+  gap: 0;
+  margin-bottom: 2rem;
+  padding: 0;
+  list-style: none;
+  counter-reset: step;
+}
+
+.wizard-step {
+  flex: 1;
+  text-align: center;
+  position: relative;
+  counter-increment: step;
+  padding: 0.75rem 0.5rem 0.5rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  border-bottom: 3px solid var(--color-border);
+  transition: color 0.2s, border-color 0.2s;
+}
+
+.wizard-step::before {
+  content: counter(step);
+  display: block;
+  width: 2rem;
+  height: 2rem;
+  line-height: 2rem;
+  margin: 0 auto 0.35rem;
+  border-radius: 50%;
+  background: var(--color-surface);
+  border: 2px solid var(--color-border);
+  color: var(--color-text-secondary);
+  font-family: var(--font-heading);
+  font-weight: 700;
+  font-size: 0.9rem;
+  transition: background 0.2s, border-color 0.2s, color 0.2s;
+}
+
+.wizard-step.active {
+  color: var(--color-accent);
+  border-bottom-color: var(--color-accent);
+}
+
+.wizard-step.active::before {
+  background: var(--color-accent);
+  border-color: var(--color-accent);
+  color: #fff;
+}
+
+.wizard-step.completed {
+  color: var(--color-success);
+  border-bottom-color: var(--color-success);
+}
+
+.wizard-step.completed::before {
+  background: var(--color-success);
+  border-color: var(--color-success);
+  color: #fff;
+  content: "\2713";
+}
+
+
+/* --- Auth Pages (Login/Register) --- */
+
+.auth-container {
+  min-height: 80vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem 1rem;
+}
+
+.auth-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-top: 4px solid var(--color-card-border);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-elevated);
+  padding: 2.5rem 2rem;
+  max-width: 420px;
+  width: 100%;
+}
+
+.auth-card h1,
+.auth-card h2 {
+  font-family: var(--font-heading);
+  color: var(--color-text-primary);
+  text-align: center;
+  margin-bottom: 1.5rem;
+}
+
+.auth-divider {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin: 1.5rem 0;
+  color: var(--color-text-secondary);
+  font-size: 0.85rem;
+}
+
+.auth-divider::before,
+.auth-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--color-border);
+}
+
+/* OAuth provider buttons */
+.btn-oauth {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  width: 100%;
+  padding: 0.6rem 1rem;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-button);
+  background: var(--color-surface);
+  color: var(--color-text-primary);
+  font-weight: 600;
+  font-size: 0.9rem;
+  transition: background 0.15s, border-color 0.15s, box-shadow 0.15s;
+  cursor: pointer;
+}
+
+.btn-oauth:hover {
+  background: var(--color-surface-alt);
+  border-color: var(--color-card-border);
+  box-shadow: var(--shadow-card);
+}
+
+
+/* --- Scroll / Summary Card --- */
+
+.scroll-card {
+  background: var(--color-surface);
+  border: 2px solid var(--color-card-border);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-elevated);
+  padding: 2rem;
+  position: relative;
+}
+
+.scroll-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 6px;
+  background: linear-gradient(
+    90deg,
+    var(--color-card-border) 0%,
+    var(--color-text-secondary) 50%,
+    var(--color-card-border) 100%
+  );
+  border-radius: var(--radius-card) var(--radius-card) 0 0;
+}
+
+.scroll-card .total-price {
+  font-family: var(--font-heading);
+  font-size: 1.5rem;
+  font-weight: 900;
+  color: var(--color-accent);
+}
+
+
+/* --- Sidebar Navigation (Organizer Dashboard) --- */
+
+.sidebar-nav {
+  background: var(--color-header);
+  min-height: 100vh;
+  width: 240px;
+  padding: 1rem 0;
+}
+
+.sidebar-nav .nav-item {
+  display: block;
+  padding: 0.65rem 1.25rem;
+  color: #C4A882;
+  font-weight: 500;
+  font-size: 0.9rem;
+  text-decoration: none;
+  border-left: 3px solid transparent;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.sidebar-nav .nav-item:hover {
+  background: rgba(255, 248, 240, 0.08);
+  color: var(--color-header-text);
+}
+
+.sidebar-nav .nav-item.active {
+  background: rgba(255, 248, 240, 0.12);
+  color: var(--color-header-text);
+  border-left-color: var(--color-card-border);
+}
+
+
+/* --- Stat Cards (Dashboard Overview) --- */
+
+.stat-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+  padding: 1.25rem;
+  text-align: center;
+}
+
+.stat-card .stat-number {
+  font-family: var(--font-heading);
+  font-size: 2rem;
+  font-weight: 900;
+  color: var(--color-accent);
+  line-height: 1.1;
+}
+
+.stat-card .stat-label {
+  font-size: 0.85rem;
+  color: var(--color-text-secondary);
+  margin-top: 0.35rem;
+  font-weight: 600;
+}
+
+
+/* --- Role Cards (Player vs Helper) --- */
+
+.role-card-player {
+  background: linear-gradient(135deg, #F0FFF0 0%, var(--color-surface) 100%);
+  border: 1px solid #A5D6A7;
+  border-left: 4px solid var(--color-kingdom-elves);
+}
+
+.role-card-helper {
+  background: linear-gradient(135deg, var(--color-surface-alt) 0%, var(--color-surface) 100%);
+  border: 1px solid var(--color-border);
+  border-left: 4px solid var(--color-text-secondary);
+}
+
+
+/* --- Blazor Error Boundaries --- */
+
 .blazor-error-boundary {
-    background: #b32121;
-    border-radius: 0.75rem;
-    color: white;
-    padding: 1rem 1rem 1rem 3.7rem;
+  background: var(--color-error);
+  border-radius: var(--radius-card);
+  color: white;
+  padding: 1rem 1rem 1rem 3.7rem;
 }
 
 .blazor-error-boundary::after {
-    content: "Došlo k chybě.";
+  content: "Stala sa chyba.";
 }
 
 #blazor-error-ui {
-    background: #fff4d6;
-    bottom: 1rem;
-    box-shadow: 0 4px 24px rgba(19, 35, 59, 0.15);
-    display: none;
-    left: 1rem;
-    padding: 1rem 1.25rem;
-    position: fixed;
-    right: 1rem;
-    z-index: 1000;
+  background: #FFF4D6;
+  bottom: 1rem;
+  box-shadow: var(--shadow-elevated);
+  display: none;
+  left: 1rem;
+  padding: 1rem 1.25rem;
+  position: fixed;
+  right: 1rem;
+  z-index: 1000;
+  border: 1px solid var(--color-warning);
+  border-radius: var(--radius-card);
+  color: var(--color-text-primary);
 }
 
 #blazor-error-ui .dismiss {
-    cursor: pointer;
-    position: absolute;
-    right: 0.75rem;
-    top: 0.5rem;
+  cursor: pointer;
+  position: absolute;
+  right: 0.75rem;
+  top: 0.5rem;
+}
+
+
+/* --- Utility Classes --- */
+
+.text-accent { color: var(--color-accent); }
+.text-warm   { color: var(--color-text-secondary); }
+.bg-parchment { background: var(--color-surface); }
+.bg-parchment-alt { background: var(--color-surface-alt); }
+.border-warm { border-color: var(--color-border) !important; }
+.border-accent { border-color: var(--color-card-border) !important; }
+
+.font-heading { font-family: var(--font-heading); }
+.font-mono    { font-family: var(--font-mono); }
+
+
+/* --- Responsive --- */
+
+@media (max-width: 767.98px) {
+  h1 { font-size: 1.5rem; }
+  h2 { font-size: 1.3rem; }
+
+  .hero-card { padding: 1.25rem; }
+  .auth-card { padding: 1.75rem 1.25rem; }
+  .scroll-card { padding: 1.25rem; }
+
+  .wizard-step {
+    font-size: 0.75rem;
+    padding: 0.5rem 0.25rem;
+  }
+
+  .wizard-step::before {
+    width: 1.6rem;
+    height: 1.6rem;
+    line-height: 1.6rem;
+    font-size: 0.8rem;
+  }
 }

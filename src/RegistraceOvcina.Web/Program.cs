@@ -61,6 +61,11 @@ public class Program
 
         builder.Services.AddIdentityCore<ApplicationUser>(options =>
             {
+                options.Password.RequiredLength = 6;
+                options.Password.RequireDigit = false;
+                options.Password.RequireLowercase = false;
+                options.Password.RequireUppercase = false;
+                options.Password.RequireNonAlphanumeric = false;
                 options.SignIn.RequireConfirmedAccount = false;
                 options.Stores.SchemaVersion = IdentitySchemaVersions.Version3;
                 options.User.RequireUniqueEmail = true;
@@ -94,6 +99,49 @@ public class Program
         if (!app.Environment.IsEnvironment("Testing"))
         {
             app.UseHttpsRedirection();
+        }
+
+        if (app.Environment.IsDevelopment())
+        {
+            app.Use(async (context, next) =>
+            {
+                var path = context.Request.Path.Value ?? string.Empty;
+                var isAuthDebugPath =
+                    path.StartsWith("/Account/", StringComparison.OrdinalIgnoreCase)
+                    || path.Equals("/not-found", StringComparison.OrdinalIgnoreCase);
+
+                if (!isAuthDebugPath)
+                {
+                    await next();
+                    return;
+                }
+
+                var logger = context.RequestServices
+                    .GetRequiredService<ILoggerFactory>()
+                    .CreateLogger("AuthDebug");
+
+                logger.LogInformation(
+                    "[AuthDebug] START {Method} {Path}{QueryString} | Referer: {Referer} | PID: {ProcessId}",
+                    context.Request.Method,
+                    context.Request.Path,
+                    context.Request.QueryString,
+                    context.Request.Headers.Referer.ToString(),
+                    Environment.ProcessId);
+
+                try
+                {
+                    await next();
+                }
+                finally
+                {
+                    logger.LogInformation(
+                        "[AuthDebug] END {Method} {Path}{QueryString} -> {StatusCode}",
+                        context.Request.Method,
+                        context.Request.Path,
+                        context.Request.QueryString,
+                        context.Response.StatusCode);
+                }
+            });
         }
 
         app.UseAuthentication();
