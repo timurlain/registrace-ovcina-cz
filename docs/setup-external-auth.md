@@ -9,7 +9,7 @@ This guide explains how to obtain OAuth credentials for each supported external 
 3. Supported account types: "Accounts in any organizational directory and personal Microsoft accounts"
 4. Redirect URI: Web
    - Dev: `https://localhost:7272/signin-microsoft`
-   - Prod: `https://yourdomain/signin-microsoft`
+   - Prod: `https://registrace.ovcina.cz/signin-microsoft`
 5. After creation: copy **Application (client) ID** > put in `ExternalAuth:Microsoft:ClientId`
 6. Go to Certificates & secrets > New client secret > copy value > put in `ExternalAuth:Microsoft:ClientSecret`
 
@@ -20,7 +20,7 @@ This guide explains how to obtain OAuth credentials for each supported external 
 3. Application type: Web application
 4. Authorized redirect URIs:
    - Dev: `https://localhost:7272/signin-google`
-   - Prod: `https://yourdomain/signin-google`
+   - Prod: `https://registrace.ovcina.cz/signin-google`
 5. Copy Client ID > `ExternalAuth:Google:ClientId`
 6. Copy Client Secret > `ExternalAuth:Google:ClientSecret`
 7. Enable the "People API" in APIs & Services > Library
@@ -31,7 +31,7 @@ This guide explains how to obtain OAuth credentials for each supported external 
 2. Register a new application
 3. Set OAuth 2.0 redirect URI:
    - Dev: `https://localhost:7272/signin-seznam`
-   - Prod: `https://yourdomain/signin-seznam`
+   - Prod: `https://registrace.ovcina.cz/signin-seznam`
 4. Copy Client ID > `ExternalAuth:Seznam:ClientId`
 5. Copy Client Secret > `ExternalAuth:Seznam:ClientSecret`
 6. Scopes needed: `openid`, `email`, `profile`
