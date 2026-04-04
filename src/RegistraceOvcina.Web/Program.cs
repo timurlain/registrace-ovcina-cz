@@ -40,12 +40,54 @@ public class Program
         builder.Services.AddScoped<IdentityRedirectManager>();
         builder.Services.AddScoped<AuthenticationStateProvider, IdentityRevalidatingAuthenticationStateProvider>();
 
-        builder.Services.AddAuthentication(options =>
+        var authBuilder = builder.Services.AddAuthentication(options =>
             {
                 options.DefaultScheme = IdentityConstants.ApplicationScheme;
                 options.DefaultSignInScheme = IdentityConstants.ExternalScheme;
-            })
-            .AddIdentityCookies();
+            });
+        authBuilder.AddIdentityCookies();
+
+        // Microsoft
+        var microsoftConfig = builder.Configuration.GetSection("ExternalAuth:Microsoft");
+        if (!string.IsNullOrEmpty(microsoftConfig["ClientId"]) && !string.IsNullOrEmpty(microsoftConfig["ClientSecret"]))
+        {
+            authBuilder.AddMicrosoftAccount(options =>
+            {
+                options.ClientId = microsoftConfig["ClientId"]!;
+                options.ClientSecret = microsoftConfig["ClientSecret"]!;
+            });
+        }
+
+        // Google
+        var googleConfig = builder.Configuration.GetSection("ExternalAuth:Google");
+        if (!string.IsNullOrEmpty(googleConfig["ClientId"]) && !string.IsNullOrEmpty(googleConfig["ClientSecret"]))
+        {
+            authBuilder.AddGoogle(options =>
+            {
+                options.ClientId = googleConfig["ClientId"]!;
+                options.ClientSecret = googleConfig["ClientSecret"]!;
+            });
+        }
+
+        // Seznam (OpenID Connect)
+        var seznamConfig = builder.Configuration.GetSection("ExternalAuth:Seznam");
+        if (!string.IsNullOrEmpty(seznamConfig["ClientId"]) && !string.IsNullOrEmpty(seznamConfig["ClientSecret"]))
+        {
+            authBuilder.AddOpenIdConnect("Seznam", "Seznam", options =>
+            {
+                options.Authority = "https://login.szn.cz";
+                options.ClientId = seznamConfig["ClientId"]!;
+                options.ClientSecret = seznamConfig["ClientSecret"]!;
+                options.ResponseType = "code";
+                options.CallbackPath = "/signin-seznam";
+                options.Scope.Clear();
+                options.Scope.Add("openid");
+                options.Scope.Add("email");
+                options.Scope.Add("profile");
+                options.SaveTokens = false;
+                options.GetClaimsFromUserInfoEndpoint = true;
+            });
+        }
 
         builder.Services.ConfigureApplicationCookie(options =>
         {
