@@ -148,7 +148,10 @@
                                         <td>@game.RemainingPlayerSpots / @game.TargetPlayerCountTotal</td>
                                         <td>@(game.IsPublished ? "Zveřejněno" : "Skryto")</td>
                                         <td>
-                                            <a href="/admin/hry/@game.Id/kralovstvi" class="btn btn-sm btn-outline-primary">Království</a>
+                                            <div class="d-flex gap-1">
+                                                <a href="/admin/hry/@game.Id/kralovstvi" class="btn btn-sm btn-outline-primary">Království</a>
+                                                <a href="/admin/hry/@game.Id/jidla" class="btn btn-sm btn-outline-primary">Jídla</a>
+                                            </div>
                                         </td>
                                     </tr>
                                 }
