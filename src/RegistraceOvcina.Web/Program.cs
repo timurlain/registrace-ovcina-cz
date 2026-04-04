@@ -173,6 +173,7 @@ public class Program
         builder.Services.AddScoped<GameService>();
         builder.Services.AddScoped<KingdomService>();
         builder.Services.AddScoped<SubmissionService>();
+        builder.Services.AddScoped<OrganizerSubmissionService>();
         builder.Services.AddScoped<UserAdministrationService>();
 
         var app = builder.Build();
@@ -689,6 +690,32 @@ public class Program
                     }
                 })
             .RequireAuthorization();
+        app.MapPost(
+                "/organizace/prihlasky/{submissionId:int}/poznamka",
+                async ([FromForm] string note, HttpContext httpContext, int submissionId, UserManager<ApplicationUser> userManager, OrganizerSubmissionService organizerSubmissionService) =>
+                {
+                    var user = await userManager.GetUserAsync(httpContext.User);
+                    if (user is null)
+                    {
+                        return Results.LocalRedirect($"/Account/Login?ReturnUrl={Uri.EscapeDataString($"/organizace/prihlasky/{submissionId}")}");
+                    }
+
+                    if (string.IsNullOrWhiteSpace(note))
+                    {
+                        return Results.LocalRedirect($"/organizace/prihlasky/{submissionId}?error={Uri.EscapeDataString("Poznámka nemůže být prázdná.")}");
+                    }
+
+                    try
+                    {
+                        await organizerSubmissionService.AddNoteAsync(submissionId, note, user.Id);
+                        return Results.LocalRedirect($"/organizace/prihlasky/{submissionId}?noteSaved=1");
+                    }
+                    catch (InvalidOperationException ex)
+                    {
+                        return Results.LocalRedirect($"/organizace/prihlasky/{submissionId}?error={Uri.EscapeDataString(ex.Message)}");
+                    }
+                })
+            .RequireAuthorization(AuthorizationPolicies.StaffOnly);
         app.MapStaticAssets();
         app.MapRazorComponents<App>()
             .AddInteractiveServerRenderMode();

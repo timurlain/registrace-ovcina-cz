@@ -1,0 +1,119 @@
+@page "/organizace/prihlasky"
+@attribute [Authorize(Policy = AuthorizationPolicies.StaffOnly)]
+
+@inject OrganizerSubmissionService OrganizerSubmissionService
+
+<PageTitle>Přihlášky</PageTitle>
+
+<div class="d-flex justify-content-between align-items-end mb-4">
+    <div>
+        <h1 class="h3 mb-1">Přihlášky</h1>
+        <p class="text-secondary mb-0">Přehled všech přihlášek pro organizátory.</p>
+    </div>
+    <div>
+        <form method="get" class="d-flex align-items-center gap-2">
+            <label class="form-label mb-0 text-nowrap" for="game-filter">Filtrovat podle hry</label>
+            <select id="game-filter" name="gameId" class="form-select form-select-sm" style="min-width: 200px;" onchange="this.form.submit()">
+                <option value="">Všechny hry</option>
+                @if (gameFilters is not null)
+                {
+                    @foreach (var game in gameFilters)
+                    {
+                        <option value="@game.Id" selected="@(selectedGameId == game.Id)">@game.Name</option>
+                    }
+                }
+            </select>
+        </form>
+    </div>
+</div>
+
+@if (submissions is null)
+{
+    <p class="text-secondary">Načítám přihlášky...</p>
+}
+else if (submissions.Count == 0)
+{
+    <div class="empty-state">Žádné přihlášky.</div>
+}
+else
+{
+    <div class="table-responsive">
+        <table class="table align-middle">
+            <thead>
+                <tr>
+                    <th>Hra</th>
+                    <th>Kontakt</th>
+                    <th>E-mail</th>
+                    <th>Stav</th>
+                    <th class="text-end">Účastníků</th>
+                    <th class="text-end">Celkem</th>
+                    <th>Platba</th>
+                    <th>Odesláno</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var s in submissions)
+                {
+                    <tr style="cursor: pointer;" onclick="window.location.href='/organizace/prihlasky/@s.Id'" data-testid="@($"submission-row-{s.Id}")">
+                        <td>@s.GameName</td>
+                        <td>@s.PrimaryContactName</td>
+                        <td><span class="small">@s.PrimaryEmail</span></td>
+                        <td><span class="badge @GetStatusBadgeClass(s.Status)">@GetSubmissionStatusLabel(s.Status)</span></td>
+                        <td class="text-end">@s.AttendeeCount</td>
+                        <td class="text-end">@s.ExpectedTotalAmount.ToString("0.00") Kč</td>
+                        <td><span class="badge @GetBalanceBadgeClass(s.BalanceStatus)">@GetBalanceLabel(s.BalanceStatus)</span></td>
+                        <td>@(s.SubmittedAtUtc.HasValue ? CzechTime.Format(s.SubmittedAtUtc.Value) : "—")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@code {
+    [SupplyParameterFromQuery(Name = "gameId")]
+    private int? selectedGameId { get; set; }
+
+    private IReadOnlyList<OrganizerSubmissionSummary>? submissions;
+    private IReadOnlyList<GameFilterItem>? gameFilters;
+
+    protected override async Task OnInitializedAsync()
+    {
+        gameFilters = await OrganizerSubmissionService.GetGameFilterListAsync();
+        submissions = await OrganizerSubmissionService.GetSubmissionListAsync(selectedGameId);
+    }
+
+    private static string GetSubmissionStatusLabel(SubmissionStatus status) => status switch
+    {
+        SubmissionStatus.Draft => "Rozpracovaná",
+        SubmissionStatus.Submitted => "Odeslaná",
+        SubmissionStatus.Cancelled => "Zrušená",
+        _ => status.ToString()
+    };
+
+    private static string GetBalanceLabel(BalanceStatus balanceStatus) => balanceStatus switch
+    {
+        BalanceStatus.Unpaid => "Neuhrazeno",
+        BalanceStatus.Underpaid => "Nedoplatek",
+        BalanceStatus.Balanced => "Uhrazeno",
+        BalanceStatus.Overpaid => "Přeplatek",
+        _ => balanceStatus.ToString()
+    };
+
+    private static string GetStatusBadgeClass(SubmissionStatus status) => status switch
+    {
+        SubmissionStatus.Draft => "text-bg-secondary",
+        SubmissionStatus.Submitted => "text-bg-primary",
+        SubmissionStatus.Cancelled => "text-bg-danger",
+        _ => "text-bg-light"
+    };
+
+    private static string GetBalanceBadgeClass(BalanceStatus balance) => balance switch
+    {
+        BalanceStatus.Unpaid => "text-bg-danger",
+        BalanceStatus.Underpaid => "text-bg-warning",
+        BalanceStatus.Balanced => "text-bg-success",
+        BalanceStatus.Overpaid => "text-bg-info",
+        _ => "text-bg-light"
+    };
+}
