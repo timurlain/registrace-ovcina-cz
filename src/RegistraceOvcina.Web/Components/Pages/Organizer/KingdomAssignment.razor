@@ -1,0 +1,196 @@
+@page "/organizace/hry/{gameId:int}/kralovstvi"
+@attribute [Authorize(Policy = AuthorizationPolicies.StaffOnly)]
+
+@inject KingdomAssignmentService KingdomAssignmentService
+
+<PageTitle>Rozdělení do království</PageTitle>
+
+@if (board is null)
+{
+    <p class="text-secondary">Načítám rozdělení do království...</p>
+}
+else
+{
+    <div class="mb-4">
+        <a href="/admin/hry" class="text-decoration-none">&larr; Zpět na správu her</a>
+    </div>
+
+    <div class="d-flex justify-content-between align-items-end mb-4">
+        <div>
+            <h1 class="h3 mb-1">Rozdělení do království &mdash; @board.GameName</h1>
+            <p class="text-secondary mb-0">Ruční přiřazení hráčů do království. Celkem hráčů: @TotalPlayerCount</p>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(statusMessage))
+    {
+        <div class="alert alert-success" role="status">@statusMessage</div>
+    }
+    @if (!string.IsNullOrWhiteSpace(errorMessage))
+    {
+        <div class="alert alert-danger" role="alert">@errorMessage</div>
+    }
+
+    <div class="row g-3">
+        @* Unassigned column *@
+        <div class="col">
+            <div class="card shadow-sm h-100">
+                <div class="card-header bg-secondary text-white d-flex justify-content-between align-items-center">
+                    <strong>Nepřidělení</strong>
+                    <span class="badge text-bg-light">@board.UnassignedPlayers.Count</span>
+                </div>
+                <div class="card-body p-2" style="max-height: 70vh; overflow-y: auto;">
+                    @if (board.UnassignedPlayers.Count == 0)
+                    {
+                        <p class="text-secondary small p-2 mb-0">Všichni hráči jsou přiděleni.</p>
+                    }
+                    else
+                    {
+                        @foreach (var player in board.UnassignedPlayers)
+                        {
+                            <div class="border rounded p-2 mb-2 bg-light">
+                                @RenderPlayerCard(player)
+                            </div>
+                        }
+                    }
+                </div>
+            </div>
+        </div>
+
+        @* Kingdom columns *@
+        @foreach (var kingdom in board.Kingdoms)
+        {
+            <div class="col">
+                <div class="card shadow-sm h-100">
+                    <div class="card-header d-flex justify-content-between align-items-center"
+                         style="@GetKingdomHeaderStyle(kingdom.Color)">
+                        <strong>@kingdom.DisplayName</strong>
+                        <span class="badge @GetCountBadgeClass(kingdom)">
+                            @kingdom.CurrentCount / @kingdom.TargetCount
+                        </span>
+                    </div>
+                    <div class="card-body p-2" style="max-height: 70vh; overflow-y: auto;">
+                        @if (kingdom.Players.Count == 0)
+                        {
+                            <p class="text-secondary small p-2 mb-0">Zatím nikdo.</p>
+                        }
+                        else
+                        {
+                            @foreach (var player in kingdom.Players)
+                            {
+                                <div class="border rounded p-2 mb-2 bg-light">
+                                    @RenderPlayerCard(player)
+                                </div>
+                            }
+                        }
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+}
+
+@code {
+    [Parameter]
+    public int GameId { get; set; }
+
+    [SupplyParameterFromQuery(Name = "assigned")]
+    private int? assigned { get; set; }
+
+    [SupplyParameterFromQuery(Name = "error")]
+    private string? queryError { get; set; }
+
+    private AssignmentBoard? board;
+    private string? statusMessage;
+    private string? errorMessage;
+    private int TotalPlayerCount => board is null ? 0
+        : board.UnassignedPlayers.Count + board.Kingdoms.Sum(k => k.CurrentCount);
+
+    protected override async Task OnInitializedAsync()
+    {
+        board = await KingdomAssignmentService.GetAssignmentBoardAsync(GameId);
+    }
+
+    protected override void OnParametersSet()
+    {
+        statusMessage = assigned == 1 ? "Hráč byl přidělen." : null;
+        errorMessage = queryError;
+    }
+
+    private RenderFragment RenderPlayerCard(PlayerCard player) => __builder =>
+    {
+        <div class="d-flex justify-content-between align-items-start mb-1">
+            <div>
+                <span class="fw-semibold small">@player.PersonName</span>
+                <span class="text-secondary small ms-1">(nar. @player.BirthYear)</span>
+            </div>
+            @if (player.PlayerSubType.HasValue)
+            {
+                <span class="badge text-bg-light small">@GetPlayerSubTypeLabel(player.PlayerSubType.Value)</span>
+            }
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(player.PreferredKingdomName))
+        {
+            <div class="small mb-1">
+                <span class="text-secondary">Preference:</span>
+                <span class="badge text-bg-info">@player.PreferredKingdomName</span>
+            </div>
+        }
+
+        @if (!string.IsNullOrWhiteSpace(player.CharacterName))
+        {
+            <div class="small text-secondary mb-1">@player.CharacterName</div>
+        }
+
+        <form method="post" action="/organizace/hry/@GameId/kralovstvi/pridelit" class="d-flex align-items-center gap-1 mt-1">
+            <AntiforgeryToken />
+            <input type="hidden" name="registrationId" value="@player.RegistrationId" />
+            <select name="kingdomId" class="form-select form-select-sm" style="min-width: 100px; font-size: 0.8rem;">
+                <option value="">-- Nepřidělený --</option>
+                @if (board is not null)
+                {
+                    @foreach (var k in board.Kingdoms)
+                    {
+                        <option value="@k.KingdomId" selected="@(player.AssignedKingdomId == k.KingdomId)">@k.DisplayName</option>
+                    }
+                }
+            </select>
+            <button type="submit" class="btn btn-sm btn-outline-primary" style="font-size: 0.75rem;">Přidělit</button>
+        </form>
+    };
+
+    private static string GetPlayerSubTypeLabel(PlayerSubType subType) => subType switch
+    {
+        PlayerSubType.Pvp => "PVP (10+)",
+        PlayerSubType.Independent => "Sam. (8+)",
+        PlayerSubType.WithRanger => "Hraničář (5-7)",
+        PlayerSubType.WithParent => "S rodičem (4+)",
+        _ => subType.ToString()
+    };
+
+    private static string GetKingdomHeaderStyle(string? color)
+    {
+        if (string.IsNullOrWhiteSpace(color))
+        {
+            return "background-color: #6c757d; color: white;";
+        }
+
+        return $"background-color: {color}; color: white;";
+    }
+
+    private static string GetCountBadgeClass(KingdomColumn kingdom)
+    {
+        if (kingdom.CurrentCount >= kingdom.TargetCount && kingdom.TargetCount > 0)
+        {
+            return "text-bg-success";
+        }
+
+        if (kingdom.CurrentCount > 0)
+        {
+            return "text-bg-warning";
+        }
+
+        return "text-bg-light";
+    }
+}

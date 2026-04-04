@@ -172,6 +172,7 @@ public class Program
         builder.Services.AddScoped<MealOptionService>();
         builder.Services.AddScoped<GameService>();
         builder.Services.AddScoped<KingdomService>();
+        builder.Services.AddScoped<KingdomAssignmentService>();
         builder.Services.AddScoped<SubmissionService>();
         builder.Services.AddScoped<OrganizerSubmissionService>();
         builder.Services.AddScoped<PaymentService>();
@@ -746,6 +747,35 @@ public class Program
                     catch (InvalidOperationException ex)
                     {
                         return Results.LocalRedirect($"/organizace/platby?error={Uri.EscapeDataString(ex.Message)}");
+                    }
+                })
+            .RequireAuthorization(AuthorizationPolicies.StaffOnly);
+        app.MapPost(
+                "/organizace/hry/{gameId:int}/kralovstvi/pridelit",
+                async (int gameId, HttpContext httpContext, UserManager<ApplicationUser> userManager, KingdomAssignmentService kingdomAssignmentService) =>
+                {
+                    var user = await userManager.GetUserAsync(httpContext.User);
+                    if (user is null)
+                    {
+                        return Results.LocalRedirect($"/Account/Login?ReturnUrl={Uri.EscapeDataString($"/organizace/hry/{gameId}/kralovstvi")}");
+                    }
+
+                    try
+                    {
+                        var form = await httpContext.Request.ReadFormAsync();
+                        if (!int.TryParse(form["registrationId"], out var registrationId))
+                        {
+                            return Results.LocalRedirect($"/organizace/hry/{gameId}/kralovstvi?error={Uri.EscapeDataString("Neplatná registrace.")}");
+                        }
+
+                        int? kingdomId = int.TryParse(form["kingdomId"], out var kid) && kid > 0 ? kid : null;
+
+                        await kingdomAssignmentService.AssignPlayerAsync(registrationId, kingdomId, user.Id);
+                        return Results.LocalRedirect($"/organizace/hry/{gameId}/kralovstvi?assigned=1");
+                    }
+                    catch (InvalidOperationException ex)
+                    {
+                        return Results.LocalRedirect($"/organizace/hry/{gameId}/kralovstvi?error={Uri.EscapeDataString(ex.Message)}");
                     }
                 })
             .RequireAuthorization(AuthorizationPolicies.StaffOnly);
