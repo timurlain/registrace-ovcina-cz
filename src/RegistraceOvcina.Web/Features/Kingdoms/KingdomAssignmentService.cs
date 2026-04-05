@@ -168,23 +168,26 @@ public sealed class KingdomAssignmentService(IDbContextFactory<ApplicationDbCont
 
         await db.SaveChangesAsync(cancellationToken);
 
-        db.AuditLogs.Add(new AuditLog
+        if (appearance is not null)
         {
-            EntityType = nameof(CharacterAppearance),
-            EntityId = appearance?.Id.ToString() ?? "0",
-            Action = "KingdomAssigned",
-            ActorUserId = actorUserId,
-            CreatedAtUtc = nowUtc,
-            DetailsJson = JsonSerializer.Serialize(new
+            db.AuditLogs.Add(new AuditLog
             {
-                RegistrationId = registrationId,
-                GameId = gameId,
-                KingdomId = kingdomId,
-                PersonName = $"{registration.Person.FirstName} {registration.Person.LastName}"
-            })
-        });
+                EntityType = nameof(CharacterAppearance),
+                EntityId = appearance.Id.ToString(),
+                Action = kingdomId is null ? "KingdomUnassigned" : "KingdomAssigned",
+                ActorUserId = actorUserId,
+                CreatedAtUtc = nowUtc,
+                DetailsJson = JsonSerializer.Serialize(new
+                {
+                    RegistrationId = registrationId,
+                    GameId = gameId,
+                    KingdomId = kingdomId,
+                    PersonName = $"{registration.Person.FirstName} {registration.Person.LastName}"
+                })
+            });
 
-        await db.SaveChangesAsync(cancellationToken);
+            await db.SaveChangesAsync(cancellationToken);
+        }
     }
 }
 

@@ -7,8 +7,6 @@ namespace RegistraceOvcina.Web.Features.Integration;
 
 public static class IntegrationApiEndpoints
 {
-    private const string ApiKeyHeader = "X-Api-Key";
-
     public static IEndpointRouteBuilder MapIntegrationApi(this IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/api/v1")

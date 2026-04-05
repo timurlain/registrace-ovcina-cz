@@ -15,8 +15,19 @@ public sealed class PeopleReviewService(
     {
         await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
 
-        var people = await db.People
-            .AsNoTracking()
+        var peopleQuery = db.People.AsNoTracking();
+
+        // Push coarse text filter into SQL before materializing
+        if (!string.IsNullOrWhiteSpace(query))
+        {
+            var trimmed = query.Trim();
+            peopleQuery = peopleQuery.Where(x =>
+                (x.FirstName + " " + x.LastName).Contains(trimmed)
+                || (x.Email != null && x.Email.Contains(trimmed))
+                || (x.Phone != null && x.Phone.Contains(trimmed)));
+        }
+
+        var people = await peopleQuery
             .Select(x => new PersonListProjection(
                 x.Id,
                 x.FirstName,
