@@ -1008,6 +1008,17 @@ public class Program
                     }
                 })
             .RequireAuthorization(AuthorizationPolicies.StaffOnly);
+        app.MapGet(
+                "/api/registrations/person-suggestion",
+                async (string? firstName, string? lastName, int? gameId, SubmissionService submissionService) =>
+                {
+                    if (string.IsNullOrWhiteSpace(firstName) || string.IsNullOrWhiteSpace(lastName) || gameId is null)
+                        return Results.BadRequest();
+
+                    var suggestion = await submissionService.FindExistingPersonAsync(firstName, lastName, gameId.Value);
+                    return suggestion is not null ? Results.Ok(suggestion) : Results.NotFound();
+                })
+            .RequireAuthorization();
         app.MapStaticAssets();
         app.MapRazorComponents<App>()
             .AddInteractiveServerRenderMode();

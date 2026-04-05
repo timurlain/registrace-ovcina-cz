@@ -182,15 +182,42 @@ else
                             <div class="row g-3">
                                 <div class="col-md-6">
                                     <label class="form-label required" for="attendee-first-name">Jméno</label>
-                                    <input id="attendee-first-name" name="@nameof(AttendeeInput.FirstName)" value="@attendeeInput.FirstName" class="form-control" placeholder="např. Jan" data-testid="attendee-first-name" />
+                                    <input id="attendee-first-name" name="@nameof(AttendeeInput.FirstName)" @bind="attendeeInput.FirstName" class="form-control" placeholder="např. Jan" data-testid="attendee-first-name" />
                                 </div>
                                 <div class="col-md-6">
                                     <label class="form-label required" for="attendee-last-name">Příjmení</label>
-                                    <input id="attendee-last-name" name="@nameof(AttendeeInput.LastName)" value="@attendeeInput.LastName" class="form-control" placeholder="např. Novák" data-testid="attendee-last-name" />
+                                    <input id="attendee-last-name" name="@nameof(AttendeeInput.LastName)" @bind="attendeeInput.LastName" @onblur="CheckExistingPersonAsync" class="form-control" placeholder="např. Novák" data-testid="attendee-last-name" />
                                 </div>
+
+                                @if (personSuggestion is not null)
+                                {
+                                    <div class="col-12">
+                                        <div class="alert alert-info d-flex flex-column gap-2 mb-0" data-testid="person-suggestion">
+                                            <div>
+                                                <strong>Nalezli jsme existujícího účastníka</strong>
+                                            </div>
+                                            <div>
+                                                @personSuggestion.FullName, ročník @personSuggestion.BirthYear
+                                                @if (!string.IsNullOrWhiteSpace(personSuggestion.LastKingdomName))
+                                                {
+                                                    <span> · Naposledy hrál/a za <strong>@personSuggestion.LastKingdomName</strong></span>
+                                                }
+                                            </div>
+                                            <div class="d-flex gap-2">
+                                                <button type="button" class="btn btn-sm btn-primary" @onclick="ApplyPersonSuggestion" data-testid="suggestion-accept">
+                                                    Ano, vyplnit údaje
+                                                </button>
+                                                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="DismissPersonSuggestion" data-testid="suggestion-dismiss">
+                                                    Ne, jiná osoba
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                }
+
                                 <div class="col-md-4">
                                     <label class="form-label required" for="attendee-birth-year">Rok narození</label>
-                                    <input id="attendee-birth-year" name="@nameof(AttendeeInput.BirthYear)" type="number" value="@attendeeInput.BirthYear" class="form-control" placeholder="např. 2015" data-testid="attendee-birth-year" />
+                                    <input id="attendee-birth-year" name="@nameof(AttendeeInput.BirthYear)" type="number" @bind="attendeeInput.BirthYear" class="form-control" placeholder="např. 2015" data-testid="attendee-birth-year" />
                                 </div>
                                 <div class="col-md-4 @(attendeeInput.AttendeeType == AttendeeType.Adult ? "d-none" : "")" id="kingdom-section">
                                     <label class="form-label" for="attendee-kingdom">Preferované království</label>
@@ -604,6 +631,7 @@ document.addEventListener('change', e => {
     private PaymentQrModel? paymentQr;
     private string? statusMessage;
     private SubmissionEditorViewModel? submission;
+    private PersonSuggestion? personSuggestion;
 
     protected override async Task OnParametersSetAsync()
     {
@@ -711,6 +739,66 @@ document.addEventListener('change', e => {
         return await UserManager.GetUserAsync(authState.User);
     }
 
+    private async Task CheckExistingPersonAsync()
+    {
+        personSuggestion = null;
+
+        if (string.IsNullOrWhiteSpace(attendeeInput.FirstName)
+            || string.IsNullOrWhiteSpace(attendeeInput.LastName)
+            || submission is null
+            || editingRegistrationId is not null)
+        {
+            return;
+        }
+
+        try
+        {
+            personSuggestion = await SubmissionService.FindExistingPersonAsync(
+                attendeeInput.FirstName,
+                attendeeInput.LastName,
+                submission.GameId);
+        }
+        catch
+        {
+            // Silently ignore lookup errors — the user can still fill in manually
+        }
+    }
+
+    private void ApplyPersonSuggestion()
+    {
+        if (personSuggestion is null)
+            return;
+
+        attendeeInput.BirthYear = personSuggestion.BirthYear;
+        attendeeInput.ContactEmail = personSuggestion.Email;
+        attendeeInput.ContactPhone = personSuggestion.Phone;
+        attendeeInput.GuardianName = personSuggestion.GuardianName;
+        attendeeInput.GuardianRelationship = personSuggestion.GuardianRelationship;
+        attendeeInput.AttendeeType = personSuggestion.LastAttendeeType;
+        attendeeInput.PlayerSubType = personSuggestion.LastPlayerSubType;
+
+        if (personSuggestion.LastAdultRoles != AdultRoleFlags.None)
+        {
+            attendeeInput.AdultRole_PlayMonster = personSuggestion.LastAdultRoles.HasFlag(AdultRoleFlags.PlayMonster);
+            attendeeInput.AdultRole_OrganizationHelper = personSuggestion.LastAdultRoles.HasFlag(AdultRoleFlags.OrganizationHelper);
+            attendeeInput.AdultRole_TechSupport = personSuggestion.LastAdultRoles.HasFlag(AdultRoleFlags.TechSupport);
+            attendeeInput.AdultRole_RangerLeader = personSuggestion.LastAdultRoles.HasFlag(AdultRoleFlags.RangerLeader);
+            attendeeInput.AdultRole_Spectator = personSuggestion.LastAdultRoles.HasFlag(AdultRoleFlags.Spectator);
+        }
+
+        if (personSuggestion.LastKingdomId is not null)
+        {
+            attendeeInput.PreferredKingdomId = personSuggestion.LastKingdomId;
+        }
+
+        personSuggestion = null;
+    }
+
+    private void DismissPersonSuggestion()
+    {
+        personSuggestion = null;
+    }
+
     private void StartEditing(AttendeeViewModel attendee)
     {
         editingRegistrationId = attendee.RegistrationId;
@@ -745,6 +833,7 @@ document.addEventListener('change', e => {
     {
         editingRegistrationId = null;
         attendeeInput = CreateDefaultAttendeeInput();
+        personSuggestion = null;
     }
 
     private static string GetAttendeeTypeLabel(AttendeeType type) => type switch

@@ -556,6 +556,61 @@ public sealed class SubmissionService(
         await db.SaveChangesAsync(cancellationToken);
     }
 
+    public async Task<PersonSuggestion?> FindExistingPersonAsync(
+        string firstName,
+        string lastName,
+        int gameId,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(firstName) || string.IsNullOrWhiteSpace(lastName))
+            return null;
+
+        firstName = firstName.Trim();
+        lastName = lastName.Trim();
+
+        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+
+        var person = await db.People
+            .AsNoTracking()
+            .Where(p => !p.IsDeleted
+                && p.FirstName.ToLower() == firstName.ToLower()
+                && p.LastName.ToLower() == lastName.ToLower())
+            .OrderByDescending(p => p.UpdatedAtUtc)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (person is null)
+            return null;
+
+        // Find the most recent registration to get attendee type info
+        var lastRegistration = await db.Registrations
+            .AsNoTracking()
+            .Where(r => r.PersonId == person.Id && r.Status == RegistrationStatus.Active)
+            .OrderByDescending(r => r.CreatedAtUtc)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        // Find the most recent character appearance to get last kingdom
+        var lastAppearance = await db.CharacterAppearances
+            .AsNoTracking()
+            .Include(ca => ca.AssignedKingdom)
+            .Where(ca => ca.Character.PersonId == person.Id && ca.AssignedKingdomId != null)
+            .OrderByDescending(ca => ca.GameId)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        return new PersonSuggestion(
+            PersonId: person.Id,
+            FullName: $"{person.FirstName} {person.LastName}",
+            BirthYear: person.BirthYear,
+            Email: person.Email,
+            Phone: person.Phone,
+            GuardianName: lastRegistration?.GuardianName,
+            GuardianRelationship: lastRegistration?.GuardianRelationship,
+            LastKingdomId: lastAppearance?.AssignedKingdomId,
+            LastKingdomName: lastAppearance?.AssignedKingdom?.DisplayName,
+            LastAttendeeType: lastRegistration?.AttendeeType ?? AttendeeType.Player,
+            LastPlayerSubType: lastRegistration?.PlayerSubType,
+            LastAdultRoles: lastRegistration?.AdultRoles ?? AdultRoleFlags.None);
+    }
+
     private static void EnsureEditable(RegistrationSubmission submission)
     {
         if (submission.Status == SubmissionStatus.Cancelled)
@@ -932,3 +987,17 @@ public sealed record MealOptionViewModel(int Id, string Name, decimal Price);
 public sealed record FoodOrderViewModel(int RegistrationId, int MealOptionId, DateTime MealDayUtc);
 
 public sealed record FoodOrderInput(int RegistrationId, int MealOptionId, DateTime MealDayUtc);
+
+public sealed record PersonSuggestion(
+    int PersonId,
+    string FullName,
+    int BirthYear,
+    string? Email,
+    string? Phone,
+    string? GuardianName,
+    string? GuardianRelationship,
+    int? LastKingdomId,
+    string? LastKingdomName,
+    AttendeeType LastAttendeeType,
+    PlayerSubType? LastPlayerSubType,
+    AdultRoleFlags LastAdultRoles);
