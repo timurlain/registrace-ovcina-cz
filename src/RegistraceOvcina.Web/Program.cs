@@ -123,7 +123,7 @@ public class Program
             ?? throw new InvalidOperationException("Connection string 'DefaultConnection' not found.");
 
         // EF Core 10 false-positive: CLI reports no pending changes but runtime disagrees.
-        // Suppress globally until EF Core fixes this. CI migration checks catch real drift.
+        // Suppress globally until EF Core fixes this; model-to-migration drift is not validated here.
         builder.Services.AddDbContext<ApplicationDbContext>(options =>
             options.UseNpgsql(connectionString)
                    .ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning)));
