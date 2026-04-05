@@ -1,5 +1,7 @@
 using System.ComponentModel.DataAnnotations;
 using System.Globalization;
+using RegistraceOvcina.Web.Data;
+using RegistraceOvcina.Web.Infrastructure;
 
 namespace RegistraceOvcina.Web.Features.Games;
 
@@ -154,6 +156,29 @@ public sealed class CreateGameInput : IValidatableObject
         BankAccountName,
         TargetPlayerCountTotal,
         IsPublished);
+
+    public static CreateGameInput FromGame(Game game)
+    {
+        return new CreateGameInput
+        {
+            Name = game.Name,
+            Description = game.Description,
+            StartsAtLocalText = FormatDate(CzechTime.ToLocal(game.StartsAtUtc)),
+            EndsAtLocalText = FormatDate(CzechTime.ToLocal(game.EndsAtUtc)),
+            RegistrationClosesAtLocalText = FormatDate(CzechTime.ToLocal(game.RegistrationClosesAtUtc)),
+            MealOrderingClosesAtLocalText = FormatDate(CzechTime.ToLocal(game.MealOrderingClosesAtUtc)),
+            PaymentDueAtLocalText = FormatDate(CzechTime.ToLocal(game.PaymentDueAtUtc)),
+            AssignmentFreezeAtLocalText = game.AssignmentFreezeAtUtc is { } freeze
+                ? FormatDate(CzechTime.ToLocal(freeze))
+                : null,
+            PlayerBasePrice = game.PlayerBasePrice,
+            AdultHelperBasePrice = game.AdultHelperBasePrice,
+            BankAccount = game.BankAccount,
+            BankAccountName = game.BankAccountName,
+            TargetPlayerCountTotal = game.TargetPlayerCountTotal,
+            IsPublished = game.IsPublished
+        };
+    }
 
     public static CreateGameInput CreateDefaults()
     {
