@@ -1,0 +1,243 @@
+@page "/admin/importy"
+@attribute [Authorize(Policy = AuthorizationPolicies.AdminOnly)]
+
+@using RegistraceOvcina.Web.Features.HistoricalImport
+@using RegistraceOvcina.Web.Infrastructure
+
+@inject HistoricalImportService HistoricalImportService
+
+<PageTitle>Historický import</PageTitle>
+
+<div class="row g-4">
+    <div class="col-xl-5">
+        <section class="card shadow-sm h-100">
+            <div class="card-body p-4">
+                <h1 class="h3 mb-2" data-testid="historical-import-title">Historický import</h1>
+                <p class="text-secondary">
+                    Nahrajte export z Google Form nebo legacy workbooku <code>OrganizaceLidi.xlsx</code> pro jeden historický ročník.
+                </p>
+
+                @if (!string.IsNullOrWhiteSpace(statusMessage))
+                {
+                    <div class="alert alert-success" role="status">@statusMessage</div>
+                }
+
+                @if (!string.IsNullOrWhiteSpace(errorMessage))
+                {
+                    <div class="alert alert-danger" role="alert">@errorMessage</div>
+                }
+
+                <form method="post" action="/admin/importy/spustit" enctype="multipart/form-data">
+                    <AntiforgeryToken />
+
+                    <div class="mb-3">
+                        <label class="form-label" for="import-label">Popis dávky</label>
+                        <input id="import-label"
+                               name="@nameof(HistoricalImportInput.Label)"
+                               value="@input.Label"
+                               class="form-control"
+                               data-testid="historical-import-label" />
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label" for="import-game-name">Název historické hry</label>
+                        <input id="import-game-name"
+                               name="@nameof(HistoricalImportInput.GameName)"
+                               value="@input.GameName"
+                               class="form-control"
+                               data-testid="historical-import-game-name" />
+                    </div>
+
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <label class="form-label" for="import-starts">Začátek hry</label>
+                            <input id="import-starts"
+                                   name="@nameof(HistoricalImportInput.StartsAtLocalText)"
+                                   type="datetime-local"
+                                   value="@input.StartsAtLocalText"
+                                   class="form-control"
+                                   data-testid="historical-import-starts" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label" for="import-ends">Konec hry</label>
+                            <input id="import-ends"
+                                   name="@nameof(HistoricalImportInput.EndsAtLocalText)"
+                                   type="datetime-local"
+                                   value="@input.EndsAtLocalText"
+                                   class="form-control"
+                                   data-testid="historical-import-ends" />
+                        </div>
+                    </div>
+
+                    <div class="mt-3">
+                        <label class="form-label" for="import-workbook">Excel soubor</label>
+                        <input id="import-workbook"
+                               name="workbook"
+                               type="file"
+                               accept=".xlsx"
+                               class="form-control"
+                               data-testid="historical-import-file" />
+                        <div class="form-text">
+                            Podporováno: list <strong>Registrační formulář</strong> nebo legacy listy <strong>Deti</strong> + <strong>Orgove</strong>.
+                        </div>
+                    </div>
+
+                    <button type="submit"
+                            class="btn btn-primary mt-4 w-100"
+                            data-testid="historical-import-submit">
+                        Spustit import
+                    </button>
+                </form>
+            </div>
+        </section>
+    </div>
+
+    <div class="col-xl-7">
+        <section class="card shadow-sm">
+            <div class="card-body p-4">
+                <h2 class="h4 mb-3">Poslední dávky</h2>
+
+                @if (pageModel is null)
+                {
+                    <p class="text-secondary">Načítám historii importů...</p>
+                }
+                else if (pageModel.Batches.Count == 0)
+                {
+                    <div class="empty-state">Zatím ještě neběhl žádný historický import.</div>
+                }
+                else
+                {
+                    <div class="table-responsive">
+                        <table class="table align-middle">
+                            <thead>
+                                <tr>
+                                    <th>Dávka</th>
+                                    <th>Hra</th>
+                                    <th>Zdroj</th>
+                                    <th>Řádky</th>
+                                    <th>Varování</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var batch in pageModel.Batches)
+                                {
+                                    <tr data-testid="@($"historical-batch-{batch.Id}")"
+                                        class="@(pageModel.HighlightedBatch?.Id == batch.Id ? "table-primary" : null)">
+                                        <td>
+                                            <div class="fw-semibold">@batch.Label</div>
+                                            <div class="small text-secondary">@CzechTime.Format(batch.ImportedAtUtc)</div>
+                                        </td>
+                                        <td>@batch.GameName</td>
+                                        <td>
+                                            <div>@batch.SourceFileName</div>
+                                            <div class="small text-secondary">@batch.SourceFormat</div>
+                                        </td>
+                                        <td>@batch.TotalSourceRows</td>
+                                        <td>@batch.WarningCount</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </div>
+        </section>
+
+        @if (pageModel?.HighlightedBatch is { } highlightedBatch)
+        {
+            <section class="card shadow-sm mt-4">
+                <div class="card-body p-4">
+                    <div class="d-flex flex-column flex-lg-row justify-content-between gap-3 mb-3">
+                        <div>
+                            <h2 class="h4 mb-1">Detail dávky</h2>
+                            <div class="text-secondary">@highlightedBatch.Label · @highlightedBatch.GameName</div>
+                        </div>
+                        <div class="small text-secondary">
+                            Importováno @CzechTime.Format(highlightedBatch.ImportedAtUtc)
+                        </div>
+                    </div>
+
+                    <div class="row g-3 mb-3">
+                        <div class="col-6 col-md-3">
+                            <div class="small text-secondary">Zdrojové řádky</div>
+                            <div class="h4 mb-0" data-testid="historical-import-total-rows">@highlightedBatch.TotalSourceRows</div>
+                        </div>
+                        <div class="col-6 col-md-3">
+                            <div class="small text-secondary">Domácnosti</div>
+                            <div class="h4 mb-0">@highlightedBatch.HouseholdCount</div>
+                        </div>
+                        <div class="col-6 col-md-3">
+                            <div class="small text-secondary">Registrace</div>
+                            <div class="h4 mb-0">@highlightedBatch.RegistrationCount</div>
+                        </div>
+                        <div class="col-6 col-md-3">
+                            <div class="small text-secondary">Varování</div>
+                            <div class="h4 mb-0" data-testid="historical-import-warning-count">@highlightedBatch.WarningCount</div>
+                        </div>
+                    </div>
+
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-4">
+                            <div class="small text-secondary">Noví lidé</div>
+                            <div class="fw-semibold">@highlightedBatch.PersonCreatedCount</div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="small text-secondary">Napojené existující osoby</div>
+                            <div class="fw-semibold">@highlightedBatch.PersonMatchedCount</div>
+                        </div>
+                        <div class="col-md-4">
+                            <div class="small text-secondary">Nové postavy</div>
+                            <div class="fw-semibold">@highlightedBatch.CharacterCreatedCount</div>
+                        </div>
+                    </div>
+
+                    @if (highlightedBatch.Warnings.Count == 0)
+                    {
+                        <div class="alert alert-light border mb-0">
+                            Import doběhl bez doplňujících varování.
+                        </div>
+                    }
+                    else
+                    {
+                        <h3 class="h5 mb-3">Co zkontrolovat ručně</h3>
+                        <div class="list-group">
+                            @foreach (var warning in highlightedBatch.Warnings)
+                            {
+                                <div class="list-group-item">
+                                    <div class="fw-semibold">@warning.SourceLabel</div>
+                                    <div class="small text-secondary">@warning.SourceSheet</div>
+                                    <div>@warning.Message</div>
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+            </section>
+        }
+    </div>
+</div>
+
+@code {
+    [SupplyParameterFromQuery(Name = "status")]
+    private string? status { get; set; }
+
+    [SupplyParameterFromQuery(Name = "error")]
+    private string? queryError { get; set; }
+
+    [SupplyParameterFromQuery(Name = "batchId")]
+    private int? batchId { get; set; }
+
+    private HistoricalImportPageModel? pageModel;
+    private HistoricalImportInput input = HistoricalImportInput.CreateDefaults();
+    private string? statusMessage;
+    private string? errorMessage;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        pageModel = await HistoricalImportService.GetPageAsync(batchId);
+        statusMessage = status == "imported"
+            ? "Historický import byl dokončen."
+            : null;
+        errorMessage = queryError;
+    }
+}

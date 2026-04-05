@@ -44,7 +44,7 @@ namespace RegistraceOvcina.Web.Migrations
                     PasswordHash = table.Column<string>(type: "text", nullable: true),
                     SecurityStamp = table.Column<string>(type: "text", nullable: true),
                     ConcurrencyStamp = table.Column<string>(type: "text", nullable: true),
-                    PhoneNumber = table.Column<string>(type: "character varying(256)", maxLength: 256, nullable: true),
+                    PhoneNumber = table.Column<string>(type: "text", nullable: true),
                     PhoneNumberConfirmed = table.Column<bool>(type: "boolean", nullable: false),
                     TwoFactorEnabled = table.Column<bool>(type: "boolean", nullable: false),
                     LockoutEnd = table.Column<DateTimeOffset>(type: "timestamp with time zone", nullable: true),
@@ -185,8 +185,8 @@ namespace RegistraceOvcina.Web.Migrations
                 name: "AspNetUserLogins",
                 columns: table => new
                 {
-                    LoginProvider = table.Column<string>(type: "character varying(128)", maxLength: 128, nullable: false),
-                    ProviderKey = table.Column<string>(type: "character varying(128)", maxLength: 128, nullable: false),
+                    LoginProvider = table.Column<string>(type: "text", nullable: false),
+                    ProviderKey = table.Column<string>(type: "text", nullable: false),
                     ProviderDisplayName = table.Column<string>(type: "text", nullable: true),
                     UserId = table.Column<string>(type: "text", nullable: false)
                 },
@@ -195,25 +195,6 @@ namespace RegistraceOvcina.Web.Migrations
                     table.PrimaryKey("PK_AspNetUserLogins", x => new { x.LoginProvider, x.ProviderKey });
                     table.ForeignKey(
                         name: "FK_AspNetUserLogins_AspNetUsers_UserId",
-                        column: x => x.UserId,
-                        principalTable: "AspNetUsers",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
-                });
-
-            migrationBuilder.CreateTable(
-                name: "AspNetUserPasskeys",
-                columns: table => new
-                {
-                    CredentialId = table.Column<byte[]>(type: "bytea", maxLength: 1024, nullable: false),
-                    UserId = table.Column<string>(type: "text", nullable: false),
-                    Data = table.Column<string>(type: "jsonb", nullable: false)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_AspNetUserPasskeys", x => x.CredentialId);
-                    table.ForeignKey(
-                        name: "FK_AspNetUserPasskeys_AspNetUsers_UserId",
                         column: x => x.UserId,
                         principalTable: "AspNetUsers",
                         principalColumn: "Id",
@@ -249,8 +230,8 @@ namespace RegistraceOvcina.Web.Migrations
                 columns: table => new
                 {
                     UserId = table.Column<string>(type: "text", nullable: false),
-                    LoginProvider = table.Column<string>(type: "character varying(128)", maxLength: 128, nullable: false),
-                    Name = table.Column<string>(type: "character varying(128)", maxLength: 128, nullable: false),
+                    LoginProvider = table.Column<string>(type: "text", nullable: false),
+                    Name = table.Column<string>(type: "text", nullable: false),
                     Value = table.Column<string>(type: "text", nullable: true)
                 },
                 constraints: table =>
@@ -262,6 +243,75 @@ namespace RegistraceOvcina.Web.Migrations
                         principalTable: "AspNetUsers",
                         principalColumn: "Id",
                         onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "GameInvitations",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "integer", nullable: false)
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    GameId = table.Column<int>(type: "integer", nullable: false),
+                    RecipientEmail = table.Column<string>(type: "character varying(256)", maxLength: 256, nullable: false),
+                    RecipientName = table.Column<string>(type: "character varying(200)", maxLength: 200, nullable: false),
+                    SentByUserId = table.Column<string>(type: "character varying(450)", maxLength: 450, nullable: false),
+                    SentAtUtc = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    Subject = table.Column<string>(type: "character varying(512)", maxLength: 512, nullable: false),
+                    Note = table.Column<string>(type: "character varying(4000)", maxLength: 4000, nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_GameInvitations", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_GameInvitations_AspNetUsers_SentByUserId",
+                        column: x => x.SentByUserId,
+                        principalTable: "AspNetUsers",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                    table.ForeignKey(
+                        name: "FK_GameInvitations_Games_GameId",
+                        column: x => x.GameId,
+                        principalTable: "Games",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "HistoricalImportBatches",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "integer", nullable: false)
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    Label = table.Column<string>(type: "character varying(200)", maxLength: 200, nullable: false),
+                    SourceFormat = table.Column<string>(type: "character varying(80)", maxLength: 80, nullable: false),
+                    SourceFileName = table.Column<string>(type: "character varying(260)", maxLength: 260, nullable: false),
+                    GameId = table.Column<int>(type: "integer", nullable: false),
+                    ImportedByUserId = table.Column<string>(type: "character varying(450)", maxLength: 450, nullable: false),
+                    ImportedAtUtc = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    TotalSourceRows = table.Column<int>(type: "integer", nullable: false),
+                    HouseholdCount = table.Column<int>(type: "integer", nullable: false),
+                    RegistrationCount = table.Column<int>(type: "integer", nullable: false),
+                    PersonCreatedCount = table.Column<int>(type: "integer", nullable: false),
+                    PersonMatchedCount = table.Column<int>(type: "integer", nullable: false),
+                    CharacterCreatedCount = table.Column<int>(type: "integer", nullable: false),
+                    WarningCount = table.Column<int>(type: "integer", nullable: false),
+                    NotesJson = table.Column<string>(type: "character varying(4000)", maxLength: 4000, nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_HistoricalImportBatches", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_HistoricalImportBatches_AspNetUsers_ImportedByUserId",
+                        column: x => x.ImportedByUserId,
+                        principalTable: "AspNetUsers",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                    table.ForeignKey(
+                        name: "FK_HistoricalImportBatches_Games_GameId",
+                        column: x => x.GameId,
+                        principalTable: "Games",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
                 });
 
             migrationBuilder.CreateTable(
@@ -551,6 +601,60 @@ namespace RegistraceOvcina.Web.Migrations
                 });
 
             migrationBuilder.CreateTable(
+                name: "HistoricalImportRows",
+                columns: table => new
+                {
+                    Id = table.Column<int>(type: "integer", nullable: false)
+                        .Annotation("Npgsql:ValueGenerationStrategy", NpgsqlValueGenerationStrategy.IdentityByDefaultColumn),
+                    LastBatchId = table.Column<int>(type: "integer", nullable: true),
+                    SourceFormat = table.Column<string>(type: "character varying(80)", maxLength: 80, nullable: false),
+                    SourceSheet = table.Column<string>(type: "character varying(120)", maxLength: 120, nullable: false),
+                    SourceKey = table.Column<string>(type: "character varying(300)", maxLength: 300, nullable: false),
+                    SourceLabel = table.Column<string>(type: "character varying(300)", maxLength: 300, nullable: false),
+                    LinkedPersonId = table.Column<int>(type: "integer", nullable: true),
+                    LinkedSubmissionId = table.Column<int>(type: "integer", nullable: true),
+                    LinkedRegistrationId = table.Column<int>(type: "integer", nullable: true),
+                    LinkedCharacterId = table.Column<int>(type: "integer", nullable: true),
+                    WarningMessage = table.Column<string>(type: "character varying(1000)", maxLength: 1000, nullable: true),
+                    FirstImportedAtUtc = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    LastImportedAtUtc = table.Column<DateTime>(type: "timestamp with time zone", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_HistoricalImportRows", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_HistoricalImportRows_Characters_LinkedCharacterId",
+                        column: x => x.LinkedCharacterId,
+                        principalTable: "Characters",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.SetNull);
+                    table.ForeignKey(
+                        name: "FK_HistoricalImportRows_HistoricalImportBatches_LastBatchId",
+                        column: x => x.LastBatchId,
+                        principalTable: "HistoricalImportBatches",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.SetNull);
+                    table.ForeignKey(
+                        name: "FK_HistoricalImportRows_People_LinkedPersonId",
+                        column: x => x.LinkedPersonId,
+                        principalTable: "People",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.SetNull);
+                    table.ForeignKey(
+                        name: "FK_HistoricalImportRows_RegistrationSubmissions_LinkedSubmissi~",
+                        column: x => x.LinkedSubmissionId,
+                        principalTable: "RegistrationSubmissions",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.SetNull);
+                    table.ForeignKey(
+                        name: "FK_HistoricalImportRows_Registrations_LinkedRegistrationId",
+                        column: x => x.LinkedRegistrationId,
+                        principalTable: "Registrations",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.SetNull);
+                });
+
+            migrationBuilder.CreateTable(
                 name: "CharacterAppearances",
                 columns: table => new
                 {
@@ -615,11 +719,6 @@ namespace RegistraceOvcina.Web.Migrations
                 column: "UserId");
 
             migrationBuilder.CreateIndex(
-                name: "IX_AspNetUserPasskeys_UserId",
-                table: "AspNetUserPasskeys",
-                column: "UserId");
-
-            migrationBuilder.CreateIndex(
                 name: "IX_AspNetUserRoles_RoleId",
                 table: "AspNetUserRoles",
                 column: "RoleId");
@@ -656,6 +755,16 @@ namespace RegistraceOvcina.Web.Migrations
                 column: "RegistrationId");
 
             migrationBuilder.CreateIndex(
+                name: "IX_GameInvitations_GameId",
+                table: "GameInvitations",
+                column: "GameId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_GameInvitations_SentByUserId",
+                table: "GameInvitations",
+                column: "SentByUserId");
+
+            migrationBuilder.CreateIndex(
                 name: "IX_GameKingdomTargets_GameId_KingdomId",
                 table: "GameKingdomTargets",
                 columns: new[] { "GameId", "KingdomId" },
@@ -665,6 +774,47 @@ namespace RegistraceOvcina.Web.Migrations
                 name: "IX_GameKingdomTargets_KingdomId",
                 table: "GameKingdomTargets",
                 column: "KingdomId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_HistoricalImportBatches_GameId",
+                table: "HistoricalImportBatches",
+                column: "GameId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_HistoricalImportBatches_ImportedByUserId",
+                table: "HistoricalImportBatches",
+                column: "ImportedByUserId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_HistoricalImportRows_LastBatchId",
+                table: "HistoricalImportRows",
+                column: "LastBatchId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_HistoricalImportRows_LinkedCharacterId",
+                table: "HistoricalImportRows",
+                column: "LinkedCharacterId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_HistoricalImportRows_LinkedPersonId",
+                table: "HistoricalImportRows",
+                column: "LinkedPersonId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_HistoricalImportRows_LinkedRegistrationId",
+                table: "HistoricalImportRows",
+                column: "LinkedRegistrationId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_HistoricalImportRows_LinkedSubmissionId",
+                table: "HistoricalImportRows",
+                column: "LinkedSubmissionId");
+
+            migrationBuilder.CreateIndex(
+                name: "IX_HistoricalImportRows_SourceFormat_SourceSheet_SourceKey",
+                table: "HistoricalImportRows",
+                columns: new[] { "SourceFormat", "SourceSheet", "SourceKey" },
+                unique: true);
 
             migrationBuilder.CreateIndex(
                 name: "IX_CharacterAppearances_AssignedKingdomId",
@@ -773,9 +923,6 @@ namespace RegistraceOvcina.Web.Migrations
                 name: "AspNetUserLogins");
 
             migrationBuilder.DropTable(
-                name: "AspNetUserPasskeys");
-
-            migrationBuilder.DropTable(
                 name: "AspNetUserRoles");
 
             migrationBuilder.DropTable(
@@ -791,7 +938,13 @@ namespace RegistraceOvcina.Web.Migrations
                 name: "FoodOrders");
 
             migrationBuilder.DropTable(
+                name: "GameInvitations");
+
+            migrationBuilder.DropTable(
                 name: "GameKingdomTargets");
+
+            migrationBuilder.DropTable(
+                name: "HistoricalImportRows");
 
             migrationBuilder.DropTable(
                 name: "CharacterAppearances");
@@ -807,6 +960,9 @@ namespace RegistraceOvcina.Web.Migrations
 
             migrationBuilder.DropTable(
                 name: "MealOptions");
+
+            migrationBuilder.DropTable(
+                name: "HistoricalImportBatches");
 
             migrationBuilder.DropTable(
                 name: "Characters");

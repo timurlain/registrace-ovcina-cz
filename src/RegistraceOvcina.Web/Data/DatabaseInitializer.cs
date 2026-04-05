@@ -31,18 +31,8 @@ public static class DatabaseInitializer
 
         await SeedKingdomsAsync(db);
 
-        var seedDemoUsers = configuration.GetValue<bool?>("SeedData:SeedDemoUsers")
-            ?? (environment.IsDevelopment() || environment.IsEnvironment("Testing"));
-
-        if (!seedDemoUsers)
-        {
-            return;
-        }
-
+        // Roles must always exist — external login creates users with Registrant role
         var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole>>();
-        var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
-        var nowUtc = DateTime.UtcNow;
-
         foreach (var role in new[] { RoleNames.Registrant, RoleNames.Organizer, RoleNames.Admin })
         {
             if (!await roleManager.RoleExistsAsync(role))
@@ -51,6 +41,17 @@ public static class DatabaseInitializer
                 EnsureSuccess(createRoleResult, $"role '{role}'");
             }
         }
+
+        var seedDemoUsers = configuration.GetValue<bool?>("SeedData:SeedDemoUsers")
+            ?? (environment.IsDevelopment() || environment.IsEnvironment("Testing"));
+
+        if (!seedDemoUsers)
+        {
+            return;
+        }
+
+        var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
+        var nowUtc = DateTime.UtcNow;
 
         await EnsureUserAsync(
             userManager,

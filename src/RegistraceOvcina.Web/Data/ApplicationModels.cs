@@ -295,6 +295,19 @@ public sealed class EmailMessage
     public Person? LinkedPerson { get; set; }
 }
 
+public sealed class GameInvitation
+{
+    public int Id { get; set; }
+    public int GameId { get; set; }
+    public string RecipientEmail { get; set; } = "";
+    public string RecipientName { get; set; } = "";
+    public string SentByUserId { get; set; } = "";
+    public DateTime SentAtUtc { get; set; }
+    public string Subject { get; set; } = "";
+    public string? Note { get; set; }
+    public Game Game { get; set; } = default!;
+}
+
 public sealed class AuditLog
 {
     public int Id { get; set; }
@@ -304,4 +317,47 @@ public sealed class AuditLog
     public string ActorUserId { get; set; } = "";
     public DateTime CreatedAtUtc { get; set; }
     public string? DetailsJson { get; set; }
+}
+
+public sealed class HistoricalImportBatch
+{
+    public int Id { get; set; }
+    public string Label { get; set; } = "";
+    public string SourceFormat { get; set; } = "";
+    public string SourceFileName { get; set; } = "";
+    public int GameId { get; set; }
+    public string ImportedByUserId { get; set; } = "";
+    public DateTime ImportedAtUtc { get; set; }
+    public int TotalSourceRows { get; set; }
+    public int HouseholdCount { get; set; }
+    public int RegistrationCount { get; set; }
+    public int PersonCreatedCount { get; set; }
+    public int PersonMatchedCount { get; set; }
+    public int CharacterCreatedCount { get; set; }
+    public int WarningCount { get; set; }
+    public string? NotesJson { get; set; }
+    public Game Game { get; set; } = default!;
+    public List<HistoricalImportRow> Rows { get; set; } = [];
+}
+
+public sealed class HistoricalImportRow
+{
+    public int Id { get; set; }
+    public int? LastBatchId { get; set; }
+    public string SourceFormat { get; set; } = "";
+    public string SourceSheet { get; set; } = "";
+    public string SourceKey { get; set; } = "";
+    public string SourceLabel { get; set; } = "";
+    public int? LinkedPersonId { get; set; }
+    public int? LinkedSubmissionId { get; set; }
+    public int? LinkedRegistrationId { get; set; }
+    public int? LinkedCharacterId { get; set; }
+    public string? WarningMessage { get; set; }
+    public DateTime FirstImportedAtUtc { get; set; }
+    public DateTime LastImportedAtUtc { get; set; }
+    public HistoricalImportBatch? LastBatch { get; set; }
+    public Person? LinkedPerson { get; set; }
+    public RegistrationSubmission? LinkedSubmission { get; set; }
+    public Registration? LinkedRegistration { get; set; }
+    public Character? LinkedCharacter { get; set; }
 }

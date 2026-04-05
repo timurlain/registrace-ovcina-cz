@@ -12,7 +12,7 @@ using RegistraceOvcina.Web.Data;
 namespace RegistraceOvcina.Web.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    [Migration("20260404193053_InitialCreate")]
+    [Migration("20260405053146_InitialCreate")]
     partial class InitialCreate
     {
         /// <inheritdoc />
@@ -104,12 +104,10 @@ namespace RegistraceOvcina.Web.Migrations
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityUserLogin<string>", b =>
                 {
                     b.Property<string>("LoginProvider")
-                        .HasMaxLength(128)
-                        .HasColumnType("character varying(128)");
+                        .HasColumnType("text");
 
                     b.Property<string>("ProviderKey")
-                        .HasMaxLength(128)
-                        .HasColumnType("character varying(128)");
+                        .HasColumnType("text");
 
                     b.Property<string>("ProviderDisplayName")
                         .HasColumnType("text");
@@ -123,23 +121,6 @@ namespace RegistraceOvcina.Web.Migrations
                     b.HasIndex("UserId");
 
                     b.ToTable("AspNetUserLogins", (string)null);
-                });
-
-            modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityUserPasskey<string>", b =>
-                {
-                    b.Property<byte[]>("CredentialId")
-                        .HasMaxLength(1024)
-                        .HasColumnType("bytea");
-
-                    b.Property<string>("UserId")
-                        .IsRequired()
-                        .HasColumnType("text");
-
-                    b.HasKey("CredentialId");
-
-                    b.HasIndex("UserId");
-
-                    b.ToTable("AspNetUserPasskeys", (string)null);
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityUserRole<string>", b =>
@@ -163,12 +144,10 @@ namespace RegistraceOvcina.Web.Migrations
                         .HasColumnType("text");
 
                     b.Property<string>("LoginProvider")
-                        .HasMaxLength(128)
-                        .HasColumnType("character varying(128)");
+                        .HasColumnType("text");
 
                     b.Property<string>("Name")
-                        .HasMaxLength(128)
-                        .HasColumnType("character varying(128)");
+                        .HasColumnType("text");
 
                     b.Property<string>("Value")
                         .HasColumnType("text");
@@ -236,8 +215,7 @@ namespace RegistraceOvcina.Web.Migrations
                         .HasColumnType("integer");
 
                     b.Property<string>("PhoneNumber")
-                        .HasMaxLength(256)
-                        .HasColumnType("character varying(256)");
+                        .HasColumnType("text");
 
                     b.Property<bool>("PhoneNumberConfirmed")
                         .HasColumnType("boolean");
@@ -554,6 +532,53 @@ namespace RegistraceOvcina.Web.Migrations
                     b.ToTable("Games");
                 });
 
+            modelBuilder.Entity("RegistraceOvcina.Web.Data.GameInvitation", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("GameId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)");
+
+                    b.Property<string>("RecipientEmail")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<string>("RecipientName")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<DateTime>("SentAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("SentByUserId")
+                        .IsRequired()
+                        .HasMaxLength(450)
+                        .HasColumnType("character varying(450)");
+
+                    b.Property<string>("Subject")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("GameId");
+
+                    b.HasIndex("SentByUserId");
+
+                    b.ToTable("GameInvitations");
+                });
+
             modelBuilder.Entity("RegistraceOvcina.Web.Data.GameKingdomTarget", b =>
                 {
                     b.Property<int>("Id")
@@ -579,6 +604,145 @@ namespace RegistraceOvcina.Web.Migrations
                         .IsUnique();
 
                     b.ToTable("GameKingdomTargets");
+                });
+
+            modelBuilder.Entity("RegistraceOvcina.Web.Data.HistoricalImportBatch", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("CharacterCreatedCount")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("GameId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("HouseholdCount")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("ImportedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ImportedByUserId")
+                        .IsRequired()
+                        .HasMaxLength(450)
+                        .HasColumnType("character varying(450)");
+
+                    b.Property<string>("Label")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("NotesJson")
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)");
+
+                    b.Property<int>("PersonCreatedCount")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("PersonMatchedCount")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("RegistrationCount")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("SourceFileName")
+                        .IsRequired()
+                        .HasMaxLength(260)
+                        .HasColumnType("character varying(260)");
+
+                    b.Property<string>("SourceFormat")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)");
+
+                    b.Property<int>("TotalSourceRows")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("WarningCount")
+                        .HasColumnType("integer");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("GameId");
+
+                    b.HasIndex("ImportedByUserId");
+
+                    b.ToTable("HistoricalImportBatches");
+                });
+
+            modelBuilder.Entity("RegistraceOvcina.Web.Data.HistoricalImportRow", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("FirstImportedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("LastBatchId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("LastImportedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("LinkedCharacterId")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("LinkedPersonId")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("LinkedRegistrationId")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("LinkedSubmissionId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("SourceFormat")
+                        .IsRequired()
+                        .HasMaxLength(80)
+                        .HasColumnType("character varying(80)");
+
+                    b.Property<string>("SourceKey")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<string>("SourceLabel")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("character varying(300)");
+
+                    b.Property<string>("SourceSheet")
+                        .IsRequired()
+                        .HasMaxLength(120)
+                        .HasColumnType("character varying(120)");
+
+                    b.Property<string>("WarningMessage")
+                        .HasMaxLength(1000)
+                        .HasColumnType("character varying(1000)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("LastBatchId");
+
+                    b.HasIndex("LinkedCharacterId");
+
+                    b.HasIndex("LinkedPersonId");
+
+                    b.HasIndex("LinkedRegistrationId");
+
+                    b.HasIndex("LinkedSubmissionId");
+
+                    b.HasIndex("SourceFormat", "SourceSheet", "SourceKey")
+                        .IsUnique();
+
+                    b.ToTable("HistoricalImportRows");
                 });
 
             modelBuilder.Entity("RegistraceOvcina.Web.Data.Kingdom", b =>
@@ -951,57 +1115,6 @@ namespace RegistraceOvcina.Web.Migrations
                         .IsRequired();
                 });
 
-            modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityUserPasskey<string>", b =>
-                {
-                    b.HasOne("RegistraceOvcina.Web.Data.ApplicationUser", null)
-                        .WithMany()
-                        .HasForeignKey("UserId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.OwnsOne("Microsoft.AspNetCore.Identity.IdentityPasskeyData", "Data", b1 =>
-                        {
-                            b1.Property<byte[]>("IdentityUserPasskeyCredentialId");
-
-                            b1.Property<byte[]>("AttestationObject")
-                                .IsRequired();
-
-                            b1.Property<byte[]>("ClientDataJson")
-                                .IsRequired();
-
-                            b1.Property<DateTimeOffset>("CreatedAt");
-
-                            b1.Property<bool>("IsBackedUp");
-
-                            b1.Property<bool>("IsBackupEligible");
-
-                            b1.Property<bool>("IsUserVerified");
-
-                            b1.Property<string>("Name");
-
-                            b1.Property<byte[]>("PublicKey")
-                                .IsRequired();
-
-                            b1.Property<long>("SignCount");
-
-                            b1.PrimitiveCollection<string>("Transports");
-
-                            b1.HasKey("IdentityUserPasskeyCredentialId");
-
-                            b1.ToTable("AspNetUserPasskeys");
-
-                            b1
-                                .ToJson("Data")
-                                .HasColumnType("jsonb");
-
-                            b1.WithOwner()
-                                .HasForeignKey("IdentityUserPasskeyCredentialId");
-                        });
-
-                    b.Navigation("Data")
-                        .IsRequired();
-                });
-
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityUserRole<string>", b =>
                 {
                     b.HasOne("Microsoft.AspNetCore.Identity.IdentityRole", null)
@@ -1106,6 +1219,23 @@ namespace RegistraceOvcina.Web.Migrations
                     b.Navigation("Registration");
                 });
 
+            modelBuilder.Entity("RegistraceOvcina.Web.Data.GameInvitation", b =>
+                {
+                    b.HasOne("RegistraceOvcina.Web.Data.Game", "Game")
+                        .WithMany()
+                        .HasForeignKey("GameId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("RegistraceOvcina.Web.Data.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("SentByUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Game");
+                });
+
             modelBuilder.Entity("RegistraceOvcina.Web.Data.GameKingdomTarget", b =>
                 {
                     b.HasOne("RegistraceOvcina.Web.Data.Game", "Game")
@@ -1123,6 +1253,61 @@ namespace RegistraceOvcina.Web.Migrations
                     b.Navigation("Game");
 
                     b.Navigation("Kingdom");
+                });
+
+            modelBuilder.Entity("RegistraceOvcina.Web.Data.HistoricalImportBatch", b =>
+                {
+                    b.HasOne("RegistraceOvcina.Web.Data.Game", "Game")
+                        .WithMany()
+                        .HasForeignKey("GameId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("RegistraceOvcina.Web.Data.ApplicationUser", null)
+                        .WithMany()
+                        .HasForeignKey("ImportedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Game");
+                });
+
+            modelBuilder.Entity("RegistraceOvcina.Web.Data.HistoricalImportRow", b =>
+                {
+                    b.HasOne("RegistraceOvcina.Web.Data.HistoricalImportBatch", "LastBatch")
+                        .WithMany("Rows")
+                        .HasForeignKey("LastBatchId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("RegistraceOvcina.Web.Data.Character", "LinkedCharacter")
+                        .WithMany()
+                        .HasForeignKey("LinkedCharacterId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("RegistraceOvcina.Web.Data.Person", "LinkedPerson")
+                        .WithMany()
+                        .HasForeignKey("LinkedPersonId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("RegistraceOvcina.Web.Data.Registration", "LinkedRegistration")
+                        .WithMany()
+                        .HasForeignKey("LinkedRegistrationId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("RegistraceOvcina.Web.Data.RegistrationSubmission", "LinkedSubmission")
+                        .WithMany()
+                        .HasForeignKey("LinkedSubmissionId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("LastBatch");
+
+                    b.Navigation("LinkedCharacter");
+
+                    b.Navigation("LinkedPerson");
+
+                    b.Navigation("LinkedRegistration");
+
+                    b.Navigation("LinkedSubmission");
                 });
 
             modelBuilder.Entity("RegistraceOvcina.Web.Data.MealOption", b =>
@@ -1230,6 +1415,11 @@ namespace RegistraceOvcina.Web.Migrations
                     b.Navigation("MealOptions");
 
                     b.Navigation("Submissions");
+                });
+
+            modelBuilder.Entity("RegistraceOvcina.Web.Data.HistoricalImportBatch", b =>
+                {
+                    b.Navigation("Rows");
                 });
 
             modelBuilder.Entity("RegistraceOvcina.Web.Data.Person", b =>
