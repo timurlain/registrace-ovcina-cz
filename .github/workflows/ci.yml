@@ -246,7 +246,7 @@ jobs:
 
             echo "Attempt $attempt: provisioning=$provisioning health=$health running=$running details=$details"
 
-            if [ "$provisioning" = "Provisioned" ] && [ "$health" = "Healthy" ] && [ "$running" = "Running" ]; then
+            if [ "$provisioning" = "Provisioned" ] && [ "$health" = "Healthy" ] && [[ "$running" == Running* ]]; then
               exit 0
             fi
 
