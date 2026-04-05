@@ -129,10 +129,10 @@
                                     <th>Registrace do</th>
                                     <th>Místa</th>
                                     <th>Stav</th>
-                                    <th>Akce</th>
                                 </tr>
                             </thead>
                             <tbody>
+                                @{ var latestGameId = games.FirstOrDefault()?.Id; }
                                 @foreach (var game in games)
                                 {
                                     <tr data-testid="@($"game-row-{game.Id}")">
@@ -147,15 +147,20 @@
                                         <td>@CzechTime.Format(game.RegistrationClosesAtUtc)</td>
                                         <td>@game.RemainingPlayerSpots / @game.TargetPlayerCountTotal</td>
                                         <td>@(game.IsPublished ? "Zveřejněno" : "Skryto")</td>
-                                        <td>
-                                            <div class="d-flex gap-1">
-                                                <a href="/admin/hry/@game.Id/kralovstvi" class="btn btn-sm btn-outline-primary">Království</a>
-                                                <a href="/admin/hry/@game.Id/jidla" class="btn btn-sm btn-outline-primary">Jídla</a>
-                                                <a href="/admin/hry/@game.Id/pozvanky" class="btn btn-sm btn-outline-primary">Pozvánky</a>
-                                                <a href="/organizace/hry/@game.Id/kralovstvi" class="btn btn-sm btn-outline-success">Rozdělení</a>
-                                            </div>
-                                        </td>
                                     </tr>
+                                    @if (game.Id == latestGameId)
+                                    {
+                                        <tr>
+                                            <td colspan="5" class="pt-2 pb-3 border-bottom">
+                                                <div class="d-flex flex-wrap gap-2">
+                                                    <a href="/admin/hry/@game.Id/kralovstvi" class="btn btn-sm btn-outline-primary">Království</a>
+                                                    <a href="/admin/hry/@game.Id/jidla" class="btn btn-sm btn-outline-primary">Jídla</a>
+                                                    <a href="/admin/hry/@game.Id/pozvanky" class="btn btn-sm btn-outline-primary">Pozvánky</a>
+                                                    <a href="/organizace/hry/@game.Id/kralovstvi" class="btn btn-sm btn-outline-success">Rozdělení</a>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    }
                                 }
                             </tbody>
                         </table>
