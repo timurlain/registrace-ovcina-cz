@@ -1,0 +1,364 @@
+@page "/organizace/prihlasky/{submissionId:int}"
+@attribute [Authorize(Policy = AuthorizationPolicies.StaffOnly)]
+
+@inject OrganizerSubmissionService OrganizerSubmissionService
+
+<PageTitle>Přihláška #@SubmissionId</PageTitle>
+
+@if (detail is null)
+{
+    <p class="text-secondary">Načítám detail přihlášky...</p>
+}
+else
+{
+    <div class="mb-4">
+        <a href="/organizace/prihlasky" class="text-decoration-none">&larr; Zpět na přihlášky</a>
+    </div>
+
+    <h1 class="h3 mb-1">Přihláška #@detail.Id</h1>
+    <p class="text-secondary mb-4">@detail.GameName</p>
+
+    @if (!string.IsNullOrWhiteSpace(statusMessage))
+    {
+        <div class="alert alert-success" role="status">@statusMessage</div>
+    }
+    @if (!string.IsNullOrWhiteSpace(errorMessage))
+    {
+        <div class="alert alert-danger" role="alert">@errorMessage</div>
+    }
+
+    <div class="row g-4">
+        @* Left column — main content *@
+        <div class="col-lg-8">
+            @* Contact card *@
+            <section class="card shadow-sm mb-4">
+                <div class="card-body p-4">
+                    <h2 class="h5 mb-3">Kontakt</h2>
+                    <dl class="row mb-0">
+                        <dt class="col-sm-4 text-secondary">Jméno</dt>
+                        <dd class="col-sm-8">@detail.PrimaryContactName</dd>
+
+                        <dt class="col-sm-4 text-secondary">E-mail</dt>
+                        <dd class="col-sm-8"><a href="mailto:@detail.PrimaryEmail">@detail.PrimaryEmail</a></dd>
+
+                        <dt class="col-sm-4 text-secondary">Telefon</dt>
+                        <dd class="col-sm-8">@detail.PrimaryPhone</dd>
+
+                        @if (!string.IsNullOrWhiteSpace(detail.RegistrantNote))
+                        {
+                            <dt class="col-sm-4 text-secondary">Poznámka přihlašujícího</dt>
+                            <dd class="col-sm-8">@detail.RegistrantNote</dd>
+                        }
+                    </dl>
+                </div>
+            </section>
+
+            @* Attendees *@
+            <section class="card shadow-sm mb-4">
+                <div class="card-body p-4">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <h2 class="h5 mb-0">Účastníci</h2>
+                        <span class="badge text-bg-light">@detail.Attendees.Count</span>
+                    </div>
+
+                    @if (detail.Attendees.Count == 0)
+                    {
+                        <p class="text-secondary">Žádní účastníci.</p>
+                    }
+                    else
+                    {
+                        @foreach (var attendee in detail.Attendees)
+                        {
+                            <div class="border rounded p-3 mb-3">
+                                <div class="d-flex justify-content-between align-items-start mb-2">
+                                    <div>
+                                        <strong>@attendee.FirstName @attendee.LastName</strong>
+                                        <span class="text-secondary ms-2">(nar. @attendee.BirthYear)</span>
+                                    </div>
+                                    <span class="badge @(attendee.AttendeeType == AttendeeType.Player ? "text-bg-primary" : "text-bg-secondary")">
+                                        @GetAttendeeTypeLabel(attendee.AttendeeType)
+                                    </span>
+                                </div>
+
+                                <dl class="row small mb-0">
+                                    @if (attendee.AttendeeType == AttendeeType.Player && attendee.PlayerSubType.HasValue)
+                                    {
+                                        <dt class="col-sm-4 text-secondary">Kategorie</dt>
+                                        <dd class="col-sm-8">@GetPlayerSubTypeLabel(attendee.PlayerSubType.Value)</dd>
+                                    }
+
+                                    @if (attendee.AttendeeType == AttendeeType.Adult && attendee.AdultRoles != AdultRoleFlags.None)
+                                    {
+                                        <dt class="col-sm-4 text-secondary">Role</dt>
+                                        <dd class="col-sm-8">@GetAdultRolesLabel(attendee.AdultRoles)</dd>
+                                    }
+
+                                    @if (!string.IsNullOrWhiteSpace(attendee.PreferredKingdom))
+                                    {
+                                        <dt class="col-sm-4 text-secondary">Preferované království</dt>
+                                        <dd class="col-sm-8">@attendee.PreferredKingdom</dd>
+                                    }
+
+                                    @if (!string.IsNullOrWhiteSpace(attendee.CharacterName))
+                                    {
+                                        <dt class="col-sm-4 text-secondary">Postava</dt>
+                                        <dd class="col-sm-8">@attendee.CharacterName</dd>
+                                    }
+
+                                    @if (attendee.LodgingPreference.HasValue)
+                                    {
+                                        <dt class="col-sm-4 text-secondary">Ubytování</dt>
+                                        <dd class="col-sm-8">@GetLodgingLabel(attendee.LodgingPreference.Value)</dd>
+                                    }
+
+                                    @if (!string.IsNullOrWhiteSpace(attendee.ContactEmail))
+                                    {
+                                        <dt class="col-sm-4 text-secondary">E-mail účastníka</dt>
+                                        <dd class="col-sm-8">@attendee.ContactEmail</dd>
+                                    }
+
+                                    @if (!string.IsNullOrWhiteSpace(attendee.ContactPhone))
+                                    {
+                                        <dt class="col-sm-4 text-secondary">Telefon účastníka</dt>
+                                        <dd class="col-sm-8">@attendee.ContactPhone</dd>
+                                    }
+
+                                    @if (!string.IsNullOrWhiteSpace(attendee.RegistrantNote))
+                                    {
+                                        <dt class="col-sm-4 text-secondary">Poznámka</dt>
+                                        <dd class="col-sm-8">@attendee.RegistrantNote</dd>
+                                    }
+
+                                    @if (attendee.FoodOrders.Count > 0)
+                                    {
+                                        <dt class="col-sm-4 text-secondary">Strava</dt>
+                                        <dd class="col-sm-8">
+                                            <ul class="list-unstyled mb-0">
+                                                @foreach (var fo in attendee.FoodOrders)
+                                                {
+                                                    <li>@CzechTime.ToLocal(fo.MealDayUtc).ToString("d. M.") — @fo.MealOptionName (@fo.Price.ToString("0.00") Kč)</li>
+                                                }
+                                            </ul>
+                                        </dd>
+                                    }
+                                </dl>
+                            </div>
+                        }
+                    }
+                </div>
+            </section>
+        </div>
+
+        @* Right column — sidebar *@
+        <div class="col-lg-4">
+            @* Status + payment summary *@
+            <section class="card shadow-sm mb-4">
+                <div class="card-body p-4">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <span class="badge @GetStatusBadgeClass(detail.Status) fs-6">@GetSubmissionStatusLabel(detail.Status)</span>
+                        @if (detail.SubmittedAtUtc.HasValue)
+                        {
+                            <span class="text-secondary small">@CzechTime.Format(detail.SubmittedAtUtc.Value)</span>
+                        }
+                    </div>
+
+                    <h3 class="h6 mb-2">Platba</h3>
+                    <dl class="row small mb-0">
+                        <dt class="col-7 text-secondary">Očekávaná částka</dt>
+                        <dd class="col-5 text-end fw-semibold">@detail.ExpectedTotalAmount.ToString("0.00") Kč</dd>
+
+                        <dt class="col-7 text-secondary">Uhrazeno</dt>
+                        <dd class="col-5 text-end fw-semibold">@detail.PaidAmount.ToString("0.00") Kč</dd>
+
+                        <dt class="col-7 text-secondary">Stav</dt>
+                        <dd class="col-5 text-end">
+                            <span class="badge @GetBalanceBadgeClass(detail.BalanceStatus)">@GetBalanceLabel(detail.BalanceStatus)</span>
+                        </dd>
+
+                        @if (!string.IsNullOrWhiteSpace(detail.PaymentVariableSymbol))
+                        {
+                            <dt class="col-7 text-secondary">VS</dt>
+                            <dd class="col-5 text-end">@detail.PaymentVariableSymbol</dd>
+                        }
+                    </dl>
+                </div>
+            </section>
+
+            @* Add note form *@
+            <section class="card shadow-sm mb-4">
+                <div class="card-body p-4">
+                    <h3 class="h6 mb-2">Přidat poznámku</h3>
+                    <form method="post" action="/organizace/prihlasky/@SubmissionId/poznamka">
+                        <AntiforgeryToken />
+                        <div class="mb-2">
+                            <textarea name="note" class="form-control form-control-sm" rows="3" placeholder="Poznámka pro interní účely..." required></textarea>
+                        </div>
+                        <button type="submit" class="btn btn-sm btn-outline-primary w-100">Přidat poznámku</button>
+                    </form>
+                </div>
+            </section>
+
+            @* Timeline *@
+            <section class="card shadow-sm mb-4">
+                <div class="card-body p-4">
+                    <h3 class="h6 mb-3">Časová osa</h3>
+
+                    @if (detail.Timeline.Count == 0)
+                    {
+                        <p class="text-secondary small">Zatím žádné události.</p>
+                    }
+                    else
+                    {
+                        <div class="timeline-list">
+                            @foreach (var evt in detail.Timeline)
+                            {
+                                <div class="d-flex gap-2 mb-3">
+                                    <div class="flex-shrink-0 mt-1">
+                                        <span class="badge rounded-pill @GetTimelineBadgeClass(evt.Type)" title="@GetTimelineTypeLabel(evt.Type)">
+                                            @GetTimelineIcon(evt.Type)
+                                        </span>
+                                    </div>
+                                    <div class="flex-grow-1">
+                                        <div class="small">@evt.Description</div>
+                                        <div class="text-secondary" style="font-size: 0.75rem;">
+                                            @CzechTime.Format(evt.OccurredAtUtc)
+                                            @if (!string.IsNullOrWhiteSpace(evt.ActorName))
+                                            {
+                                                <span> &middot; @evt.ActorName</span>
+                                            }
+                                        </div>
+                                    </div>
+                                </div>
+                            }
+                        </div>
+                    }
+                </div>
+            </section>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter]
+    public int SubmissionId { get; set; }
+
+    [SupplyParameterFromQuery(Name = "noteSaved")]
+    private int? noteSaved { get; set; }
+
+    [SupplyParameterFromQuery(Name = "error")]
+    private string? queryError { get; set; }
+
+    private OrganizerSubmissionDetail? detail;
+    private string? statusMessage;
+    private string? errorMessage;
+
+    protected override async Task OnInitializedAsync()
+    {
+        detail = await OrganizerSubmissionService.GetSubmissionDetailAsync(SubmissionId);
+    }
+
+    protected override void OnParametersSet()
+    {
+        statusMessage = noteSaved == 1 ? "Poznámka byla přidána." : null;
+        errorMessage = queryError;
+    }
+
+    // --- Label helpers ---
+
+    private static string GetSubmissionStatusLabel(SubmissionStatus status) => status switch
+    {
+        SubmissionStatus.Draft => "Rozpracovaná",
+        SubmissionStatus.Submitted => "Odeslaná",
+        SubmissionStatus.Cancelled => "Zrušená",
+        _ => status.ToString()
+    };
+
+    private static string GetBalanceLabel(BalanceStatus balanceStatus) => balanceStatus switch
+    {
+        BalanceStatus.Unpaid => "Neuhrazeno",
+        BalanceStatus.Underpaid => "Nedoplatek",
+        BalanceStatus.Balanced => "Uhrazeno",
+        BalanceStatus.Overpaid => "Přeplatek",
+        _ => balanceStatus.ToString()
+    };
+
+    private static string GetAttendeeTypeLabel(AttendeeType type) => type switch
+    {
+        AttendeeType.Player => "Hráč",
+        AttendeeType.Adult => "Dospělý",
+        _ => type.ToString()
+    };
+
+    private static string GetPlayerSubTypeLabel(PlayerSubType subType) => subType switch
+    {
+        PlayerSubType.Pvp => "PVP hráč (10+)",
+        PlayerSubType.Independent => "Samostatné dítě (8+)",
+        PlayerSubType.WithRanger => "S hraničářem (5–7)",
+        PlayerSubType.WithParent => "S rodičem (4+)",
+        _ => subType.ToString()
+    };
+
+    private static string GetAdultRolesLabel(AdultRoleFlags roles)
+    {
+        var labels = new List<string>();
+        if (roles.HasFlag(AdultRoleFlags.PlayMonster)) labels.Add("NPC/příšera");
+        if (roles.HasFlag(AdultRoleFlags.OrganizationHelper)) labels.Add("Organizační pomoc");
+        if (roles.HasFlag(AdultRoleFlags.TechSupport)) labels.Add("Technická podpora");
+        if (roles.HasFlag(AdultRoleFlags.RangerLeader)) labels.Add("Hraničář");
+        if (roles.HasFlag(AdultRoleFlags.Spectator)) labels.Add("Přihlížející");
+        return string.Join(", ", labels);
+    }
+
+    private static string GetLodgingLabel(LodgingPreference lp) => lp switch
+    {
+        LodgingPreference.Indoor => "Uvnitř (budova)",
+        LodgingPreference.OwnTent => "Vlastní stan",
+        LodgingPreference.CampOutdoor => "Venku / pod širákem",
+        LodgingPreference.NotStaying => "Neplánuje přenocovat",
+        _ => lp.ToString()
+    };
+
+    private static string GetStatusBadgeClass(SubmissionStatus status) => status switch
+    {
+        SubmissionStatus.Draft => "text-bg-secondary",
+        SubmissionStatus.Submitted => "text-bg-primary",
+        SubmissionStatus.Cancelled => "text-bg-danger",
+        _ => "text-bg-light"
+    };
+
+    private static string GetBalanceBadgeClass(BalanceStatus balance) => balance switch
+    {
+        BalanceStatus.Unpaid => "text-bg-danger",
+        BalanceStatus.Underpaid => "text-bg-warning",
+        BalanceStatus.Balanced => "text-bg-success",
+        BalanceStatus.Overpaid => "text-bg-info",
+        _ => "text-bg-light"
+    };
+
+    private static string GetTimelineBadgeClass(TimelineEventType type) => type switch
+    {
+        TimelineEventType.Note => "text-bg-info",
+        TimelineEventType.Payment => "text-bg-success",
+        TimelineEventType.StatusChange => "text-bg-warning",
+        TimelineEventType.Email => "text-bg-secondary",
+        _ => "text-bg-light"
+    };
+
+    private static string GetTimelineTypeLabel(TimelineEventType type) => type switch
+    {
+        TimelineEventType.Note => "Poznámka",
+        TimelineEventType.Payment => "Platba",
+        TimelineEventType.StatusChange => "Změna stavu",
+        TimelineEventType.Email => "E-mail",
+        _ => type.ToString()
+    };
+
+    private static string GetTimelineIcon(TimelineEventType type) => type switch
+    {
+        TimelineEventType.Note => "N",
+        TimelineEventType.Payment => "P",
+        TimelineEventType.StatusChange => "S",
+        TimelineEventType.Email => "E",
+        _ => "?"
+    };
+}

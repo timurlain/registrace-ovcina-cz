@@ -4,7 +4,7 @@ using Microsoft.Extensions.Options;
 
 namespace RegistraceOvcina.Web.Features.Email;
 
-internal interface IGraphAccessTokenProvider
+public interface IGraphAccessTokenProvider
 {
     Task<string> GetAccessTokenAsync(CancellationToken cancellationToken);
 }

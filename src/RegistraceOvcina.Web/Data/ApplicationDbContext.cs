@@ -13,6 +13,7 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
     public DbSet<EmailMessage> EmailMessages => Set<EmailMessage>();
     public DbSet<FoodOrder> FoodOrders => Set<FoodOrder>();
     public DbSet<Game> Games => Set<Game>();
+    public DbSet<GameInvitation> GameInvitations => Set<GameInvitation>();
     public DbSet<GameKingdomTarget> GameKingdomTargets => Set<GameKingdomTarget>();
     public DbSet<HistoricalImportBatch> HistoricalImportBatches => Set<HistoricalImportBatch>();
     public DbSet<HistoricalImportRow> HistoricalImportRows => Set<HistoricalImportRow>();
@@ -263,6 +264,25 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
             entity.Property(x => x.Action).HasMaxLength(128).IsRequired();
             entity.Property(x => x.ActorUserId).HasMaxLength(450).IsRequired();
             entity.Property(x => x.DetailsJson).HasMaxLength(8000);
+        });
+
+        builder.Entity<GameInvitation>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.RecipientEmail).HasMaxLength(256).IsRequired();
+            entity.Property(x => x.RecipientName).HasMaxLength(200).IsRequired();
+            entity.Property(x => x.SentByUserId).HasMaxLength(450).IsRequired();
+            entity.Property(x => x.Subject).HasMaxLength(512).IsRequired();
+            entity.Property(x => x.Note).HasMaxLength(4000);
+            entity.HasOne(x => x.Game)
+                .WithMany()
+                .HasForeignKey(x => x.GameId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne<ApplicationUser>()
+                .WithMany()
+                .HasForeignKey(x => x.SentByUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasIndex(x => x.GameId);
         });
 
         builder.Entity<HistoricalImportBatch>(entity =>

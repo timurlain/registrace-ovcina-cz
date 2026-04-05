@@ -93,7 +93,9 @@ else
                                                 }
                                                 else if (msg.LinkedPerson is not null)
                                                 {
-                                                    <span class="badge bg-info">@msg.LinkedPerson.LastName @msg.LinkedPerson.FirstName</span>
+                                                    <a href="/organizace/osoby/@msg.LinkedPersonId" class="badge bg-info text-decoration-none">
+                                                        @msg.LinkedPerson.LastName @msg.LinkedPerson.FirstName
+                                                    </a>
                                                 }
                                                 else
                                                 {
