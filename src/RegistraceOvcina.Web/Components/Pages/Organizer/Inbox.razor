@@ -39,7 +39,7 @@ else
                             <p class="text-secondary mb-0">Zprávy ze sdílené poštovní schránky.</p>
                         </div>
                         <div class="d-flex gap-2">
-                            @if (synced)
+                            @if (synced == 1)
                             {
                                 <span class="badge bg-success align-self-center">Synchronizováno</span>
                             }
@@ -144,7 +144,7 @@ else
     private int page { get; set; } = 1;
 
     [SupplyParameterFromQuery(Name = "synced")]
-    private bool synced { get; set; }
+    private int? synced { get; set; }
 
     private InboxPageResult? result;
 
