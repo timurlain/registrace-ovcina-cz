@@ -28,7 +28,8 @@ public sealed class SubmissionService(
                 x.Status,
                 x.SubmittedAtUtc,
                 x.ExpectedTotalAmount,
-                PaidAmount = x.Payments.Sum(p => p.Amount)
+                PaidAmount = x.Payments.Sum(p => p.Amount),
+                AttendeeCount = x.Registrations.Count(r => r.Status == RegistrationStatus.Active)
             })
             .ToListAsync(cancellationToken);
 
@@ -40,7 +41,8 @@ public sealed class SubmissionService(
                 x.Status,
                 x.SubmittedAtUtc,
                 x.ExpectedTotalAmount,
-                pricingService.CalculateBalanceStatus(x.ExpectedTotalAmount, x.PaidAmount)))
+                pricingService.CalculateBalanceStatus(x.ExpectedTotalAmount, x.PaidAmount),
+                x.AttendeeCount))
             .ToList();
     }
 
@@ -681,7 +683,8 @@ public sealed record SubmissionSummary(
     SubmissionStatus Status,
     DateTime? SubmittedAtUtc,
     decimal ExpectedTotalAmount,
-    BalanceStatus BalanceStatus);
+    BalanceStatus BalanceStatus,
+    int AttendeeCount);
 
 public sealed record AttendeeViewModel(
     int RegistrationId,
