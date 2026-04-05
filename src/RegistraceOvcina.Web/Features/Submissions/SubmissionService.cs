@@ -257,6 +257,7 @@ public sealed class SubmissionService(
         await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
         var submission = await db.RegistrationSubmissions
             .Include(x => x.Game)
+                .ThenInclude(x => x.MealOptions)
             .Include(x => x.Registrations)
                 .ThenInclude(x => x.FoodOrders)
             .FirstOrDefaultAsync(x => x.Id == submissionId && x.RegistrantUserId == userId, cancellationToken)
@@ -307,6 +308,11 @@ public sealed class SubmissionService(
 
         db.Registrations.Add(registration);
         submission.LastEditedAtUtc = nowUtc;
+        await db.SaveChangesAsync(cancellationToken);
+
+        // Save food orders from the attendee form
+        SaveFoodOrdersFromInput(db, registration, input, submission.Game);
+
         RecalculateIfSubmitted(submission);
         await db.SaveChangesAsync(cancellationToken);
 
@@ -341,6 +347,7 @@ public sealed class SubmissionService(
         await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
         var submission = await db.RegistrationSubmissions
             .Include(x => x.Game)
+                .ThenInclude(x => x.MealOptions)
             .Include(x => x.Registrations)
                 .ThenInclude(x => x.FoodOrders)
             .FirstOrDefaultAsync(x => x.Id == submissionId && x.RegistrantUserId == userId, cancellationToken)
@@ -349,6 +356,7 @@ public sealed class SubmissionService(
 
         var registration = await db.Registrations
             .Include(x => x.Person)
+            .Include(x => x.FoodOrders)
             .FirstOrDefaultAsync(x => x.Id == registrationId && x.SubmissionId == submissionId, cancellationToken)
             ?? throw new ValidationException("Účastník nebyl nalezen.");
 
@@ -384,6 +392,9 @@ public sealed class SubmissionService(
         registration.GuardianRelationship = string.IsNullOrWhiteSpace(input.GuardianRelationship) ? null : input.GuardianRelationship.Trim();
         registration.GuardianAuthorizationConfirmed = input.GuardianAuthorizationConfirmed;
         registration.UpdatedAtUtc = nowUtc;
+
+        // Update food orders from the attendee form
+        SaveFoodOrdersFromInput(db, registration, input, submission.Game);
 
         submission.LastEditedAtUtc = nowUtc;
         RecalculateIfSubmitted(submission);
@@ -572,6 +583,45 @@ public sealed class SubmissionService(
         if (submission.Status == SubmissionStatus.Submitted)
         {
             submission.ExpectedTotalAmount = pricingService.CalculateExpectedTotal(submission.Game, submission.Registrations);
+        }
+    }
+
+    private static void SaveFoodOrdersFromInput(
+        ApplicationDbContext db,
+        Registration registration,
+        AttendeeInput input,
+        Game game)
+    {
+        if (input.MealSelections.Count == 0)
+            return;
+
+        var validMealOptions = game.MealOptions?
+            .Where(x => x.IsActive)
+            .ToDictionary(x => x.Id)
+            ?? [];
+
+        // Remove existing food orders for this registration
+        if (registration.FoodOrders is { Count: > 0 })
+        {
+            db.FoodOrders.RemoveRange(registration.FoodOrders);
+            registration.FoodOrders.Clear();
+        }
+
+        // Add new ones from form input
+        foreach (var (dayTicks, mealOptionId) in input.MealSelections)
+        {
+            if (mealOptionId is null || !validMealOptions.TryGetValue(mealOptionId.Value, out var mealOption))
+                continue;
+
+            var foodOrder = new FoodOrder
+            {
+                RegistrationId = registration.Id,
+                MealOptionId = mealOption.Id,
+                MealDayUtc = new DateTime(dayTicks, DateTimeKind.Utc),
+                Price = mealOption.Price
+            };
+            db.FoodOrders.Add(foodOrder);
+            registration.FoodOrders.Add(foodOrder);
         }
     }
 
@@ -806,6 +856,12 @@ public sealed class AttendeeInput : IValidatableObject
     public string? GuardianRelationship { get; set; }
 
     public bool GuardianAuthorizationConfirmed { get; set; }
+
+    /// <summary>
+    /// Per-day meal selections: key = day ticks (UTC), value = MealOption ID.
+    /// Empty or missing entry means no meal for that day.
+    /// </summary>
+    public Dictionary<long, int?> MealSelections { get; set; } = [];
 
     // Individual bool properties for multi-checkbox AdultRoles binding
     public bool AdultRole_PlayMonster { get; set; }
