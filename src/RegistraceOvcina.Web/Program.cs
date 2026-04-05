@@ -562,8 +562,9 @@ public class Program
             .RequireAuthorization(AuthorizationPolicies.AdminOnly);
         app.MapPost(
                 "/admin/hry/{gameId:int}/jidla/{id:int}/upravit",
-                async (int gameId, int id, [FromForm] string name, [FromForm] decimal price, [FromForm] bool isActive, HttpContext httpContext, UserManager<ApplicationUser> userManager, MealOptionService mealOptionService) =>
+                async (int gameId, int id, [FromForm] string name, [FromForm] decimal price, HttpContext httpContext, UserManager<ApplicationUser> userManager, MealOptionService mealOptionService) =>
                 {
+                    var isActive = httpContext.Request.Form.ContainsKey("isActive");
                     var user = await userManager.GetUserAsync(httpContext.User);
                     if (user is null)
                     {
@@ -1007,6 +1008,17 @@ public class Program
                     }
                 })
             .RequireAuthorization(AuthorizationPolicies.StaffOnly);
+        app.MapGet(
+                "/api/registrations/person-suggestion",
+                async (string? firstName, string? lastName, int? gameId, SubmissionService submissionService) =>
+                {
+                    if (string.IsNullOrWhiteSpace(firstName) || string.IsNullOrWhiteSpace(lastName) || gameId is null)
+                        return Results.BadRequest();
+
+                    var suggestion = await submissionService.FindExistingPersonAsync(firstName, lastName, gameId.Value);
+                    return suggestion is not null ? Results.Ok(suggestion) : Results.NotFound();
+                })
+            .RequireAuthorization();
         app.MapStaticAssets();
         app.MapRazorComponents<App>()
             .AddInteractiveServerRenderMode();

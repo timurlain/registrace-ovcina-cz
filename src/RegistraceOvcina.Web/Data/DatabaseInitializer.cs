@@ -27,7 +27,19 @@ public static class DatabaseInitializer
             await db.Database.EnsureDeletedAsync();
         }
 
-        await db.Database.MigrateAsync();
+        try
+        {
+            await db.Database.MigrateAsync();
+        }
+        catch (Npgsql.PostgresException ex) when (ex.SqlState == "42P07")
+        {
+            // Tables already exist but migration history is out of sync.
+            // Drop and recreate to get a clean state (dev/early prod only).
+            var logger = scope.ServiceProvider.GetRequiredService<ILogger<ApplicationDbContext>>();
+            logger.LogWarning("Migration failed (tables exist). Resetting database to sync migration history.");
+            await db.Database.EnsureDeletedAsync();
+            await db.Database.MigrateAsync();
+        }
 
         await SeedKingdomsAsync(db);
 
