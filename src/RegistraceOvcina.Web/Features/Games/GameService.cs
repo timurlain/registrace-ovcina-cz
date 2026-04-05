@@ -15,7 +15,7 @@ public sealed class GameService(IDbContextFactory<ApplicationDbContext> dbContex
         var games = await db.Games
             .AsNoTracking()
             .Where(x => x.IsPublished)
-            .OrderBy(x => x.StartsAtUtc)
+            .OrderByDescending(x => x.StartsAtUtc)
             .Select(x => new
             {
                 x.Id,
