@@ -12,7 +12,7 @@ using RegistraceOvcina.Web.Data;
 namespace RegistraceOvcina.Web.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    [Migration("20260405053146_InitialCreate")]
+    [Migration("20260405054704_InitialCreate")]
     partial class InitialCreate
     {
         /// <inheritdoc />

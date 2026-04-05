@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Localization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Diagnostics;
 using RegistraceOvcina.Web.Components;
 using RegistraceOvcina.Web.Components.Account;
 using RegistraceOvcina.Web.Data;
@@ -120,9 +121,11 @@ public class Program
             ?? throw new InvalidOperationException("Connection string 'DefaultConnection' not found.");
 
         builder.Services.AddDbContext<ApplicationDbContext>(options =>
-            options.UseNpgsql(connectionString));
+            options.UseNpgsql(connectionString)
+                   .ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning)));
         builder.Services.AddDbContextFactory<ApplicationDbContext>(
-            options => options.UseNpgsql(connectionString),
+            options => options.UseNpgsql(connectionString)
+                              .ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning)),
             ServiceLifetime.Scoped);
         builder.Services.AddDatabaseDeveloperPageExceptionFilter();
         builder.Services.Configure<MailboxEmailOptions>(
