@@ -596,6 +596,27 @@ public class Program
                 })
             .RequireAuthorization();
         app.MapPost(
+                "/prihlasky/zopakovat/{sourceSubmissionId:int}/{targetGameId:int}",
+                async (HttpContext httpContext, int sourceSubmissionId, int targetGameId, UserManager<ApplicationUser> userManager, SubmissionService submissionService) =>
+                {
+                    var user = await userManager.GetUserAsync(httpContext.User);
+                    if (user is null)
+                    {
+                        return Results.LocalRedirect($"/Account/Login?ReturnUrl={Uri.EscapeDataString("/moje-prihlasky")}");
+                    }
+
+                    try
+                    {
+                        var submissionId = await submissionService.RepeatSubmissionAsync(sourceSubmissionId, targetGameId, user);
+                        return Results.LocalRedirect($"/prihlasky/{submissionId}");
+                    }
+                    catch (ValidationException ex)
+                    {
+                        return Results.LocalRedirect($"/moje-prihlasky?error={Uri.EscapeDataString(ex.Message)}");
+                    }
+                })
+            .RequireAuthorization();
+        app.MapPost(
                 "/prihlasky/{submissionId:int}/kontakt",
                 async ([FromForm] ContactInput input, HttpContext httpContext, int submissionId, UserManager<ApplicationUser> userManager, SubmissionService submissionService) =>
                 {
