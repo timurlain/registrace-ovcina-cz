@@ -6,6 +6,7 @@ using System.Text.Json;
 using ClosedXML.Excel;
 using Microsoft.EntityFrameworkCore;
 using RegistraceOvcina.Web.Data;
+using RegistraceOvcina.Web.Features.People;
 using RegistraceOvcina.Web.Infrastructure;
 
 namespace RegistraceOvcina.Web.Features.HistoricalImport;
@@ -1400,50 +1401,14 @@ public sealed class HistoricalImportService(
         return cell.GetFormattedString().Trim();
     }
 
-    private static string NormalizeComparisonText(string? value)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return string.Empty;
-        }
-
-        var decomposed = value.Trim().Normalize(NormalizationForm.FormD);
-        var builder = new StringBuilder(decomposed.Length);
-        var previousWhitespace = false;
-
-        foreach (var character in decomposed)
-        {
-            var category = CharUnicodeInfo.GetUnicodeCategory(character);
-            if (category == UnicodeCategory.NonSpacingMark)
-            {
-                continue;
-            }
-
-            if (char.IsWhiteSpace(character))
-            {
-                if (!previousWhitespace)
-                {
-                    builder.Append(' ');
-                    previousWhitespace = true;
-                }
-
-                continue;
-            }
-
-            previousWhitespace = false;
-            builder.Append(char.ToLowerInvariant(character));
-        }
-
-        return builder.ToString().Trim();
-    }
+    private static string NormalizeComparisonText(string? value) =>
+        PersonIdentityNormalizer.NormalizeComparisonText(value);
 
     private static string NormalizeEmail(string? value) =>
-        string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim().ToLowerInvariant();
+        PersonIdentityNormalizer.NormalizeEmail(value);
 
     private static string NormalizePhone(string? value) =>
-        string.IsNullOrWhiteSpace(value)
-            ? string.Empty
-            : new string(value.Where(char.IsDigit).ToArray());
+        PersonIdentityNormalizer.NormalizePhone(value);
 
     private static string BuildKingdomSlug(string displayName)
     {

@@ -18,6 +18,7 @@ using RegistraceOvcina.Web.Features.Invitations;
 using RegistraceOvcina.Web.Features.HistoricalImport;
 using RegistraceOvcina.Web.Features.Payments;
 using RegistraceOvcina.Web.Features.Kingdoms;
+using RegistraceOvcina.Web.Features.People;
 using RegistraceOvcina.Web.Features.Submissions;
 using RegistraceOvcina.Web.Features.Users;
 using RegistraceOvcina.Web.Security;
@@ -180,6 +181,7 @@ public class Program
         builder.Services.AddScoped<InboxService>();
         builder.Services.AddScoped<KingdomService>();
         builder.Services.AddScoped<KingdomAssignmentService>();
+        builder.Services.AddScoped<PeopleReviewService>();
         builder.Services.AddScoped<SubmissionService>();
         builder.Services.AddScoped<OrganizerSubmissionService>();
         builder.Services.AddScoped<PaymentService>();
@@ -402,9 +404,9 @@ public class Program
                     catch (ValidationException ex)
                     {
                         return Results.LocalRedirect($"/admin/hry/{gameId}/kralovstvi?error={Uri.EscapeDataString(ex.Message)}");
-                     }
-                 })
-             .RequireAuthorization(AuthorizationPolicies.AdminOnly);
+                    }
+                })
+            .RequireAuthorization(AuthorizationPolicies.AdminOnly);
         app.MapPost(
                 "/admin/organizatori/{userId}/organizator",
                 async (string userId, HttpContext httpContext, UserManager<ApplicationUser> userManager, UserAdministrationService userAdministrationService) =>
@@ -795,6 +797,69 @@ public class Program
 
                     await inboxService.UnlinkAsync(messageId, user.Id);
                     return Results.LocalRedirect($"/organizace/posta/{messageId}?unlinked=1");
+                })
+            .RequireAuthorization(AuthorizationPolicies.StaffOnly);
+        app.MapPost(
+                "/organizace/osoby/{personId:int}/propojit-ucet",
+                async ([FromForm] string userId, int personId, HttpContext httpContext, UserManager<ApplicationUser> userManager, PeopleReviewService peopleReviewService) =>
+                {
+                    var user = await userManager.GetUserAsync(httpContext.User);
+                    if (user is null)
+                    {
+                        return Results.LocalRedirect($"/Account/Login?ReturnUrl={Uri.EscapeDataString($"/organizace/osoby/{personId}")}");
+                    }
+
+                    try
+                    {
+                        await peopleReviewService.LinkUserAsync(personId, userId, user.Id);
+                        return Results.LocalRedirect($"/organizace/osoby/{personId}?linkedUser=1");
+                    }
+                    catch (ValidationException ex)
+                    {
+                        return Results.LocalRedirect($"/organizace/osoby/{personId}?error={Uri.EscapeDataString(ex.Message)}");
+                    }
+                })
+            .RequireAuthorization(AuthorizationPolicies.StaffOnly);
+        app.MapPost(
+                "/organizace/osoby/{personId:int}/odpojit-ucet",
+                async ([FromForm] string userId, int personId, HttpContext httpContext, UserManager<ApplicationUser> userManager, PeopleReviewService peopleReviewService) =>
+                {
+                    var user = await userManager.GetUserAsync(httpContext.User);
+                    if (user is null)
+                    {
+                        return Results.LocalRedirect($"/Account/Login?ReturnUrl={Uri.EscapeDataString($"/organizace/osoby/{personId}")}");
+                    }
+
+                    try
+                    {
+                        await peopleReviewService.UnlinkUserAsync(personId, userId, user.Id);
+                        return Results.LocalRedirect($"/organizace/osoby/{personId}?unlinkedUser=1");
+                    }
+                    catch (ValidationException ex)
+                    {
+                        return Results.LocalRedirect($"/organizace/osoby/{personId}?error={Uri.EscapeDataString(ex.Message)}");
+                    }
+                })
+            .RequireAuthorization(AuthorizationPolicies.StaffOnly);
+        app.MapPost(
+                "/organizace/osoby/{personId:int}/sloucit",
+                async ([FromForm] int duplicatePersonId, int personId, HttpContext httpContext, UserManager<ApplicationUser> userManager, PeopleReviewService peopleReviewService) =>
+                {
+                    var user = await userManager.GetUserAsync(httpContext.User);
+                    if (user is null)
+                    {
+                        return Results.LocalRedirect($"/Account/Login?ReturnUrl={Uri.EscapeDataString($"/organizace/osoby/{personId}")}");
+                    }
+
+                    try
+                    {
+                        await peopleReviewService.MergeAsync(personId, duplicatePersonId, user.Id);
+                        return Results.LocalRedirect($"/organizace/osoby/{personId}?merged=1");
+                    }
+                    catch (ValidationException ex)
+                    {
+                        return Results.LocalRedirect($"/organizace/osoby/{personId}?error={Uri.EscapeDataString(ex.Message)}");
+                    }
                 })
             .RequireAuthorization(AuthorizationPolicies.StaffOnly);
         app.MapPost(
