@@ -56,33 +56,38 @@ else
                     <div class="card-body p-4">
                         <h2 class="h4 mb-3">Přihlašovatel / registrátor — hlavní kontakt skupiny nebo rodiny</h2>
 
-                        <form method="post" action="@($"/prihlasky/{SubmissionId}/kontakt")">
-                            <AntiforgeryToken />
+                        <EditForm Model="contactInput" OnValidSubmit="SaveContactAsync" FormName="contact">
+                            <DataAnnotationsValidator />
+                            <ValidationSummary class="text-danger" />
                             <div class="row g-3">
                                 <div class="col-md-6">
                                     <label class="form-label" for="contact-name">Hlavní kontakt</label>
-                                    <input id="contact-name" name="@nameof(ContactInput.PrimaryContactName)" value="@contactInput.PrimaryContactName" class="form-control" placeholder="např. Jana Nováková" data-testid="contact-name" />
+                                    <InputText id="contact-name" @bind-Value="contactInput.PrimaryContactName" class="form-control" placeholder="např. Jana Nováková" data-testid="contact-name" />
+                                    <ValidationMessage For="() => contactInput.PrimaryContactName" />
                                 </div>
                                 <div class="col-md-6">
                                     <label class="form-label" for="group-name">Název skupiny / rodiny</label>
-                                    <input id="group-name" name="@nameof(ContactInput.GroupName)" value="@contactInput.GroupName" class="form-control" placeholder="např. Pajonkovi" data-testid="group-name" />
+                                    <InputText id="group-name" @bind-Value="contactInput.GroupName" class="form-control" placeholder="např. Pajonkovi" data-testid="group-name" />
+                                    <ValidationMessage For="() => contactInput.GroupName" />
                                 </div>
                                 <div class="col-md-6">
                                     <label class="form-label" for="contact-email">Kontaktní e-mail</label>
-                                    <input id="contact-email" name="@nameof(ContactInput.PrimaryEmail)" value="@contactInput.PrimaryEmail" class="form-control" placeholder="např. jana@email.cz" data-testid="contact-email" />
+                                    <InputText id="contact-email" @bind-Value="contactInput.PrimaryEmail" class="form-control" placeholder="např. jana@email.cz" data-testid="contact-email" />
+                                    <ValidationMessage For="() => contactInput.PrimaryEmail" />
                                 </div>
                                 <div class="col-md-6">
                                     <label class="form-label" for="contact-phone">Kontaktní telefon</label>
-                                    <input id="contact-phone" name="@nameof(ContactInput.PrimaryPhone)" value="@contactInput.PrimaryPhone" class="form-control" placeholder="např. 721 123 456" />
+                                    <InputText id="contact-phone" @bind-Value="contactInput.PrimaryPhone" class="form-control" placeholder="např. 721 123 456" />
+                                    <ValidationMessage For="() => contactInput.PrimaryPhone" />
                                 </div>
                                 <div class="col-12">
                                     <label class="form-label" for="registrant-note">Poznámka pro organizátory</label>
-                                    <textarea id="registrant-note" name="@nameof(ContactInput.RegistrantNote)" class="form-control" rows="3" placeholder="Cokoliv, co chcete organizátorům sdělit předem.">@contactInput.RegistrantNote</textarea>
+                                    <InputTextArea id="registrant-note" @bind-Value="contactInput.RegistrantNote" class="form-control" rows="3" placeholder="Cokoliv, co chcete organizátorům sdělit předem." />
                                 </div>
                             </div>
 
                             <button type="submit" class="btn btn-outline-primary mt-3">Uložit kontakt</button>
-                        </form>
+                        </EditForm>
                     </div>
                 </section>
 
@@ -670,6 +675,30 @@ document.addEventListener('change', e => {
                     PaymentVariableSymbol = submission.PaymentVariableSymbol
                 })
             : null;
+    }
+
+    private async Task SaveContactAsync()
+    {
+        errorMessage = null;
+        statusMessage = null;
+
+        var user = await GetCurrentUserAsync();
+        if (user is null)
+        {
+            errorMessage = "Nepodařilo se načíst přihlášeného uživatele.";
+            return;
+        }
+
+        try
+        {
+            await SubmissionService.UpdateContactAsync(SubmissionId, user.Id, contactInput);
+            statusMessage = "Kontaktní údaje byly uložené.";
+            await LoadAsync();
+        }
+        catch (System.ComponentModel.DataAnnotations.ValidationException ex)
+        {
+            errorMessage = ex.Message;
+        }
     }
 
     private async Task<ApplicationUser?> GetCurrentUserAsync()
