@@ -167,6 +167,13 @@ else
             : null;
 
         gameFilters = await OrganizerSubmissionService.GetGameFilterListAsync();
+
+        // Default to the most recent game when no filter is selected
+        if (!selectedGameId.HasValue && gameFilters.Count > 0)
+        {
+            selectedGameId = gameFilters[0].Id;
+        }
+
         items = await PaymentService.GetPaymentOverviewAsync(selectedGameId, balanceFilter);
     }
 

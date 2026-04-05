@@ -12,7 +12,9 @@
     </div>
     <div>
         <form method="get" class="d-flex align-items-center gap-2">
-            <label class="form-label mb-0 text-nowrap" for="game-filter">Filtrovat podle hry</label>
+            <label class="form-label mb-0 text-nowrap" for="search">Hledat</label>
+            <input id="search" name="q" type="text" value="@searchQuery" class="form-control form-control-sm" style="min-width: 150px;" placeholder="Jméno, email..." />
+            <label class="form-label mb-0 text-nowrap" for="game-filter">Hra</label>
             <select id="game-filter" name="gameId" class="form-select form-select-sm" style="min-width: 200px;" onchange="this.form.submit()">
                 <option value="">Všechny hry</option>
                 @if (gameFilters is not null)
@@ -23,6 +25,7 @@
                     }
                 }
             </select>
+            <button type="submit" class="btn btn-sm btn-outline-primary">Filtrovat</button>
         </form>
     </div>
 </div>
@@ -74,13 +77,35 @@ else
     [SupplyParameterFromQuery(Name = "gameId")]
     private int? selectedGameId { get; set; }
 
+    [SupplyParameterFromQuery(Name = "q")]
+    private string? searchQuery { get; set; }
+
     private IReadOnlyList<OrganizerSubmissionSummary>? submissions;
     private IReadOnlyList<GameFilterItem>? gameFilters;
 
     protected override async Task OnInitializedAsync()
     {
         gameFilters = await OrganizerSubmissionService.GetGameFilterListAsync();
-        submissions = await OrganizerSubmissionService.GetSubmissionListAsync(selectedGameId);
+
+        // Default to the most recent game when no filter is selected
+        if (!selectedGameId.HasValue && gameFilters.Count > 0)
+        {
+            selectedGameId = gameFilters[0].Id;
+        }
+
+        var allSubmissions = await OrganizerSubmissionService.GetSubmissionListAsync(selectedGameId);
+
+        // Apply search filter in memory (small dataset per game)
+        if (!string.IsNullOrWhiteSpace(searchQuery))
+        {
+            var q = searchQuery.Trim();
+            allSubmissions = allSubmissions
+                .Where(s => s.PrimaryContactName.Contains(q, StringComparison.OrdinalIgnoreCase)
+                    || s.PrimaryEmail.Contains(q, StringComparison.OrdinalIgnoreCase))
+                .ToList();
+        }
+
+        submissions = allSubmissions;
     }
 
     private static string GetSubmissionStatusLabel(SubmissionStatus status) => status switch
