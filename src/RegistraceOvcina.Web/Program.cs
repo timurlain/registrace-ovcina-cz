@@ -13,6 +13,7 @@ using RegistraceOvcina.Web.Data;
 using RegistraceOvcina.Web.Features.Email;
 using RegistraceOvcina.Web.Features.Food;
 using RegistraceOvcina.Web.Features.Games;
+using RegistraceOvcina.Web.Features.Invitations;
 using RegistraceOvcina.Web.Features.HistoricalImport;
 using RegistraceOvcina.Web.Features.Payments;
 using RegistraceOvcina.Web.Features.Kingdoms;
@@ -184,6 +185,7 @@ public class Program
         if (mailboxEmailOptions.IsConfigured)
         {
             builder.Services.AddScoped<MailboxSyncService>();
+            builder.Services.AddScoped<InvitationService>();
         }
 
         var app = builder.Build();
