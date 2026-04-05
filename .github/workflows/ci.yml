@@ -183,7 +183,7 @@ jobs:
 
           env_args=(
             "ASPNETCORE_ENVIRONMENT=Production"
-            "Database__ApplyMigrationsOnStartup=false"
+            "Database__ApplyMigrationsOnStartup=true"
             "SeedData__SeedDemoUsers=false"
             "ConnectionStrings__DefaultConnection=secretref:default-connection"
           )
@@ -216,8 +216,11 @@ jobs:
             )
           fi
 
+          # Constrain to a single replica while migrations are applied to avoid concurrent
+          # MigrateAsync() calls across replicas during rollout/scale-out.
           az containerapp update -n "$AZURE_CONTAINER_APP_NAME" -g "$AZURE_RESOURCE_GROUP" \
             --set-env-vars "${env_args[@]}" \
+            --min-replicas 1 --max-replicas 1 \
             --output none
         env:
           AZURE_POSTGRES_CONNECTION_STRING: ${{ secrets.AZURE_POSTGRES_CONNECTION_STRING }}

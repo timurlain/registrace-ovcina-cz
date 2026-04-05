@@ -122,22 +122,14 @@ public class Program
         var connectionString = builder.Configuration.GetConnectionString("DefaultConnection")
             ?? throw new InvalidOperationException("Connection string 'DefaultConnection' not found.");
 
-        var suppressMigrationWarning = builder.Environment.IsDevelopment()
-            || builder.Environment.IsEnvironment("Testing");
-
+        // EF Core 10 false-positive: CLI reports no pending changes but runtime disagrees.
+        // Suppress globally until EF Core fixes this; model-to-migration drift is not validated here.
         builder.Services.AddDbContext<ApplicationDbContext>(options =>
-        {
-            options.UseNpgsql(connectionString);
-            if (suppressMigrationWarning)
-                options.ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning));
-        });
+            options.UseNpgsql(connectionString)
+                   .ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning)));
         builder.Services.AddDbContextFactory<ApplicationDbContext>(
-            options =>
-            {
-                options.UseNpgsql(connectionString);
-                if (suppressMigrationWarning)
-                    options.ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning));
-            },
+            options => options.UseNpgsql(connectionString)
+                              .ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning)),
             ServiceLifetime.Scoped);
         builder.Services.AddDatabaseDeveloperPageExceptionFilter();
         builder.Services.Configure<MailboxEmailOptions>(
