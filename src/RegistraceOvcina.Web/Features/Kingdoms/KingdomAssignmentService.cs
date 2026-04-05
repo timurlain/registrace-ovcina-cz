@@ -166,10 +166,12 @@ public sealed class KingdomAssignmentService(IDbContextFactory<ApplicationDbCont
             }
         }
 
+        await db.SaveChangesAsync(cancellationToken);
+
         db.AuditLogs.Add(new AuditLog
         {
             EntityType = nameof(CharacterAppearance),
-            EntityId = registrationId.ToString(),
+            EntityId = appearance?.Id.ToString() ?? "0",
             Action = "KingdomAssigned",
             ActorUserId = actorUserId,
             CreatedAtUtc = nowUtc,
