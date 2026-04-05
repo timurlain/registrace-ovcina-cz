@@ -71,6 +71,10 @@ else
                                     <ValidationMessage For="() => contactInput.GroupName" />
                                 </div>
                                 <div class="col-md-6">
+                                    <label class="form-label" for="group-name">Název skupiny / rodiny</label>
+                                    <input id="group-name" name="@nameof(ContactInput.GroupName)" value="@contactInput.GroupName" class="form-control" placeholder="např. Pajonkovi" data-testid="group-name" />
+                                </div>
+                                <div class="col-md-6">
                                     <label class="form-label" for="contact-email">Kontaktní e-mail</label>
                                     <InputText id="contact-email" @bind-Value="contactInput.PrimaryEmail" class="form-control" placeholder="např. jana@email.cz" data-testid="contact-email" />
                                     <ValidationMessage For="() => contactInput.PrimaryEmail" />
