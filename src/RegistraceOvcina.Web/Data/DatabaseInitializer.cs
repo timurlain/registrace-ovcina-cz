@@ -42,6 +42,19 @@ public static class DatabaseInitializer
             }
         }
 
+        // Production admin accounts — always seed, regardless of SeedDemoUsers
+        var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
+        var nowUtc = DateTime.UtcNow;
+        var adminRoles = new[] { RoleNames.Registrant, RoleNames.Organizer, RoleNames.Admin };
+        var adminFallbackPassword = $"OAuth!{Guid.NewGuid():N}";
+
+        await EnsureUserAsync(userManager, "tomas.pajonk@hotmail.cz", adminFallbackPassword,
+            "Tomáš Pajonk", nowUtc, adminRoles);
+        await EnsureUserAsync(userManager, "stanam@email.cz", adminFallbackPassword,
+            "Stanam", nowUtc, adminRoles);
+        await EnsureUserAsync(userManager, "blanka.richtar@gmail.com", adminFallbackPassword,
+            "Blanka Richtar", nowUtc, adminRoles);
+
         var seedDemoUsers = configuration.GetValue<bool?>("SeedData:SeedDemoUsers")
             ?? (environment.IsDevelopment() || environment.IsEnvironment("Testing"));
 
@@ -49,9 +62,6 @@ public static class DatabaseInitializer
         {
             return;
         }
-
-        var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
-        var nowUtc = DateTime.UtcNow;
 
         await EnsureUserAsync(
             userManager,
@@ -68,17 +78,6 @@ public static class DatabaseInitializer
             configuration["SeedData:RegistrantDisplayName"] ?? "Ukázkový registrující",
             nowUtc,
             [RoleNames.Registrant]);
-
-        // Production admin accounts (OAuth login — password is never used, just required by Identity)
-        var adminRoles = new[] { RoleNames.Registrant, RoleNames.Organizer, RoleNames.Admin };
-        var adminFallbackPassword = $"OAuth!{Guid.NewGuid():N}";
-
-        await EnsureUserAsync(userManager, "tomas.pajonk@hotmail.cz", adminFallbackPassword,
-            "Tomáš Pajonk", nowUtc, adminRoles);
-        await EnsureUserAsync(userManager, "stanam@email.cz", adminFallbackPassword,
-            "Stanam", nowUtc, adminRoles);
-        await EnsureUserAsync(userManager, "blanka.richtar@gmail.com", adminFallbackPassword,
-            "Blanka Richtar", nowUtc, adminRoles);
 
         await SeedGameDataAsync(db, nowUtc);
     }
