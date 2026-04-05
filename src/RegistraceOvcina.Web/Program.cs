@@ -562,8 +562,9 @@ public class Program
             .RequireAuthorization(AuthorizationPolicies.AdminOnly);
         app.MapPost(
                 "/admin/hry/{gameId:int}/jidla/{id:int}/upravit",
-                async (int gameId, int id, [FromForm] string name, [FromForm] decimal price, [FromForm] bool isActive, HttpContext httpContext, UserManager<ApplicationUser> userManager, MealOptionService mealOptionService) =>
+                async (int gameId, int id, [FromForm] string name, [FromForm] decimal price, HttpContext httpContext, UserManager<ApplicationUser> userManager, MealOptionService mealOptionService) =>
                 {
+                    var isActive = httpContext.Request.Form.ContainsKey("isActive");
                     var user = await userManager.GetUserAsync(httpContext.User);
                     if (user is null)
                     {
