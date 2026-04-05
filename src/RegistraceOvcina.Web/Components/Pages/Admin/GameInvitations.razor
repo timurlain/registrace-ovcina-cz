@@ -4,7 +4,6 @@
 
 @using Microsoft.EntityFrameworkCore
 
-@inject InvitationService InvitationService
 @inject IDbContextFactory<ApplicationDbContext> DbContextFactory
 @inject AuthenticationStateProvider AuthenticationStateProvider
 @inject UserManager<ApplicationUser> UserManager
@@ -22,6 +21,13 @@
                     </div>
                     <a href="/admin/hry" class="btn btn-outline-secondary btn-sm">Zpět na hry</a>
                 </div>
+
+                @if (InvitationService is null)
+                {
+                    <div class="alert alert-warning" role="alert">
+                        Odesílání pozvánek není k dispozici — sdílená schránka (Email) není nakonfigurovaná.
+                    </div>
+                }
 
                 @if (!string.IsNullOrWhiteSpace(statusMessage))
                 {
@@ -174,6 +180,9 @@
     [Parameter]
     public int GameId { get; set; }
 
+    [Inject]
+    private InvitationService? InvitationService { get; set; }
+
     private Game? game;
     private IReadOnlyList<InvitationRecipientCandidate>? candidates;
     private IReadOnlyList<SentInvitationSummary>? sentInvitations;
@@ -226,8 +235,11 @@
             htmlBody = $"<p>Dobrý den,</p><p>rádi bychom Vás pozvali na hru <strong>{game.Name}</strong>, která se koná {CzechTime.Format(game.StartsAtUtc)}.</p><p>Těšíme se na Vás!</p><p>Ovčina</p>";
         }
 
-        candidates = await InvitationService.GetCandidatesAsync(GameId);
-        sentInvitations = await InvitationService.GetSentInvitationsAsync(GameId);
+        if (InvitationService is not null)
+        {
+            candidates = await InvitationService.GetCandidatesAsync(GameId);
+            sentInvitations = await InvitationService.GetSentInvitationsAsync(GameId);
+        }
     }
 
     private void SelectAll()
@@ -255,6 +267,12 @@
     {
         statusMessage = null;
         errorMessage = null;
+
+        if (InvitationService is null)
+        {
+            errorMessage = "Odesílání pozvánek není nakonfigurováno.";
+            return;
+        }
 
         if (selectedEmails.Count == 0)
         {
@@ -309,7 +327,6 @@
             statusMessage = $"Úspěšně odesláno {sentCount} pozvánek.";
             selectedEmails.Clear();
 
-            // Refresh sent history
             sentInvitations = await InvitationService.GetSentInvitationsAsync(GameId);
         }
         catch (InvalidOperationException ex)
