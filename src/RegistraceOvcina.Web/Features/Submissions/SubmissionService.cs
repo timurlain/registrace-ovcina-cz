@@ -119,6 +119,8 @@ public sealed class SubmissionService(
                 .ThenInclude(x => x.Person)
             .Include(x => x.Registrations)
                 .ThenInclude(x => x.PreferredKingdom)
+            .Include(x => x.Registrations)
+                .ThenInclude(x => x.FoodOrders)
             .Include(x => x.Payments)
             .FirstOrDefaultAsync(x => x.Id == submissionId && x.RegistrantUserId == userId, cancellationToken);
 
@@ -256,6 +258,7 @@ public sealed class SubmissionService(
         var submission = await db.RegistrationSubmissions
             .Include(x => x.Game)
             .Include(x => x.Registrations)
+                .ThenInclude(x => x.FoodOrders)
             .FirstOrDefaultAsync(x => x.Id == submissionId && x.RegistrantUserId == userId, cancellationToken)
             ?? throw new ValidationException("Přihláška nebyla nalezena.");
 
@@ -339,6 +342,7 @@ public sealed class SubmissionService(
         var submission = await db.RegistrationSubmissions
             .Include(x => x.Game)
             .Include(x => x.Registrations)
+                .ThenInclude(x => x.FoodOrders)
             .FirstOrDefaultAsync(x => x.Id == submissionId && x.RegistrantUserId == userId, cancellationToken)
             ?? throw new ValidationException("Přihláška nebyla nalezena.");
         EnsureRegistrationOpen(submission);
@@ -413,6 +417,7 @@ public sealed class SubmissionService(
         var submission = await db.RegistrationSubmissions
             .Include(x => x.Game)
             .Include(x => x.Registrations)
+                .ThenInclude(x => x.FoodOrders)
             .FirstOrDefaultAsync(x => x.Id == submissionId && x.RegistrantUserId == userId, cancellationToken)
             ?? throw new ValidationException("Přihláška nebyla nalezena.");
         EnsureRegistrationOpen(submission);
@@ -490,6 +495,7 @@ public sealed class SubmissionService(
         var submission = await db.RegistrationSubmissions
             .Include(x => x.Game)
             .Include(x => x.Registrations)
+                .ThenInclude(x => x.FoodOrders)
             .FirstOrDefaultAsync(x => x.Id == submissionId && x.RegistrantUserId == userId, cancellationToken)
             ?? throw new ValidationException("Přihláška nebyla nalezena.");
 
