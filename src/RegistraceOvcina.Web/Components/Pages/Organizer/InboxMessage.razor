@@ -75,7 +75,9 @@ else
                     else if (message.LinkedPerson is not null)
                     {
                         <div class="mb-3">
-                            <span class="badge bg-info">Propojeno s osobou: @message.LinkedPerson.LastName @message.LinkedPerson.FirstName</span>
+                            <a href="/organizace/osoby/@message.LinkedPersonId" class="badge bg-info text-decoration-none">
+                                Propojeno s osobou: @message.LinkedPerson.LastName @message.LinkedPerson.FirstName
+                            </a>
                         </div>
                         <form method="post" action="/organizace/posta/@messageId/odpojit">
                             <AntiforgeryToken />

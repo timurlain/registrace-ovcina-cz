@@ -1,0 +1,120 @@
+@page "/organizace/osoby"
+@attribute [Authorize(Policy = AuthorizationPolicies.StaffOnly)]
+@using RegistraceOvcina.Web.Features.People
+@using RegistraceOvcina.Web.Infrastructure
+@inject PeopleReviewService PeopleReviewService
+
+<PageTitle>Osoby</PageTitle>
+
+@if (model is null)
+{
+    <p>Načítám osoby…</p>
+}
+else
+{
+    <section class="card shadow-sm border-0" data-testid="people-list-page">
+        <div class="card-body d-flex flex-column gap-4">
+            <div class="d-flex flex-column flex-lg-row align-items-lg-center justify-content-between gap-3">
+                <div>
+                    <h1 class="h3 mb-1">Osoby</h1>
+                    <p class="text-secondary mb-0">Historie účastníků, propojené účty a opatrný přehled možných duplicit.</p>
+                </div>
+
+                <form method="get" action="/organizace/osoby" class="d-flex gap-2" data-testid="people-search-form">
+                    <input type="search"
+                           class="form-control"
+                           name="q"
+                           value="@model.Query"
+                           placeholder="Jméno, e-mail nebo telefon" />
+                    <button type="submit" class="btn btn-primary">Hledat</button>
+                </form>
+            </div>
+
+            @if (model.People.Count == 0)
+            {
+                <div class="alert alert-light border mb-0">
+                    Nenalezli jsme žádnou osobu pro zadaný filtr.
+                </div>
+            }
+            else
+            {
+                <div class="table-responsive">
+                    <table class="table align-middle mb-0">
+                        <thead>
+                            <tr>
+                                <th>Osoba</th>
+                                <th>Kontakt</th>
+                                <th>Historie</th>
+                                <th>Účet</th>
+                                <th class="text-end">Detail</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var person in model.People)
+                            {
+                                <tr data-testid="people-list-row">
+                                    <td>
+                                        <div class="fw-semibold">@person.FullName</div>
+                                        <div class="text-secondary small">Ročník @person.BirthYear</div>
+                                    </td>
+                                    <td>
+                                        @if (!string.IsNullOrWhiteSpace(person.Email))
+                                        {
+                                            <div>@person.Email</div>
+                                        }
+                                        @if (!string.IsNullOrWhiteSpace(person.Phone))
+                                        {
+                                            <div class="text-secondary small">@person.Phone</div>
+                                        }
+                                        @if (string.IsNullOrWhiteSpace(person.Email) && string.IsNullOrWhiteSpace(person.Phone))
+                                        {
+                                            <span class="text-secondary">Bez kontaktu</span>
+                                        }
+                                    </td>
+                                    <td>
+                                        <div>@person.RegistrationCount × účast</div>
+                                        @if (person.LastSeenAtUtc is not null)
+                                        {
+                                            <div class="text-secondary small">
+                                                Naposledy @person.LastSeenGameName · @CzechTime.Format(person.LastSeenAtUtc.Value)
+                                            </div>
+                                        }
+                                        else
+                                        {
+                                            <div class="text-secondary small">Bez přímé historie</div>
+                                        }
+                                    </td>
+                                    <td>
+                                        @if (string.IsNullOrWhiteSpace(person.LinkedUserEmail))
+                                        {
+                                            <span class="text-secondary">Bez účtu</span>
+                                        }
+                                        else
+                                        {
+                                            <span>@person.LinkedUserEmail</span>
+                                        }
+                                    </td>
+                                    <td class="text-end">
+                                        <a class="btn btn-outline-primary btn-sm" href="/organizace/osoby/@person.Id">Otevřít</a>
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+    </section>
+}
+
+@code {
+    [SupplyParameterFromQuery(Name = "q")]
+    private string? Query { get; set; }
+
+    private PeopleReviewListPageModel? model;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        model = await PeopleReviewService.GetListAsync(Query);
+    }
+}
