@@ -14,6 +14,8 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
     public DbSet<FoodOrder> FoodOrders => Set<FoodOrder>();
     public DbSet<Game> Games => Set<Game>();
     public DbSet<GameKingdomTarget> GameKingdomTargets => Set<GameKingdomTarget>();
+    public DbSet<HistoricalImportBatch> HistoricalImportBatches => Set<HistoricalImportBatch>();
+    public DbSet<HistoricalImportRow> HistoricalImportRows => Set<HistoricalImportRow>();
     public DbSet<Kingdom> Kingdoms => Set<Kingdom>();
     public DbSet<MealOption> MealOptions => Set<MealOption>();
     public DbSet<OrganizerNote> OrganizerNotes => Set<OrganizerNote>();
@@ -261,6 +263,55 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
             entity.Property(x => x.Action).HasMaxLength(128).IsRequired();
             entity.Property(x => x.ActorUserId).HasMaxLength(450).IsRequired();
             entity.Property(x => x.DetailsJson).HasMaxLength(8000);
+        });
+
+        builder.Entity<HistoricalImportBatch>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Label).HasMaxLength(200).IsRequired();
+            entity.Property(x => x.SourceFormat).HasMaxLength(80).IsRequired();
+            entity.Property(x => x.SourceFileName).HasMaxLength(260).IsRequired();
+            entity.Property(x => x.ImportedByUserId).HasMaxLength(450).IsRequired();
+            entity.Property(x => x.NotesJson).HasMaxLength(4000);
+            entity.HasOne(x => x.Game)
+                .WithMany()
+                .HasForeignKey(x => x.GameId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne<ApplicationUser>()
+                .WithMany()
+                .HasForeignKey(x => x.ImportedByUserId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasMany(x => x.Rows)
+                .WithOne(x => x.LastBatch)
+                .HasForeignKey(x => x.LastBatchId)
+                .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        builder.Entity<HistoricalImportRow>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.SourceFormat).HasMaxLength(80).IsRequired();
+            entity.Property(x => x.SourceSheet).HasMaxLength(120).IsRequired();
+            entity.Property(x => x.SourceKey).HasMaxLength(300).IsRequired();
+            entity.Property(x => x.SourceLabel).HasMaxLength(300).IsRequired();
+            entity.Property(x => x.WarningMessage).HasMaxLength(1000);
+            entity.HasIndex(x => new { x.SourceFormat, x.SourceSheet, x.SourceKey }).IsUnique();
+            entity.HasOne(x => x.LinkedPerson)
+                .WithMany()
+                .HasForeignKey(x => x.LinkedPersonId)
+                .OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne(x => x.LinkedSubmission)
+                .WithMany()
+                .HasForeignKey(x => x.LinkedSubmissionId)
+                .OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne(x => x.LinkedRegistration)
+                .WithMany()
+                .HasForeignKey(x => x.LinkedRegistrationId)
+                .OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne(x => x.LinkedCharacter)
+                .WithMany()
+                .HasForeignKey(x => x.LinkedCharacterId)
+                .OnDelete(DeleteBehavior.SetNull);
         });
     }
 }

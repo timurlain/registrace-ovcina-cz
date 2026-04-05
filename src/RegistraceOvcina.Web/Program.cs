@@ -13,6 +13,7 @@ using RegistraceOvcina.Web.Data;
 using RegistraceOvcina.Web.Features.Email;
 using RegistraceOvcina.Web.Features.Food;
 using RegistraceOvcina.Web.Features.Games;
+using RegistraceOvcina.Web.Features.HistoricalImport;
 using RegistraceOvcina.Web.Features.Payments;
 using RegistraceOvcina.Web.Features.Kingdoms;
 using RegistraceOvcina.Web.Features.Submissions;
@@ -171,6 +172,7 @@ public class Program
         builder.Services.AddScoped<FoodSummaryService>();
         builder.Services.AddScoped<MealOptionService>();
         builder.Services.AddScoped<GameService>();
+        builder.Services.AddScoped<HistoricalImportService>();
         builder.Services.AddScoped<InboxService>();
         builder.Services.AddScoped<KingdomService>();
         builder.Services.AddScoped<KingdomAssignmentService>();
@@ -458,6 +460,43 @@ public class Program
                     catch (ValidationException ex)
                     {
                         return Results.LocalRedirect($"/admin/organizatori?error={Uri.EscapeDataString(ex.Message)}");
+                    }
+                })
+            .RequireAuthorization(AuthorizationPolicies.AdminOnly);
+        app.MapPost(
+                "/admin/importy/spustit",
+                async ([FromForm] HistoricalImportInput input, IFormFile? workbook, HttpContext httpContext, UserManager<ApplicationUser> userManager, HistoricalImportService historicalImportService) =>
+                {
+                    if (GetValidationError(input) is { } validationError)
+                    {
+                        return Results.LocalRedirect($"/admin/importy?error={Uri.EscapeDataString(validationError)}");
+                    }
+
+                    if (workbook is null || workbook.Length == 0)
+                    {
+                        return Results.LocalRedirect("/admin/importy?error=Vyberte%20Excel%20soubor%20pro%20import.");
+                    }
+
+                    if (!workbook.FileName.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase))
+                    {
+                        return Results.LocalRedirect("/admin/importy?error=Import%20aktuálně%20podporuje%20jen%20soubory%20.xlsx.");
+                    }
+
+                    var user = await userManager.GetUserAsync(httpContext.User);
+                    if (user is null)
+                    {
+                        return Results.LocalRedirect($"/Account/Login?ReturnUrl={Uri.EscapeDataString("/admin/importy")}");
+                    }
+
+                    try
+                    {
+                        await using var stream = workbook.OpenReadStream();
+                        var result = await historicalImportService.ImportWorkbookAsync(input.ToCommand(workbook.FileName), stream, user.Id);
+                        return Results.LocalRedirect($"/admin/importy?status=imported&batchId={result.BatchId}");
+                    }
+                    catch (ValidationException ex)
+                    {
+                        return Results.LocalRedirect($"/admin/importy?error={Uri.EscapeDataString(ex.Message)}");
                     }
                 })
             .RequireAuthorization(AuthorizationPolicies.AdminOnly);
