@@ -183,23 +183,20 @@ else
                                     <label class="form-label required" for="attendee-birth-year">Rok narození</label>
                                     <input id="attendee-birth-year" name="@nameof(AttendeeInput.BirthYear)" type="number" value="@attendeeInput.BirthYear" class="form-control" placeholder="např. 2015" data-testid="attendee-birth-year" />
                                 </div>
-                                @if (attendeeInput.AttendeeType == AttendeeType.Player)
-                                {
-                                    <div class="col-md-4">
-                                        <label class="form-label" for="attendee-kingdom">Preferované království</label>
-                                        <select id="attendee-kingdom" name="@nameof(AttendeeInput.PreferredKingdomId)" class="form-select">
-                                            <option value="" selected="@(attendeeInput.PreferredKingdomId is null)">Bez preference</option>
-                                            @foreach (var kingdom in submission.AvailableKingdoms)
-                                            {
-                                                <option value="@kingdom.Id" selected="@(attendeeInput.PreferredKingdomId == kingdom.Id)">@kingdom.Name</option>
-                                            }
-                                        </select>
-                                        @if (submission.AvailableKingdoms.Count == 0)
+                                <div class="col-md-4 @(attendeeInput.AttendeeType == AttendeeType.Adult ? "d-none" : "")" id="kingdom-section">
+                                    <label class="form-label" for="attendee-kingdom">Preferované království</label>
+                                    <select id="attendee-kingdom" name="@nameof(AttendeeInput.PreferredKingdomId)" class="form-select">
+                                        <option value="" selected="@(attendeeInput.PreferredKingdomId is null)">Bez preference</option>
+                                        @foreach (var kingdom in submission.AvailableKingdoms)
                                         {
-                                            <div class="form-text">Království ještě nejsou nastavená, preference doplníme později.</div>
+                                            <option value="@kingdom.Id" selected="@(attendeeInput.PreferredKingdomId == kingdom.Id)">@kingdom.Name</option>
                                         }
-                                    </div>
-                                }
+                                    </select>
+                                    @if (submission.AvailableKingdoms.Count == 0)
+                                    {
+                                        <div class="form-text">Království ještě nejsou nastavená, preference doplníme později.</div>
+                                    }
+                                </div>
 
                                 <div class="col-12">
                                     <label class="form-label required">Typ účastníka</label>
@@ -570,6 +567,7 @@ document.addEventListener('change', e => {
     if (e.target.name !== 'AttendeeType') return;
     const isPlayer = e.target.value === 'Player';
     document.getElementById('player-subtype-section')?.classList.toggle('d-none', !isPlayer);
+    document.getElementById('kingdom-section')?.classList.toggle('d-none', !isPlayer);
     document.getElementById('adult-roles-section')?.classList.toggle('d-none', isPlayer);
 });
 </script>
