@@ -183,7 +183,7 @@ jobs:
 
           env_args=(
             "ASPNETCORE_ENVIRONMENT=Production"
-            "Database__ApplyMigrationsOnStartup=false"
+            "Database__ApplyMigrationsOnStartup=true"
             "SeedData__SeedDemoUsers=false"
             "ConnectionStrings__DefaultConnection=secretref:default-connection"
           )
