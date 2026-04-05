@@ -13,6 +13,11 @@ public sealed class SubmissionPricingService(TimeProvider timeProvider)
             total += registration.AttendeeType == AttendeeType.Player
                 ? game.PlayerBasePrice
                 : game.AdultHelperBasePrice;
+
+            if (registration.FoodOrders is { Count: > 0 })
+            {
+                total += registration.FoodOrders.Sum(fo => fo.Price);
+            }
         }
 
         return decimal.Round(total, 2, MidpointRounding.AwayFromZero);

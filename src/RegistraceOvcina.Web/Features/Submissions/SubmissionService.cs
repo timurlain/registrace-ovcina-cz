@@ -28,7 +28,8 @@ public sealed class SubmissionService(
                 x.Status,
                 x.SubmittedAtUtc,
                 x.ExpectedTotalAmount,
-                PaidAmount = x.Payments.Sum(p => p.Amount)
+                PaidAmount = x.Payments.Sum(p => p.Amount),
+                AttendeeCount = x.Registrations.Count(r => r.Status == RegistrationStatus.Active)
             })
             .ToListAsync(cancellationToken);
 
@@ -40,7 +41,8 @@ public sealed class SubmissionService(
                 x.Status,
                 x.SubmittedAtUtc,
                 x.ExpectedTotalAmount,
-                pricingService.CalculateBalanceStatus(x.ExpectedTotalAmount, x.PaidAmount)))
+                pricingService.CalculateBalanceStatus(x.ExpectedTotalAmount, x.PaidAmount),
+                x.AttendeeCount))
             .ToList();
     }
 
@@ -117,6 +119,8 @@ public sealed class SubmissionService(
                 .ThenInclude(x => x.Person)
             .Include(x => x.Registrations)
                 .ThenInclude(x => x.PreferredKingdom)
+            .Include(x => x.Registrations)
+                .ThenInclude(x => x.FoodOrders)
             .Include(x => x.Payments)
             .FirstOrDefaultAsync(x => x.Id == submissionId && x.RegistrantUserId == userId, cancellationToken);
 
@@ -175,6 +179,7 @@ public sealed class SubmissionService(
             Status = submission.Status,
             SubmittedAtUtc = submission.SubmittedAtUtc,
             PrimaryContactName = submission.PrimaryContactName,
+            GroupName = submission.GroupName,
             PrimaryEmail = submission.PrimaryEmail,
             PrimaryPhone = submission.PrimaryPhone,
             RegistrantNote = submission.RegistrantNote,
@@ -204,7 +209,9 @@ public sealed class SubmissionService(
                     x.RegistrantNote,
                     x.GuardianAuthorizationConfirmed,
                     x.ContactEmail,
-                    x.ContactPhone))
+                    x.ContactPhone,
+                    x.GuardianName,
+                    x.GuardianRelationship))
                 .ToList(),
             MealDays = gameDays.Select(day => new MealDayViewModel(
                 day,
@@ -230,6 +237,7 @@ public sealed class SubmissionService(
         EnsureEditable(submission);
 
         submission.PrimaryContactName = input.PrimaryContactName.Trim();
+        submission.GroupName = input.GroupName.Trim();
         submission.PrimaryEmail = input.PrimaryEmail.Trim();
         submission.PrimaryPhone = input.PrimaryPhone.Trim();
         submission.RegistrantNote = string.IsNullOrWhiteSpace(input.RegistrantNote) ? null : input.RegistrantNote.Trim();
@@ -249,7 +257,9 @@ public sealed class SubmissionService(
         await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
         var submission = await db.RegistrationSubmissions
             .Include(x => x.Game)
+                .ThenInclude(x => x.MealOptions)
             .Include(x => x.Registrations)
+                .ThenInclude(x => x.FoodOrders)
             .FirstOrDefaultAsync(x => x.Id == submissionId && x.RegistrantUserId == userId, cancellationToken)
             ?? throw new ValidationException("Přihláška nebyla nalezena.");
 
@@ -298,6 +308,11 @@ public sealed class SubmissionService(
 
         db.Registrations.Add(registration);
         submission.LastEditedAtUtc = nowUtc;
+        await db.SaveChangesAsync(cancellationToken);
+
+        // Save food orders from the attendee form
+        SaveFoodOrdersFromInput(db, registration, input, submission.Game);
+
         RecalculateIfSubmitted(submission);
         await db.SaveChangesAsync(cancellationToken);
 
@@ -332,13 +347,16 @@ public sealed class SubmissionService(
         await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
         var submission = await db.RegistrationSubmissions
             .Include(x => x.Game)
+                .ThenInclude(x => x.MealOptions)
             .Include(x => x.Registrations)
+                .ThenInclude(x => x.FoodOrders)
             .FirstOrDefaultAsync(x => x.Id == submissionId && x.RegistrantUserId == userId, cancellationToken)
             ?? throw new ValidationException("Přihláška nebyla nalezena.");
         EnsureRegistrationOpen(submission);
 
         var registration = await db.Registrations
             .Include(x => x.Person)
+            .Include(x => x.FoodOrders)
             .FirstOrDefaultAsync(x => x.Id == registrationId && x.SubmissionId == submissionId, cancellationToken)
             ?? throw new ValidationException("Účastník nebyl nalezen.");
 
@@ -375,6 +393,9 @@ public sealed class SubmissionService(
         registration.GuardianAuthorizationConfirmed = input.GuardianAuthorizationConfirmed;
         registration.UpdatedAtUtc = nowUtc;
 
+        // Update food orders from the attendee form
+        SaveFoodOrdersFromInput(db, registration, input, submission.Game);
+
         submission.LastEditedAtUtc = nowUtc;
         RecalculateIfSubmitted(submission);
 
@@ -407,6 +428,7 @@ public sealed class SubmissionService(
         var submission = await db.RegistrationSubmissions
             .Include(x => x.Game)
             .Include(x => x.Registrations)
+                .ThenInclude(x => x.FoodOrders)
             .FirstOrDefaultAsync(x => x.Id == submissionId && x.RegistrantUserId == userId, cancellationToken)
             ?? throw new ValidationException("Přihláška nebyla nalezena.");
         EnsureRegistrationOpen(submission);
@@ -484,6 +506,7 @@ public sealed class SubmissionService(
         var submission = await db.RegistrationSubmissions
             .Include(x => x.Game)
             .Include(x => x.Registrations)
+                .ThenInclude(x => x.FoodOrders)
             .FirstOrDefaultAsync(x => x.Id == submissionId && x.RegistrantUserId == userId, cancellationToken)
             ?? throw new ValidationException("Přihláška nebyla nalezena.");
 
@@ -533,6 +556,61 @@ public sealed class SubmissionService(
         await db.SaveChangesAsync(cancellationToken);
     }
 
+    public async Task<PersonSuggestion?> FindExistingPersonAsync(
+        string firstName,
+        string lastName,
+        int gameId,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(firstName) || string.IsNullOrWhiteSpace(lastName))
+            return null;
+
+        firstName = firstName.Trim();
+        lastName = lastName.Trim();
+
+        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+
+        var person = await db.People
+            .AsNoTracking()
+            .Where(p => !p.IsDeleted
+                && p.FirstName.ToLower() == firstName.ToLower()
+                && p.LastName.ToLower() == lastName.ToLower())
+            .OrderByDescending(p => p.UpdatedAtUtc)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (person is null)
+            return null;
+
+        // Find the most recent registration to get attendee type info
+        var lastRegistration = await db.Registrations
+            .AsNoTracking()
+            .Where(r => r.PersonId == person.Id && r.Status == RegistrationStatus.Active)
+            .OrderByDescending(r => r.CreatedAtUtc)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        // Find the most recent character appearance to get last kingdom
+        var lastAppearance = await db.CharacterAppearances
+            .AsNoTracking()
+            .Include(ca => ca.AssignedKingdom)
+            .Where(ca => ca.Character.PersonId == person.Id && ca.AssignedKingdomId != null)
+            .OrderByDescending(ca => ca.GameId)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        return new PersonSuggestion(
+            PersonId: person.Id,
+            FullName: $"{person.FirstName} {person.LastName}",
+            BirthYear: person.BirthYear,
+            Email: person.Email,
+            Phone: person.Phone,
+            GuardianName: lastRegistration?.GuardianName,
+            GuardianRelationship: lastRegistration?.GuardianRelationship,
+            LastKingdomId: lastAppearance?.AssignedKingdomId,
+            LastKingdomName: lastAppearance?.AssignedKingdom?.DisplayName,
+            LastAttendeeType: lastRegistration?.AttendeeType ?? AttendeeType.Player,
+            LastPlayerSubType: lastRegistration?.PlayerSubType,
+            LastAdultRoles: lastRegistration?.AdultRoles ?? AdultRoleFlags.None);
+    }
+
     private static void EnsureEditable(RegistrationSubmission submission)
     {
         if (submission.Status == SubmissionStatus.Cancelled)
@@ -560,6 +638,45 @@ public sealed class SubmissionService(
         if (submission.Status == SubmissionStatus.Submitted)
         {
             submission.ExpectedTotalAmount = pricingService.CalculateExpectedTotal(submission.Game, submission.Registrations);
+        }
+    }
+
+    private static void SaveFoodOrdersFromInput(
+        ApplicationDbContext db,
+        Registration registration,
+        AttendeeInput input,
+        Game game)
+    {
+        if (input.MealSelections.Count == 0)
+            return;
+
+        var validMealOptions = game.MealOptions?
+            .Where(x => x.IsActive)
+            .ToDictionary(x => x.Id)
+            ?? [];
+
+        // Remove existing food orders for this registration
+        if (registration.FoodOrders is { Count: > 0 })
+        {
+            db.FoodOrders.RemoveRange(registration.FoodOrders);
+            registration.FoodOrders.Clear();
+        }
+
+        // Add new ones from form input
+        foreach (var (dayTicks, mealOptionId) in input.MealSelections)
+        {
+            if (mealOptionId is null || !validMealOptions.TryGetValue(mealOptionId.Value, out var mealOption))
+                continue;
+
+            var foodOrder = new FoodOrder
+            {
+                RegistrationId = registration.Id,
+                MealOptionId = mealOption.Id,
+                MealDayUtc = new DateTime(dayTicks, DateTimeKind.Utc),
+                Price = mealOption.Price
+            };
+            db.FoodOrders.Add(foodOrder);
+            registration.FoodOrders.Add(foodOrder);
         }
     }
 
@@ -612,6 +729,7 @@ public sealed class SubmissionService(
             GameId = targetGameId,
             RegistrantUserId = user.Id,
             PrimaryContactName = string.IsNullOrWhiteSpace(user.DisplayName) ? user.Email ?? user.UserName ?? "" : user.DisplayName,
+            GroupName = source.GroupName,
             PrimaryEmail = user.Email ?? "",
             PrimaryPhone = user.PhoneNumber ?? "",
             Status = SubmissionStatus.Draft,
@@ -678,7 +796,8 @@ public sealed record SubmissionSummary(
     SubmissionStatus Status,
     DateTime? SubmittedAtUtc,
     decimal ExpectedTotalAmount,
-    BalanceStatus BalanceStatus);
+    BalanceStatus BalanceStatus,
+    int AttendeeCount);
 
 public sealed record AttendeeViewModel(
     int RegistrationId,
@@ -696,7 +815,9 @@ public sealed record AttendeeViewModel(
     string? AttendeeNote,
     bool GuardianAuthorizationConfirmed,
     string? ContactEmail,
-    string? ContactPhone);
+    string? ContactPhone,
+    string? GuardianName,
+    string? GuardianRelationship);
 
 public sealed class SubmissionEditorViewModel
 {
@@ -714,6 +835,7 @@ public sealed class SubmissionEditorViewModel
     public SubmissionStatus Status { get; init; }
     public DateTime? SubmittedAtUtc { get; init; }
     public string PrimaryContactName { get; init; } = "";
+    public string GroupName { get; init; } = "";
     public string PrimaryEmail { get; init; } = "";
     public string PrimaryPhone { get; init; } = "";
     public string? RegistrantNote { get; init; }
@@ -733,6 +855,10 @@ public sealed class ContactInput
     [Required(ErrorMessage = "Vyplňte jméno hlavního kontaktu.")]
     [StringLength(200)]
     public string PrimaryContactName { get; set; } = "";
+
+    [Required(ErrorMessage = "Vyplňte název skupiny nebo rodiny.")]
+    [StringLength(200)]
+    public string GroupName { get; set; } = "";
 
     [Required(ErrorMessage = "Vyplňte kontaktní e-mail.")]
     [EmailAddress(ErrorMessage = "E-mail nemá platný tvar.")]
@@ -785,6 +911,12 @@ public sealed class AttendeeInput : IValidatableObject
     public string? GuardianRelationship { get; set; }
 
     public bool GuardianAuthorizationConfirmed { get; set; }
+
+    /// <summary>
+    /// Per-day meal selections: key = day ticks (UTC), value = MealOption ID.
+    /// Empty or missing entry means no meal for that day.
+    /// </summary>
+    public Dictionary<long, int?> MealSelections { get; set; } = [];
 
     // Individual bool properties for multi-checkbox AdultRoles binding
     public bool AdultRole_PlayMonster { get; set; }
@@ -855,3 +987,17 @@ public sealed record MealOptionViewModel(int Id, string Name, decimal Price);
 public sealed record FoodOrderViewModel(int RegistrationId, int MealOptionId, DateTime MealDayUtc);
 
 public sealed record FoodOrderInput(int RegistrationId, int MealOptionId, DateTime MealDayUtc);
+
+public sealed record PersonSuggestion(
+    int PersonId,
+    string FullName,
+    int BirthYear,
+    string? Email,
+    string? Phone,
+    string? GuardianName,
+    string? GuardianRelationship,
+    int? LastKingdomId,
+    string? LastKingdomName,
+    AttendeeType LastAttendeeType,
+    PlayerSubType? LastPlayerSubType,
+    AdultRoleFlags LastAdultRoles);

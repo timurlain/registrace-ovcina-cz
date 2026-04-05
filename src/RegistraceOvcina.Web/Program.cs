@@ -317,6 +317,32 @@ public class Program
                 })
             .RequireAuthorization(AuthorizationPolicies.AdminOnly);
         app.MapPost(
+                "/admin/hry/{gameId:int}/upravit",
+                async (int gameId, [FromForm] CreateGameInput input, HttpContext httpContext, UserManager<ApplicationUser> userManager, GameService gameService) =>
+                {
+                    if (GetValidationError(input) is { } validationError)
+                    {
+                        return Results.LocalRedirect($"/admin/hry?edit={gameId}&error={Uri.EscapeDataString(validationError)}");
+                    }
+
+                    var user = await userManager.GetUserAsync(httpContext.User);
+                    if (user is null)
+                    {
+                        return Results.LocalRedirect($"/Account/Login?ReturnUrl={Uri.EscapeDataString("/admin/hry")}");
+                    }
+
+                    try
+                    {
+                        await gameService.UpdateGameAsync(gameId, input.ToCommand(), user.Id);
+                        return Results.LocalRedirect("/admin/hry?updated=1");
+                    }
+                    catch (ValidationException ex)
+                    {
+                        return Results.LocalRedirect($"/admin/hry?edit={gameId}&error={Uri.EscapeDataString(ex.Message)}");
+                    }
+                })
+            .RequireAuthorization(AuthorizationPolicies.AdminOnly);
+        app.MapPost(
                 "/admin/kralovstvi/pridat",
                 async ([FromForm] string name, [FromForm] string displayName, [FromForm] string? color, HttpContext httpContext, UserManager<ApplicationUser> userManager, KingdomService kingdomService) =>
                 {
@@ -536,8 +562,9 @@ public class Program
             .RequireAuthorization(AuthorizationPolicies.AdminOnly);
         app.MapPost(
                 "/admin/hry/{gameId:int}/jidla/{id:int}/upravit",
-                async (int gameId, int id, [FromForm] string name, [FromForm] decimal price, [FromForm] bool isActive, HttpContext httpContext, UserManager<ApplicationUser> userManager, MealOptionService mealOptionService) =>
+                async (int gameId, int id, [FromForm] string name, [FromForm] decimal price, HttpContext httpContext, UserManager<ApplicationUser> userManager, MealOptionService mealOptionService) =>
                 {
+                    var isActive = httpContext.Request.Form.ContainsKey("isActive");
                     var user = await userManager.GetUserAsync(httpContext.User);
                     if (user is null)
                     {
@@ -981,6 +1008,17 @@ public class Program
                     }
                 })
             .RequireAuthorization(AuthorizationPolicies.StaffOnly);
+        app.MapGet(
+                "/api/registrations/person-suggestion",
+                async (string? firstName, string? lastName, int? gameId, SubmissionService submissionService) =>
+                {
+                    if (string.IsNullOrWhiteSpace(firstName) || string.IsNullOrWhiteSpace(lastName) || gameId is null)
+                        return Results.BadRequest();
+
+                    var suggestion = await submissionService.FindExistingPersonAsync(firstName, lastName, gameId.Value);
+                    return suggestion is not null ? Results.Ok(suggestion) : Results.NotFound();
+                })
+            .RequireAuthorization();
         app.MapStaticAssets();
         app.MapRazorComponents<App>()
             .AddInteractiveServerRenderMode();

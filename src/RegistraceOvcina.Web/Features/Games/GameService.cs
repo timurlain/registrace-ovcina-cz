@@ -136,6 +136,60 @@ public sealed class GameService(IDbContextFactory<ApplicationDbContext> dbContex
         return game.Id;
     }
 
+    public async Task<Game?> GetGameForEditAsync(int gameId, CancellationToken ct = default)
+    {
+        await using var db = await dbContextFactory.CreateDbContextAsync(ct);
+        return await db.Games.AsNoTracking().FirstOrDefaultAsync(g => g.Id == gameId, ct);
+    }
+
+    public async Task UpdateGameAsync(int gameId, CreateGameCommand command, string actorUserId, CancellationToken ct = default)
+    {
+        ValidateSchedule(command);
+
+        await using var db = await dbContextFactory.CreateDbContextAsync(ct);
+        var game = await db.Games.FirstOrDefaultAsync(g => g.Id == gameId, ct)
+            ?? throw new ValidationException("Hra nebyla nalezena.");
+
+        var nowUtc = timeProvider.GetUtcNow().UtcDateTime;
+
+        game.Name = command.Name.Trim();
+        game.Description = command.Description?.Trim();
+        game.StartsAtUtc = CzechTime.ToUtc(command.StartsAtLocal);
+        game.EndsAtUtc = CzechTime.ToUtc(command.EndsAtLocal);
+        game.RegistrationClosesAtUtc = CzechTime.ToUtc(command.RegistrationClosesAtLocal);
+        game.MealOrderingClosesAtUtc = CzechTime.ToUtc(command.MealOrderingClosesAtLocal);
+        game.PaymentDueAtUtc = CzechTime.ToUtc(command.PaymentDueAtLocal);
+        game.AssignmentFreezeAtUtc = command.AssignmentFreezeAtLocal is { } assignmentFreeze
+            ? CzechTime.ToUtc(assignmentFreeze)
+            : null;
+        game.PlayerBasePrice = command.PlayerBasePrice;
+        game.AdultHelperBasePrice = command.AdultHelperBasePrice;
+        game.BankAccount = command.BankAccount.Trim();
+        game.BankAccountName = command.BankAccountName.Trim();
+        game.TargetPlayerCountTotal = command.TargetPlayerCountTotal;
+        game.IsPublished = command.IsPublished;
+        game.UpdatedAtUtc = nowUtc;
+
+        await db.SaveChangesAsync(ct);
+
+        db.AuditLogs.Add(new AuditLog
+        {
+            EntityType = nameof(Game),
+            EntityId = game.Id.ToString(),
+            Action = "GameUpdated",
+            ActorUserId = actorUserId,
+            CreatedAtUtc = nowUtc,
+            DetailsJson = JsonSerializer.Serialize(new
+            {
+                game.Name,
+                game.IsPublished,
+                game.TargetPlayerCountTotal
+            })
+        });
+
+        await db.SaveChangesAsync(ct);
+    }
+
     private static void ValidateSchedule(CreateGameCommand command)
     {
         if (command.EndsAtLocal <= command.StartsAtLocal)
