@@ -131,8 +131,30 @@
             return;
         }
 
-        // If the user does not have an account, then ask the user to create an account.
-        if (externalLoginInfo.Principal.HasClaim(c => c.Type == ClaimTypes.Email))
+        // If the user does not have a linked external login, check if an account with this email
+        // already exists (e.g. seeded or registered with password). If so, auto-link and sign in.
+        var email = externalLoginInfo.Principal.FindFirstValue(ClaimTypes.Email);
+        if (!string.IsNullOrEmpty(email))
+        {
+            var existingUser = await UserManager.FindByEmailAsync(email);
+            if (existingUser is not null)
+            {
+                var addLoginResult = await UserManager.AddLoginAsync(existingUser, externalLoginInfo);
+                if (addLoginResult.Succeeded)
+                {
+                    Logger.LogInformation(
+                        "Auto-linked {LoginProvider} to existing account {Email}.",
+                        externalLoginInfo.LoginProvider,
+                        email);
+                    await SignInManager.SignInAsync(existingUser, isPersistent: false, externalLoginInfo.LoginProvider);
+                    RedirectManager.RedirectTo(ReturnUrl);
+                    return;
+                }
+            }
+
+            Input.Email = email;
+        }
+        else if (externalLoginInfo.Principal.HasClaim(c => c.Type == ClaimTypes.Email))
         {
             Input.Email = externalLoginInfo.Principal.FindFirstValue(ClaimTypes.Email) ?? "";
         }
