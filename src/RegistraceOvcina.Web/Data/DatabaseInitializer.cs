@@ -86,10 +86,10 @@ public static class DatabaseInitializer
     {
         var canonical = new[]
         {
-            ("Aradhryand",       "Aradhryand",       "#2E7D32"),
-            ("Azanulinbar-Dum",  "Azanulinbar-Dum",  "#C62828"),
-            ("Esgaroth",         "Esgaroth",         "#1565C0"),
-            ("Novy-Arnor",       "Nový Arnor",       "#F9A825"),
+            ("Aradhryand",       "Elfové",            "#2E7D32"),
+            ("Azanulinbar-Dum",  "Trpaslíci",         "#C62828"),
+            ("Esgaroth",         "Jezerní lidé",      "#1565C0"),
+            ("Novy-Arnor",       "Nový Arnor",        "#F9A825"),
         };
 
         foreach (var (name, displayName, color) in canonical)
