@@ -207,7 +207,9 @@ public sealed class SubmissionService(
                     x.RegistrantNote,
                     x.GuardianAuthorizationConfirmed,
                     x.ContactEmail,
-                    x.ContactPhone))
+                    x.ContactPhone,
+                    x.GuardianName,
+                    x.GuardianRelationship))
                 .ToList(),
             MealDays = gameDays.Select(day => new MealDayViewModel(
                 day,
@@ -702,7 +704,9 @@ public sealed record AttendeeViewModel(
     string? AttendeeNote,
     bool GuardianAuthorizationConfirmed,
     string? ContactEmail,
-    string? ContactPhone);
+    string? ContactPhone,
+    string? GuardianName,
+    string? GuardianRelationship);
 
 public sealed class SubmissionEditorViewModel
 {

@@ -705,6 +705,9 @@ document.addEventListener('change', e => {
             AdultRole_TechSupport = attendee.AdultRoles.HasFlag(AdultRoleFlags.TechSupport),
             AdultRole_RangerLeader = attendee.AdultRoles.HasFlag(AdultRoleFlags.RangerLeader),
             AdultRole_Spectator = attendee.AdultRoles.HasFlag(AdultRoleFlags.Spectator),
+            GuardianName = attendee.GuardianName,
+            GuardianRelationship = attendee.GuardianRelationship,
+            GuardianAuthorizationConfirmed = attendee.GuardianAuthorizationConfirmed,
         };
     }
 
