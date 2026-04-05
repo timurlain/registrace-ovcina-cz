@@ -69,9 +69,9 @@ public static class DatabaseInitializer
             nowUtc,
             [RoleNames.Registrant]);
 
-        // Production admin accounts (OAuth login, password is a fallback only)
+        // Production admin accounts (OAuth login — password is never used, just required by Identity)
         var adminRoles = new[] { RoleNames.Registrant, RoleNames.Organizer, RoleNames.Admin };
-        var adminFallbackPassword = "OvcinaAdmin2026!Xk9$";
+        var adminFallbackPassword = $"OAuth!{Guid.NewGuid():N}";
 
         await EnsureUserAsync(userManager, "tomas.pajonk@hotmail.cz", adminFallbackPassword,
             "Tomáš Pajonk", nowUtc, adminRoles);
