@@ -28,7 +28,8 @@ public sealed class SubmissionService(
                 x.Status,
                 x.SubmittedAtUtc,
                 x.ExpectedTotalAmount,
-                PaidAmount = x.Payments.Sum(p => p.Amount)
+                PaidAmount = x.Payments.Sum(p => p.Amount),
+                AttendeeCount = x.Registrations.Count(r => r.Status == RegistrationStatus.Active)
             })
             .ToListAsync(cancellationToken);
 
@@ -40,7 +41,8 @@ public sealed class SubmissionService(
                 x.Status,
                 x.SubmittedAtUtc,
                 x.ExpectedTotalAmount,
-                pricingService.CalculateBalanceStatus(x.ExpectedTotalAmount, x.PaidAmount)))
+                pricingService.CalculateBalanceStatus(x.ExpectedTotalAmount, x.PaidAmount),
+                x.AttendeeCount))
             .ToList();
     }
 
@@ -175,6 +177,7 @@ public sealed class SubmissionService(
             Status = submission.Status,
             SubmittedAtUtc = submission.SubmittedAtUtc,
             PrimaryContactName = submission.PrimaryContactName,
+            GroupName = submission.GroupName,
             PrimaryEmail = submission.PrimaryEmail,
             PrimaryPhone = submission.PrimaryPhone,
             RegistrantNote = submission.RegistrantNote,
@@ -230,6 +233,7 @@ public sealed class SubmissionService(
         EnsureEditable(submission);
 
         submission.PrimaryContactName = input.PrimaryContactName.Trim();
+        submission.GroupName = input.GroupName.Trim();
         submission.PrimaryEmail = input.PrimaryEmail.Trim();
         submission.PrimaryPhone = input.PrimaryPhone.Trim();
         submission.RegistrantNote = string.IsNullOrWhiteSpace(input.RegistrantNote) ? null : input.RegistrantNote.Trim();
@@ -612,6 +616,7 @@ public sealed class SubmissionService(
             GameId = targetGameId,
             RegistrantUserId = user.Id,
             PrimaryContactName = string.IsNullOrWhiteSpace(user.DisplayName) ? user.Email ?? user.UserName ?? "" : user.DisplayName,
+            GroupName = source.GroupName,
             PrimaryEmail = user.Email ?? "",
             PrimaryPhone = user.PhoneNumber ?? "",
             Status = SubmissionStatus.Draft,
@@ -678,7 +683,8 @@ public sealed record SubmissionSummary(
     SubmissionStatus Status,
     DateTime? SubmittedAtUtc,
     decimal ExpectedTotalAmount,
-    BalanceStatus BalanceStatus);
+    BalanceStatus BalanceStatus,
+    int AttendeeCount);
 
 public sealed record AttendeeViewModel(
     int RegistrationId,
@@ -714,6 +720,7 @@ public sealed class SubmissionEditorViewModel
     public SubmissionStatus Status { get; init; }
     public DateTime? SubmittedAtUtc { get; init; }
     public string PrimaryContactName { get; init; } = "";
+    public string GroupName { get; init; } = "";
     public string PrimaryEmail { get; init; } = "";
     public string PrimaryPhone { get; init; } = "";
     public string? RegistrantNote { get; init; }
@@ -733,6 +740,10 @@ public sealed class ContactInput
     [Required(ErrorMessage = "Vyplňte jméno hlavního kontaktu.")]
     [StringLength(200)]
     public string PrimaryContactName { get; set; } = "";
+
+    [Required(ErrorMessage = "Vyplňte název skupiny nebo rodiny.")]
+    [StringLength(200)]
+    public string GroupName { get; set; } = "";
 
     [Required(ErrorMessage = "Vyplňte kontaktní e-mail.")]
     [EmailAddress(ErrorMessage = "E-mail nemá platný tvar.")]

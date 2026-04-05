@@ -9,7 +9,7 @@
     <div class="col-xl-5">
         <section class="card shadow-sm h-100">
             <div class="card-body p-4">
-                <h1 class="h3 mb-2">Vytvořit hru</h1>
+                <h1 class="h3 mb-2">@(editGameId.HasValue ? "Upravit hru" : "Vytvořit hru")</h1>
                 <p class="text-secondary">První administrátorský řez: založení termínu, uzávěrek, cen a platebních údajů.</p>
 
                 @if (!string.IsNullOrWhiteSpace(statusMessage))
@@ -22,7 +22,7 @@
                     <div class="alert alert-danger" role="alert">@errorMessage</div>
                 }
 
-                <form method="post" action="/admin/hry/vytvorit">
+                <form method="post" action="@(editGameId.HasValue ? $"/admin/hry/{editGameId.Value}/upravit" : "/admin/hry/vytvorit")">
                     <AntiforgeryToken />
                     <div class="mb-3">
                         <label class="form-label" for="game-name">Název hry</label>
@@ -94,7 +94,13 @@
                         </div>
                     </div>
 
-                    <button type="submit" class="btn btn-primary mt-4 w-100" data-testid="create-game-submit">Uložit hru</button>
+                    <button type="submit" class="btn btn-primary mt-4 w-100" data-testid="create-game-submit">
+                        @(editGameId.HasValue ? "Uložit změny" : "Uložit hru")
+                    </button>
+                    @if (editGameId.HasValue)
+                    {
+                        <a href="/admin/hry" class="btn btn-outline-secondary mt-2 w-100">Zrušit</a>
+                    }
                 </form>
             </div>
         </section>
@@ -153,6 +159,7 @@
                                         <tr>
                                             <td colspan="5" class="pt-2 pb-3 border-bottom">
                                                 <div class="d-flex flex-wrap gap-2">
+                                                    <a href="/admin/hry?edit=@game.Id" class="btn btn-sm btn-outline-warning">Upravit</a>
                                                     <a href="/admin/hry/@game.Id/kralovstvi" class="btn btn-sm btn-outline-primary">Království</a>
                                                     <a href="/admin/hry/@game.Id/jidla" class="btn btn-sm btn-outline-primary">Jídla</a>
                                                     <a href="/admin/hry/@game.Id/pozvanky" class="btn btn-sm btn-outline-primary">Pozvánky</a>
@@ -175,8 +182,14 @@
     [SupplyParameterFromQuery(Name = "created")]
     private int? created { get; set; }
 
+    [SupplyParameterFromQuery(Name = "updated")]
+    private int? updated { get; set; }
+
     [SupplyParameterFromQuery(Name = "error")]
     private string? createError { get; set; }
+
+    [SupplyParameterFromQuery(Name = "edit")]
+    private int? editGameId { get; set; }
 
     private IReadOnlyList<GameSummary>? games;
     private CreateGameInput input = CreateGameInput.CreateDefaults();
@@ -188,11 +201,24 @@
         await LoadGamesAsync();
     }
 
-    protected override void OnParametersSet()
+    protected override async Task OnParametersSetAsync()
     {
-        statusMessage = created == 1 ? "Hra byla uložená." : null;
+        statusMessage = created == 1 ? "Hra byla uložená."
+            : updated == 1 ? "Hra byla upravená."
+            : null;
         errorMessage = createError;
-        input = CreateGameInput.CreateDefaults();
+
+        if (editGameId.HasValue)
+        {
+            var game = await GameService.GetGameForEditAsync(editGameId.Value);
+            input = game is not null
+                ? CreateGameInput.FromGame(game)
+                : CreateGameInput.CreateDefaults();
+        }
+        else
+        {
+            input = CreateGameInput.CreateDefaults();
+        }
     }
 
     private async Task LoadGamesAsync()

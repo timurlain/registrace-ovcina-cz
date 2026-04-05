@@ -160,6 +160,7 @@ public sealed class RegistrationSubmission
     public int GameId { get; set; }
     public string RegistrantUserId { get; set; } = "";
     public string PrimaryContactName { get; set; } = "";
+    public string GroupName { get; set; } = "";
     public string PrimaryEmail { get; set; } = "";
     public string PrimaryPhone { get; set; } = "";
     public SubmissionStatus Status { get; set; } = SubmissionStatus.Draft;

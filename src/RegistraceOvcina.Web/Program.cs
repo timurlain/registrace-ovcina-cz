@@ -317,6 +317,32 @@ public class Program
                 })
             .RequireAuthorization(AuthorizationPolicies.AdminOnly);
         app.MapPost(
+                "/admin/hry/{gameId:int}/upravit",
+                async (int gameId, [FromForm] CreateGameInput input, HttpContext httpContext, UserManager<ApplicationUser> userManager, GameService gameService) =>
+                {
+                    if (GetValidationError(input) is { } validationError)
+                    {
+                        return Results.LocalRedirect($"/admin/hry?edit={gameId}&error={Uri.EscapeDataString(validationError)}");
+                    }
+
+                    var user = await userManager.GetUserAsync(httpContext.User);
+                    if (user is null)
+                    {
+                        return Results.LocalRedirect($"/Account/Login?ReturnUrl={Uri.EscapeDataString("/admin/hry")}");
+                    }
+
+                    try
+                    {
+                        await gameService.UpdateGameAsync(gameId, input.ToCommand(), user.Id);
+                        return Results.LocalRedirect("/admin/hry?updated=1");
+                    }
+                    catch (ValidationException ex)
+                    {
+                        return Results.LocalRedirect($"/admin/hry?edit={gameId}&error={Uri.EscapeDataString(ex.Message)}");
+                    }
+                })
+            .RequireAuthorization(AuthorizationPolicies.AdminOnly);
+        app.MapPost(
                 "/admin/kralovstvi/pridat",
                 async ([FromForm] string name, [FromForm] string displayName, [FromForm] string? color, HttpContext httpContext, UserManager<ApplicationUser> userManager, KingdomService kingdomService) =>
                 {
