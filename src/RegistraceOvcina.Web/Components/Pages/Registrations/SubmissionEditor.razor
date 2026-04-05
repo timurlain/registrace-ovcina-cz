@@ -183,20 +183,23 @@ else
                                     <label class="form-label required" for="attendee-birth-year">Rok narození</label>
                                     <input id="attendee-birth-year" name="@nameof(AttendeeInput.BirthYear)" type="number" value="@attendeeInput.BirthYear" class="form-control" placeholder="např. 2015" data-testid="attendee-birth-year" />
                                 </div>
-                                <div class="col-md-4">
-                                    <label class="form-label" for="attendee-kingdom">Preferované království</label>
-                                    <select id="attendee-kingdom" name="@nameof(AttendeeInput.PreferredKingdomId)" class="form-select" disabled="@(submission.AvailableKingdoms.Count == 0)">
-                                        <option value="" selected="@(attendeeInput.PreferredKingdomId is null)">Bez preference</option>
-                                        @foreach (var kingdom in submission.AvailableKingdoms)
+                                @if (attendeeInput.AttendeeType == AttendeeType.Player)
+                                {
+                                    <div class="col-md-4">
+                                        <label class="form-label" for="attendee-kingdom">Preferované království</label>
+                                        <select id="attendee-kingdom" name="@nameof(AttendeeInput.PreferredKingdomId)" class="form-select">
+                                            <option value="" selected="@(attendeeInput.PreferredKingdomId is null)">Bez preference</option>
+                                            @foreach (var kingdom in submission.AvailableKingdoms)
+                                            {
+                                                <option value="@kingdom.Id" selected="@(attendeeInput.PreferredKingdomId == kingdom.Id)">@kingdom.Name</option>
+                                            }
+                                        </select>
+                                        @if (submission.AvailableKingdoms.Count == 0)
                                         {
-                                            <option value="@kingdom.Id" selected="@(attendeeInput.PreferredKingdomId == kingdom.Id)">@kingdom.Name</option>
+                                            <div class="form-text">Království ještě nejsou nastavená, preference doplníme později.</div>
                                         }
-                                    </select>
-                                    @if (submission.AvailableKingdoms.Count == 0)
-                                    {
-                                        <div class="form-text">Království ještě nejsou nastavená, preference doplníme později.</div>
-                                    }
-                                </div>
+                                    </div>
+                                }
 
                                 <div class="col-12">
                                     <label class="form-label required">Typ účastníka</label>
