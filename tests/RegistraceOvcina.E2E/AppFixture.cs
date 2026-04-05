@@ -132,11 +132,12 @@ public sealed class AppFixture : IAsyncLifetime
                     return;
                 }
             }
-            catch
+            catch (HttpRequestException)
             {
+                // Server not ready yet — retry after delay
             }
 
-            await Task.Delay(1000);
+            await Task.Delay(500);
         }
 
         throw new TimeoutException($"Timed out waiting for the test host to start.{Environment.NewLine}{GetDiagnostics()}");

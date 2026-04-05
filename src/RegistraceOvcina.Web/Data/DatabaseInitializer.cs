@@ -29,18 +29,10 @@ public static class DatabaseInitializer
 
         await db.Database.MigrateAsync();
 
-        var seedDemoUsers = configuration.GetValue<bool?>("SeedData:SeedDemoUsers")
-            ?? (environment.IsDevelopment() || environment.IsEnvironment("Testing"));
+        await SeedKingdomsAsync(db);
 
-        if (!seedDemoUsers)
-        {
-            return;
-        }
-
+        // Roles must always exist — external login creates users with Registrant role
         var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole>>();
-        var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
-        var nowUtc = DateTime.UtcNow;
-
         foreach (var role in new[] { RoleNames.Registrant, RoleNames.Organizer, RoleNames.Admin })
         {
             if (!await roleManager.RoleExistsAsync(role))
@@ -49,6 +41,17 @@ public static class DatabaseInitializer
                 EnsureSuccess(createRoleResult, $"role '{role}'");
             }
         }
+
+        var seedDemoUsers = configuration.GetValue<bool?>("SeedData:SeedDemoUsers")
+            ?? (environment.IsDevelopment() || environment.IsEnvironment("Testing"));
+
+        if (!seedDemoUsers)
+        {
+            return;
+        }
+
+        var userManager = scope.ServiceProvider.GetRequiredService<UserManager<ApplicationUser>>();
+        var nowUtc = DateTime.UtcNow;
 
         await EnsureUserAsync(
             userManager,
@@ -66,9 +69,9 @@ public static class DatabaseInitializer
             nowUtc,
             [RoleNames.Registrant]);
 
-        // Production admin accounts (OAuth login, password is a fallback only)
+        // Production admin accounts (OAuth login — password is never used, just required by Identity)
         var adminRoles = new[] { RoleNames.Registrant, RoleNames.Organizer, RoleNames.Admin };
-        var adminFallbackPassword = "OvcinaAdmin2026!Xk9$";
+        var adminFallbackPassword = $"OAuth!{Guid.NewGuid():N}";
 
         await EnsureUserAsync(userManager, "tomas.pajonk@hotmail.cz", adminFallbackPassword,
             "Tomáš Pajonk", nowUtc, adminRoles);
@@ -78,6 +81,32 @@ public static class DatabaseInitializer
             "Blanka Richtar", nowUtc, adminRoles);
 
         await SeedGameDataAsync(db, nowUtc);
+    }
+
+    private static async Task SeedKingdomsAsync(ApplicationDbContext db)
+    {
+        var canonical = new[]
+        {
+            ("Aradhryand",       "Elfové",            "#2E7D32"),
+            ("Azanulinbar-Dum",  "Trpaslíci",         "#C62828"),
+            ("Esgaroth",         "Jezerní lidé",      "#1565C0"),
+            ("Novy-Arnor",       "Nový Arnor",        "#F9A825"),
+        };
+
+        foreach (var (name, displayName, color) in canonical)
+        {
+            if (!await db.Kingdoms.AnyAsync(k => k.Name == name))
+            {
+                db.Kingdoms.Add(new Kingdom
+                {
+                    Name = name,
+                    DisplayName = displayName,
+                    Color = color
+                });
+            }
+        }
+
+        await db.SaveChangesAsync();
     }
 
     private static async Task SeedGameDataAsync(ApplicationDbContext db, DateTime nowUtc)

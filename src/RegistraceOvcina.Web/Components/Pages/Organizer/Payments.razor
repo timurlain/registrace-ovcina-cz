@@ -1,0 +1,194 @@
+@page "/organizace/platby"
+@attribute [Authorize(Policy = AuthorizationPolicies.StaffOnly)]
+
+@inject PaymentService PaymentService
+@inject OrganizerSubmissionService OrganizerSubmissionService
+
+<PageTitle>Přehled plateb</PageTitle>
+
+<div class="d-flex justify-content-between align-items-end mb-4">
+    <div>
+        <h1 class="h3 mb-1">Přehled plateb</h1>
+        <p class="text-secondary mb-0">Správa plateb a sledování zůstatků.</p>
+    </div>
+    <div>
+        <form method="get" class="d-flex align-items-center gap-2">
+            <label class="form-label mb-0 text-nowrap" for="game-filter">Hra</label>
+            <select id="game-filter" name="gameId" class="form-select form-select-sm" style="min-width: 180px;" onchange="this.form.submit()">
+                <option value="">Všechny hry</option>
+                @if (gameFilters is not null)
+                {
+                    @foreach (var game in gameFilters)
+                    {
+                        <option value="@game.Id" selected="@(selectedGameId == game.Id)">@game.Name</option>
+                    }
+                }
+            </select>
+            <label class="form-label mb-0 text-nowrap" for="balance-filter">Stav platby</label>
+            <select id="balance-filter" name="balanceStatus" class="form-select form-select-sm" style="min-width: 160px;" onchange="this.form.submit()">
+                <option value="">Všechny stavy</option>
+                <option value="@((int)BalanceStatus.Unpaid)" selected="@(selectedBalanceStatus == (int)BalanceStatus.Unpaid)">Neuhrazeno</option>
+                <option value="@((int)BalanceStatus.Underpaid)" selected="@(selectedBalanceStatus == (int)BalanceStatus.Underpaid)">Nedoplatek</option>
+                <option value="@((int)BalanceStatus.Balanced)" selected="@(selectedBalanceStatus == (int)BalanceStatus.Balanced)">Vyrovnáno</option>
+                <option value="@((int)BalanceStatus.Overpaid)" selected="@(selectedBalanceStatus == (int)BalanceStatus.Overpaid)">Přeplatek</option>
+            </select>
+        </form>
+    </div>
+</div>
+
+@if (items is null)
+{
+    <p class="text-secondary">Načítám platby...</p>
+}
+else if (items.Count == 0)
+{
+    <div class="empty-state">Žádné přihlášky.</div>
+}
+else
+{
+    <div class="table-responsive">
+        <table class="table align-middle">
+            <thead>
+                <tr>
+                    <th>VS</th>
+                    <th>Kontakt</th>
+                    <th>Hra</th>
+                    <th class="text-end">Celkem</th>
+                    <th class="text-end">Uhrazeno</th>
+                    <th>Stav</th>
+                    <th>Akce</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var item in items)
+                {
+                    <tr data-testid="@($"payment-row-{item.SubmissionId}")">
+                        <td>@(item.VariableSymbol ?? "—")</td>
+                        <td>
+                            <div>@item.ContactName</div>
+                            <small class="text-secondary">@item.ContactEmail</small>
+                        </td>
+                        <td>@item.GameName</td>
+                        <td class="text-end">@item.ExpectedTotal.ToString("0.00") Kč</td>
+                        <td class="text-end">@item.PaidAmount.ToString("0.00") Kč</td>
+                        <td><span class="badge @GetBalanceBadgeClass(item.BalanceStatus)">@GetBalanceLabel(item.BalanceStatus)</span></td>
+                        <td>
+                            @if (expandedSubmissionId == item.SubmissionId)
+                            {
+                                <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="() => CollapseForm()">Zavřít</button>
+                            }
+                            else
+                            {
+                                <button type="button" class="btn btn-sm btn-primary" data-testid="@($"record-payment-{item.SubmissionId}")" @onclick="() => ExpandForm(item.SubmissionId)">Zaznamenat platbu</button>
+                            }
+                        </td>
+                    </tr>
+                    @if (expandedSubmissionId == item.SubmissionId)
+                    {
+                        <tr data-testid="@($"payment-form-{item.SubmissionId}")">
+                            <td colspan="7">
+                                <form method="post" action="/organizace/platby/@item.SubmissionId/zaznamenat" class="row g-2 align-items-end p-2 bg-light rounded">
+                                    <AntiforgeryToken />
+                                    <div class="col-auto">
+                                        <label class="form-label small mb-1">Částka (Kč)</label>
+                                        <input type="number" name="amount" step="0.01" min="0.01" required class="form-control form-control-sm" style="width: 120px;" />
+                                    </div>
+                                    <div class="col-auto">
+                                        <label class="form-label small mb-1">Způsob</label>
+                                        <select name="method" class="form-select form-select-sm" style="min-width: 160px;">
+                                            <option value="@((int)PaymentMethod.BankTransfer)">Bankovní převod</option>
+                                            <option value="@((int)PaymentMethod.Cash)">Hotovost</option>
+                                            <option value="@((int)PaymentMethod.ManualAdjustment)">Ruční úprava</option>
+                                        </select>
+                                    </div>
+                                    <div class="col-auto">
+                                        <label class="form-label small mb-1">Reference</label>
+                                        <input type="text" name="reference" class="form-control form-control-sm" placeholder="ID transakce" style="width: 150px;" />
+                                    </div>
+                                    <div class="col-auto">
+                                        <label class="form-label small mb-1">Poznámka</label>
+                                        <input type="text" name="note" class="form-control form-control-sm" style="width: 200px;" />
+                                    </div>
+                                    <div class="col-auto">
+                                        <button type="submit" class="btn btn-sm btn-success">Zaznamenat</button>
+                                    </div>
+                                </form>
+                            </td>
+                        </tr>
+                    }
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@if (!string.IsNullOrEmpty(successMessage))
+{
+    <div class="alert alert-success mt-3" role="alert">@successMessage</div>
+}
+@if (!string.IsNullOrEmpty(errorMessage))
+{
+    <div class="alert alert-danger mt-3" role="alert">@errorMessage</div>
+}
+
+@code {
+    [SupplyParameterFromQuery(Name = "gameId")]
+    private int? selectedGameId { get; set; }
+
+    [SupplyParameterFromQuery(Name = "balanceStatus")]
+    private int? selectedBalanceStatus { get; set; }
+
+    [SupplyParameterFromQuery(Name = "recorded")]
+    private int? recorded { get; set; }
+
+    [SupplyParameterFromQuery(Name = "error")]
+    private string? errorParam { get; set; }
+
+    private IReadOnlyList<PaymentOverviewItem>? items;
+    private IReadOnlyList<GameFilterItem>? gameFilters;
+    private int? expandedSubmissionId;
+    private string? successMessage;
+    private string? errorMessage;
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (recorded == 1)
+        {
+            successMessage = "Platba byla zaznamenána.";
+        }
+
+        if (!string.IsNullOrEmpty(errorParam))
+        {
+            errorMessage = errorParam;
+        }
+
+        BalanceStatus? balanceFilter = selectedBalanceStatus.HasValue
+            ? (BalanceStatus)selectedBalanceStatus.Value
+            : null;
+
+        gameFilters = await OrganizerSubmissionService.GetGameFilterListAsync();
+        items = await PaymentService.GetPaymentOverviewAsync(selectedGameId, balanceFilter);
+    }
+
+    private void ExpandForm(int submissionId) => expandedSubmissionId = submissionId;
+
+    private void CollapseForm() => expandedSubmissionId = null;
+
+    private static string GetBalanceLabel(BalanceStatus balanceStatus) => balanceStatus switch
+    {
+        BalanceStatus.Unpaid => "Neuhrazeno",
+        BalanceStatus.Underpaid => "Nedoplatek",
+        BalanceStatus.Balanced => "Vyrovnáno",
+        BalanceStatus.Overpaid => "Přeplatek",
+        _ => balanceStatus.ToString()
+    };
+
+    private static string GetBalanceBadgeClass(BalanceStatus balance) => balance switch
+    {
+        BalanceStatus.Unpaid => "text-bg-danger",
+        BalanceStatus.Underpaid => "text-bg-warning",
+        BalanceStatus.Balanced => "text-bg-success",
+        BalanceStatus.Overpaid => "text-bg-info",
+        _ => "text-bg-light"
+    };
+}

@@ -1,0 +1,341 @@
+@page "/admin/hry/{gameId:int}/pozvanky"
+@attribute [Authorize(Policy = AuthorizationPolicies.AdminOnly)]
+@rendermode InteractiveServer
+
+@using Microsoft.EntityFrameworkCore
+
+@inject IDbContextFactory<ApplicationDbContext> DbContextFactory
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject UserManager<ApplicationUser> UserManager
+
+<PageTitle>Pozvánky — @(game?.Name ?? "Hra")</PageTitle>
+
+<div class="row g-4">
+    <div class="col-xl-12">
+        <section class="card shadow-sm">
+            <div class="card-body p-4">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <div>
+                        <h1 class="h3 mb-1">Pozvánky: @(game?.Name ?? "...")</h1>
+                        <p class="text-secondary mb-0">Odešlete e-mailové pozvánky z ovcina@ovcina.cz vybraným příjemcům.</p>
+                    </div>
+                    <a href="/admin/hry" class="btn btn-outline-secondary btn-sm">Zpět na hry</a>
+                </div>
+
+                @if (InvitationService is null)
+                {
+                    <div class="alert alert-warning" role="alert">
+                        Odesílání pozvánek není k dispozici — sdílená schránka (Email) není nakonfigurovaná.
+                    </div>
+                }
+
+                @if (!string.IsNullOrWhiteSpace(statusMessage))
+                {
+                    <div class="alert alert-success" role="status">@statusMessage</div>
+                }
+
+                @if (!string.IsNullOrWhiteSpace(errorMessage))
+                {
+                    <div class="alert alert-danger" role="alert">@errorMessage</div>
+                }
+
+                @if (candidates is null)
+                {
+                    <p class="text-secondary">Načítám příjemce...</p>
+                }
+                else
+                {
+                    <div class="row g-3 mb-3">
+                        <div class="col-md-6">
+                            <label class="form-label" for="search-filter">Hledat podle jména nebo e-mailu</label>
+                            <input id="search-filter" type="text" class="form-control" placeholder="Začněte psát..."
+                                   @bind="searchFilter" @bind:event="oninput" />
+                        </div>
+                        <div class="col-md-6 d-flex align-items-end">
+                            <div class="form-check">
+                                <input id="attended-only" type="checkbox" class="form-check-input"
+                                       @bind="attendedOnly" />
+                                <label class="form-check-label" for="attended-only">Pouze minulí účastníci</label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <button type="button" class="btn btn-sm btn-outline-secondary me-1" @onclick="SelectAll">Vybrat vše</button>
+                        <button type="button" class="btn btn-sm btn-outline-secondary me-1" @onclick="SelectNone">Zrušit výběr</button>
+                        <span class="text-secondary ms-2">Vybráno: @selectedEmails.Count / @FilteredCandidates.Count</span>
+                    </div>
+
+                    <div class="table-responsive mb-4" style="max-height: 20rem; overflow-y: auto;">
+                        <table class="table align-middle table-sm">
+                            <thead class="sticky-top bg-white">
+                                <tr>
+                                    <th style="width:3rem;"></th>
+                                    <th>Jméno</th>
+                                    <th>E-mail</th>
+                                    <th>Zdroj</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var candidate in FilteredCandidates)
+                                {
+                                    var isSelected = selectedEmails.Contains(candidate.Email);
+                                    <tr>
+                                        <td>
+                                            <input type="checkbox" class="form-check-input"
+                                                   checked="@isSelected"
+                                                   @onchange="() => ToggleSelection(candidate.Email)" />
+                                        </td>
+                                        <td>@candidate.Name</td>
+                                        <td>@candidate.Email</td>
+                                        <td><span class="badge bg-secondary">@candidate.Source</span></td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+
+                    @if (FilteredCandidates.Count == 0)
+                    {
+                        <div class="text-secondary mb-4">Žádní příjemci neodpovídají filtru.</div>
+                    }
+
+                    <hr />
+
+                    <h2 class="h5 mb-3">Obsah pozvánky</h2>
+
+                    <div class="mb-3">
+                        <label class="form-label" for="invitation-subject">Předmět</label>
+                        <input id="invitation-subject" type="text" class="form-control"
+                               @bind="subject" />
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label" for="invitation-body">Text pozvánky (HTML)</label>
+                        <textarea id="invitation-body" class="form-control" rows="6"
+                                  @bind="htmlBody"></textarea>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label" for="invitation-note">Interní poznámka (neposílá se)</label>
+                        <input id="invitation-note" type="text" class="form-control"
+                               @bind="note" placeholder="Volitelné — poznámka pro organizátory" />
+                    </div>
+
+                    <button type="button" class="btn btn-primary" disabled="@(isSending || selectedEmails.Count == 0)"
+                            @onclick="SendInvitationsAsync">
+                        @if (isSending)
+                        {
+                            <span class="spinner-border spinner-border-sm me-1" role="status"></span>
+                            <text>Odesílám...</text>
+                        }
+                        else
+                        {
+                            <text>Odeslat pozvánky (@selectedEmails.Count)</text>
+                        }
+                    </button>
+                }
+            </div>
+        </section>
+    </div>
+</div>
+
+@if (sentInvitations is not null && sentInvitations.Count > 0)
+{
+    <div class="row g-4 mt-2">
+        <div class="col-xl-12">
+            <section class="card shadow-sm">
+                <div class="card-body p-4">
+                    <h2 class="h4 mb-3">Historie odeslaných pozvánek</h2>
+                    <div class="table-responsive">
+                        <table class="table align-middle table-sm">
+                            <thead>
+                                <tr>
+                                    <th>Příjemce</th>
+                                    <th>E-mail</th>
+                                    <th>Předmět</th>
+                                    <th>Odesláno</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var inv in sentInvitations)
+                                {
+                                    <tr>
+                                        <td>@inv.RecipientName</td>
+                                        <td>@inv.RecipientEmail</td>
+                                        <td>@inv.Subject</td>
+                                        <td>@CzechTime.Format(inv.SentAtUtc)</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter]
+    public int GameId { get; set; }
+
+    [Inject]
+    private InvitationService? InvitationService { get; set; }
+
+    private Game? game;
+    private IReadOnlyList<InvitationRecipientCandidate>? candidates;
+    private IReadOnlyList<SentInvitationSummary>? sentInvitations;
+
+    private HashSet<string> selectedEmails = new(StringComparer.OrdinalIgnoreCase);
+    private string searchFilter = "";
+    private bool attendedOnly;
+    private string subject = "";
+    private string htmlBody = "";
+    private string? note;
+    private bool isSending;
+
+    private string? statusMessage;
+    private string? errorMessage;
+
+    private IReadOnlyList<InvitationRecipientCandidate> FilteredCandidates
+    {
+        get
+        {
+            if (candidates is null) return [];
+
+            var result = candidates.AsEnumerable();
+
+            if (attendedOnly)
+            {
+                result = result.Where(c =>
+                    c.Source.Equals("Minulý účastník", StringComparison.OrdinalIgnoreCase));
+            }
+
+            if (!string.IsNullOrWhiteSpace(searchFilter))
+            {
+                var filter = searchFilter.Trim();
+                result = result.Where(c =>
+                    c.Name.Contains(filter, StringComparison.OrdinalIgnoreCase) ||
+                    c.Email.Contains(filter, StringComparison.OrdinalIgnoreCase));
+            }
+
+            return result.ToList();
+        }
+    }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await using var db = await DbContextFactory.CreateDbContextAsync();
+        game = await db.Games.AsNoTracking().FirstOrDefaultAsync(g => g.Id == GameId);
+
+        if (game is not null)
+        {
+            subject = $"Pozvánka na {game.Name}";
+            htmlBody = $"<p>Dobrý den,</p><p>rádi bychom Vás pozvali na hru <strong>{game.Name}</strong>, která se koná {CzechTime.Format(game.StartsAtUtc)}.</p><p>Těšíme se na Vás!</p><p>Ovčina</p>";
+        }
+
+        if (InvitationService is not null)
+        {
+            candidates = await InvitationService.GetCandidatesAsync(GameId);
+            sentInvitations = await InvitationService.GetSentInvitationsAsync(GameId);
+        }
+    }
+
+    private void SelectAll()
+    {
+        foreach (var c in FilteredCandidates)
+        {
+            selectedEmails.Add(c.Email);
+        }
+    }
+
+    private void SelectNone()
+    {
+        selectedEmails.Clear();
+    }
+
+    private void ToggleSelection(string email)
+    {
+        if (!selectedEmails.Remove(email))
+        {
+            selectedEmails.Add(email);
+        }
+    }
+
+    private async Task SendInvitationsAsync()
+    {
+        statusMessage = null;
+        errorMessage = null;
+
+        if (InvitationService is null)
+        {
+            errorMessage = "Odesílání pozvánek není nakonfigurováno.";
+            return;
+        }
+
+        if (selectedEmails.Count == 0)
+        {
+            errorMessage = "Vyberte alespoň jednoho příjemce.";
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(subject))
+        {
+            errorMessage = "Vyplňte předmět pozvánky.";
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(htmlBody))
+        {
+            errorMessage = "Vyplňte text pozvánky.";
+            return;
+        }
+
+        var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        var user = await UserManager.GetUserAsync(authState.User);
+        if (user is null)
+        {
+            errorMessage = "Nepodařilo se ověřit uživatele.";
+            return;
+        }
+
+        var recipientsToSend = (candidates ?? [])
+            .Where(c => selectedEmails.Contains(c.Email))
+            .ToList();
+
+        if (recipientsToSend.Count == 0)
+        {
+            errorMessage = "Žádní vybraní příjemci.";
+            return;
+        }
+
+        isSending = true;
+        StateHasChanged();
+
+        try
+        {
+            var sentCount = await InvitationService.SendInvitationsAsync(
+                new SendInvitationRequest(
+                    GameId,
+                    recipientsToSend,
+                    subject,
+                    htmlBody,
+                    user.Id,
+                    string.IsNullOrWhiteSpace(note) ? null : note));
+
+            statusMessage = $"Úspěšně odesláno {sentCount} pozvánek.";
+            selectedEmails.Clear();
+
+            sentInvitations = await InvitationService.GetSentInvitationsAsync(GameId);
+        }
+        catch (InvalidOperationException ex)
+        {
+            errorMessage = ex.Message;
+        }
+        finally
+        {
+            isSending = false;
+        }
+    }
+}

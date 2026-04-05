@@ -89,6 +89,7 @@
                         @foreach (var game in games)
                         {
                             var existing = submissions?.FirstOrDefault(x => x.GameId == game.Id);
+                            var pastSubmissions = submissions?.Where(x => x.GameId != game.Id && x.Status == SubmissionStatus.Submitted).ToList();
 
                             <article class="card border-0 bg-light">
                                 <div class="card-body d-flex flex-column gap-3">
@@ -110,6 +111,27 @@
                                             @(existing is null ? "Začít novou přihlášku skupiny či rodiny" : "Otevřít existující přihlášku")
                                         </button>
                                     </form>
+
+                                    @if (existing is null && pastSubmissions is { Count: > 0 })
+                                    {
+                                        <div class="border-top pt-3 mt-1">
+                                            <p class="small text-warm mb-2 fw-bold">Nebo zopakovat předchozí přihlášku:</p>
+                                            <div class="d-flex flex-column gap-2">
+                                                @foreach (var past in pastSubmissions)
+                                                {
+                                                    <form method="post" action="@($"/prihlasky/zopakovat/{past.Id}/{game.Id}")">
+                                                        <AntiforgeryToken />
+                                                        <button class="btn btn-warm btn-sm w-100 text-start"
+                                                                type="submit"
+                                                                data-testid="@($"repeat-{past.Id}-to-{game.Id}")">
+                                                            Zopakovat z: @past.GameName
+                                                        </button>
+                                                    </form>
+                                                }
+                                            </div>
+                                            <p class="small text-secondary mt-2 mb-0">Zkopíruje účastníky — můžete pak upravit údaje, přidat nebo odebrat osoby.</p>
+                                        </div>
+                                    }
                                 </div>
                             </article>
                         }

@@ -573,6 +573,100 @@ public sealed class SubmissionService(
             .FirstOrDefaultAsync(x => x.Id == submissionId && x.RegistrantUserId == userId, cancellationToken)
             ?? throw new ValidationException("Přihláška nebyla nalezena.");
     }
+
+    public async Task<int> RepeatSubmissionAsync(
+        int sourceSubmissionId,
+        int targetGameId,
+        ApplicationUser user,
+        CancellationToken cancellationToken = default)
+    {
+        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+        var nowUtc = timeProvider.GetUtcNow().UtcDateTime;
+
+        var game = await db.Games.FirstOrDefaultAsync(x => x.Id == targetGameId, cancellationToken)
+            ?? throw new ValidationException("Vybraná hra neexistuje.");
+
+        if (!game.IsPublished)
+            throw new ValidationException("Tuto hru zatím nelze přihlašovat.");
+
+        if (game.RegistrationClosesAtUtc < nowUtc)
+            throw new ValidationException("Registrace pro tuto hru už byla uzavřena.");
+
+        var existingDraft = await db.RegistrationSubmissions
+            .Where(x => x.GameId == targetGameId && x.RegistrantUserId == user.Id && !x.IsDeleted)
+            .Select(x => (int?)x.Id)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (existingDraft.HasValue)
+            throw new ValidationException("Pro tuto hru už máte přihlášku. Otevřete ji a upravte.");
+
+        var source = await db.RegistrationSubmissions
+            .AsNoTracking()
+            .Include(x => x.Registrations.Where(r => r.Status == RegistrationStatus.Active))
+            .ThenInclude(r => r.Person)
+            .FirstOrDefaultAsync(x => x.Id == sourceSubmissionId && x.RegistrantUserId == user.Id, cancellationToken)
+            ?? throw new ValidationException("Zdrojová přihláška nebyla nalezena.");
+
+        var submission = new RegistrationSubmission
+        {
+            GameId = targetGameId,
+            RegistrantUserId = user.Id,
+            PrimaryContactName = string.IsNullOrWhiteSpace(user.DisplayName) ? user.Email ?? user.UserName ?? "" : user.DisplayName,
+            PrimaryEmail = user.Email ?? "",
+            PrimaryPhone = user.PhoneNumber ?? "",
+            Status = SubmissionStatus.Draft,
+            LastEditedAtUtc = nowUtc,
+            ExpectedTotalAmount = 0m
+        };
+
+        db.RegistrationSubmissions.Add(submission);
+        await db.SaveChangesAsync(cancellationToken);
+
+        foreach (var reg in source.Registrations)
+        {
+            var cloned = new Registration
+            {
+                SubmissionId = submission.Id,
+                PersonId = reg.PersonId,
+                AttendeeType = reg.AttendeeType,
+                PlayerSubType = reg.PlayerSubType,
+                AdultRoles = reg.AdultRoles,
+                CharacterName = reg.CharacterName,
+                LodgingPreference = reg.LodgingPreference,
+                PreferredKingdomId = reg.PreferredKingdomId,
+                ContactEmail = reg.ContactEmail,
+                ContactPhone = reg.ContactPhone,
+                GuardianName = reg.GuardianName,
+                GuardianRelationship = reg.GuardianRelationship,
+                GuardianAuthorizationConfirmed = reg.GuardianAuthorizationConfirmed,
+                RegistrantNote = reg.RegistrantNote,
+                Status = RegistrationStatus.Active,
+                CreatedAtUtc = nowUtc,
+                UpdatedAtUtc = nowUtc
+            };
+            db.Registrations.Add(cloned);
+        }
+
+        await db.SaveChangesAsync(cancellationToken);
+
+        var clonedRegistrations = await db.Registrations
+            .Where(r => r.SubmissionId == submission.Id)
+            .ToListAsync(cancellationToken);
+        submission.ExpectedTotalAmount = pricingService.CalculateExpectedTotal(game, clonedRegistrations);
+
+        db.AuditLogs.Add(new AuditLog
+        {
+            EntityType = nameof(RegistrationSubmission),
+            EntityId = submission.Id.ToString(),
+            Action = "SubmissionRepeated",
+            ActorUserId = user.Id,
+            CreatedAtUtc = nowUtc,
+            DetailsJson = JsonSerializer.Serialize(new { SourceSubmissionId = sourceSubmissionId, submission.GameId })
+        });
+
+        await db.SaveChangesAsync(cancellationToken);
+        return submission.Id;
+    }
 }
 
 public sealed record LookupItem(int Id, string Name);

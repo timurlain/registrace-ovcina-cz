@@ -30,9 +30,13 @@ public static class CzechTime
             }
             catch (TimeZoneNotFoundException)
             {
+                // Expected — try next candidate (Linux vs Windows IDs differ)
+                continue;
             }
             catch (InvalidTimeZoneException)
             {
+                // Corrupted TZ data — try next candidate
+                continue;
             }
         }
 
