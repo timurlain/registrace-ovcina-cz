@@ -261,7 +261,7 @@ else
                                     </div>
                                 </div>
 
-                                <div class="col-md-6">
+                                <div class="col-md-6 @(attendeeInput.AttendeeType == AttendeeType.Adult ? "d-none" : "")" id="character-name-section">
                                     <label class="form-label" for="attendee-character-name">Jméno postavy</label>
                                     <input id="attendee-character-name" name="CharacterName" value="@attendeeInput.CharacterName" class="form-control" placeholder="např. Thorin Pavéza" />
                                 </div>
@@ -306,7 +306,7 @@ else
                                 </div>
                             </div>
 
-                            <div class="border rounded-3 p-3 mt-3 bg-light">
+                            <div class="border rounded-3 p-3 mt-3 bg-light @(attendeeInput.AttendeeType == AttendeeType.Adult ? "d-none" : "")" id="guardian-section">
                                 <h4 class="h6 mb-3">Nezletilý účastník</h4>
                                 <div class="row g-3">
                                     <div class="col-md-6">
@@ -568,6 +568,8 @@ document.addEventListener('change', e => {
     const isPlayer = e.target.value === 'Player';
     document.getElementById('player-subtype-section')?.classList.toggle('d-none', !isPlayer);
     document.getElementById('kingdom-section')?.classList.toggle('d-none', !isPlayer);
+    document.getElementById('character-name-section')?.classList.toggle('d-none', !isPlayer);
+    document.getElementById('guardian-section')?.classList.toggle('d-none', !isPlayer);
     document.getElementById('adult-roles-section')?.classList.toggle('d-none', isPlayer);
 });
 </script>
