@@ -320,9 +320,9 @@ public sealed class OrganizerSubmissionService(
                 return $": {firstName} {lastName}".TrimEnd();
             }
         }
-        catch
+        catch (System.Text.Json.JsonException)
         {
-            // Ignore malformed JSON
+            // Malformed audit detail JSON — return empty suffix rather than crash timeline
         }
 
         return "";
