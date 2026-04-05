@@ -92,7 +92,7 @@ public sealed class KingdomAssignmentService(IDbContextFactory<ApplicationDbCont
         };
     }
 
-    public async Task AssignPlayerAsync(int registrationId, int? kingdomId, string actorUserId, CancellationToken cancellationToken = default)
+    public async Task AssignPlayerAsync(int registrationId, int? kingdomId, string actorUserId, int? expectedGameId = null, CancellationToken cancellationToken = default)
     {
         await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
         var nowUtc = timeProvider.GetUtcNow().UtcDateTime;
@@ -104,6 +104,18 @@ public sealed class KingdomAssignmentService(IDbContextFactory<ApplicationDbCont
             ?? throw new InvalidOperationException("Registrace nebyla nalezena.");
 
         var gameId = registration.Submission.GameId;
+
+        if (expectedGameId.HasValue && gameId != expectedGameId.Value)
+            throw new InvalidOperationException("Registrace nepatří k zadané hře.");
+
+        if (registration.Status != RegistrationStatus.Active)
+            throw new InvalidOperationException("Registrace není aktivní.");
+
+        if (registration.Submission.Status != SubmissionStatus.Submitted)
+            throw new InvalidOperationException("Přihláška nebyla odeslána.");
+
+        if (registration.AttendeeType != AttendeeType.Player)
+            throw new InvalidOperationException("Království lze přiřadit pouze hráčům.");
 
         // Find existing CharacterAppearance for this registration+game
         var appearance = await db.CharacterAppearances

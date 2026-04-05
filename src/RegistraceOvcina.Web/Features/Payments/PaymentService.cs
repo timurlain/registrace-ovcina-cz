@@ -26,7 +26,7 @@ public sealed class PaymentService(
             query = query.Where(x => x.GameId == gameId.Value);
         }
 
-        var submissions = await query
+        var projected = query
             .OrderByDescending(x => x.SubmittedAtUtc)
             .Select(x => new
             {
@@ -37,10 +37,23 @@ public sealed class PaymentService(
                 x.ExpectedTotalAmount,
                 PaidAmount = x.Payments.Sum(p => p.Amount),
                 x.PaymentVariableSymbol
-            })
-            .ToListAsync(cancellationToken);
+            });
 
-        var results = submissions
+        if (balanceFilter.HasValue)
+        {
+            projected = balanceFilter.Value switch
+            {
+                BalanceStatus.Unpaid => projected.Where(x => x.ExpectedTotalAmount > 0 && x.PaidAmount <= 0),
+                BalanceStatus.Underpaid => projected.Where(x => x.PaidAmount > 0 && x.PaidAmount < x.ExpectedTotalAmount),
+                BalanceStatus.Balanced => projected.Where(x => x.ExpectedTotalAmount <= 0 || x.PaidAmount == x.ExpectedTotalAmount),
+                BalanceStatus.Overpaid => projected.Where(x => x.PaidAmount > x.ExpectedTotalAmount),
+                _ => projected
+            };
+        }
+
+        var submissions = await projected.ToListAsync(cancellationToken);
+
+        return submissions
             .Select(x => new PaymentOverviewItem(
                 x.Id,
                 x.GameName,
@@ -51,13 +64,6 @@ public sealed class PaymentService(
                 pricingService.CalculateBalanceStatus(x.ExpectedTotalAmount, x.PaidAmount),
                 x.PaymentVariableSymbol))
             .ToList();
-
-        if (balanceFilter.HasValue)
-        {
-            results = results.Where(x => x.BalanceStatus == balanceFilter.Value).ToList();
-        }
-
-        return results;
     }
 
     public async Task RecordPaymentAsync(
@@ -94,11 +100,12 @@ public sealed class PaymentService(
         };
 
         db.Payments.Add(payment);
+        await db.SaveChangesAsync(cancellationToken);
 
         db.AuditLogs.Add(new AuditLog
         {
             EntityType = nameof(Payment),
-            EntityId = "0",
+            EntityId = payment.Id.ToString(),
             Action = "PaymentRecorded",
             ActorUserId = actorUserId,
             CreatedAtUtc = nowUtc,

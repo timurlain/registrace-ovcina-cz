@@ -928,6 +928,11 @@ public class Program
                         return Results.LocalRedirect($"/organizace/platby?error={Uri.EscapeDataString("Částka musí být kladná.")}");
                     }
 
+                    if (!Enum.IsDefined(typeof(PaymentMethod), method))
+                    {
+                        return Results.LocalRedirect($"/organizace/platby?error={Uri.EscapeDataString("Neplatný způsob platby.")}");
+                    }
+
                     try
                     {
                         await paymentService.RecordPaymentAsync(
@@ -965,7 +970,7 @@ public class Program
 
                         int? kingdomId = int.TryParse(form["kingdomId"], out var kid) && kid > 0 ? kid : null;
 
-                        await kingdomAssignmentService.AssignPlayerAsync(registrationId, kingdomId, user.Id);
+                        await kingdomAssignmentService.AssignPlayerAsync(registrationId, kingdomId, user.Id, expectedGameId: gameId);
                         return Results.LocalRedirect($"/organizace/hry/{gameId}/kralovstvi?assigned=1");
                     }
                     catch (InvalidOperationException ex)

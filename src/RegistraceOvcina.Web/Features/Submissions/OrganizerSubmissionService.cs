@@ -82,12 +82,20 @@ public sealed class OrganizerSubmissionService(
             .OrderByDescending(x => x.ReceivedAtUtc ?? x.SentAtUtc)
             .ToListAsync(cancellationToken);
 
+        var submissionEntityId = submissionId.ToString();
+        var paymentEntityIds = submission.Payments
+            .Select(p => p.Id.ToString())
+            .ToList();
+        var registrationEntityIds = submission.Registrations
+            .Select(r => r.Id.ToString())
+            .ToList();
+
         var auditLogs = await db.AuditLogs
             .AsNoTracking()
             .Where(x =>
-                (x.EntityType == nameof(RegistrationSubmission) && x.EntityId == submissionId.ToString())
-                || (x.EntityType == nameof(Payment) && db.Payments.Any(p => p.SubmissionId == submissionId && p.Id.ToString() == x.EntityId))
-                || (x.EntityType == nameof(Registration) && db.Registrations.Any(r => r.SubmissionId == submissionId && r.Id.ToString() == x.EntityId)))
+                (x.EntityType == nameof(RegistrationSubmission) && x.EntityId == submissionEntityId)
+                || (x.EntityType == nameof(Payment) && paymentEntityIds.Contains(x.EntityId))
+                || (x.EntityType == nameof(Registration) && registrationEntityIds.Contains(x.EntityId)))
             .OrderByDescending(x => x.CreatedAtUtc)
             .ToListAsync(cancellationToken);
 
@@ -196,11 +204,12 @@ public sealed class OrganizerSubmissionService(
         };
 
         db.OrganizerNotes.Add(organizerNote);
+        await db.SaveChangesAsync(cancellationToken);
 
         db.AuditLogs.Add(new AuditLog
         {
             EntityType = nameof(OrganizerNote),
-            EntityId = "0", // Will be updated after save
+            EntityId = organizerNote.Id.ToString(),
             Action = "NoteAdded",
             ActorUserId = actorUserId,
             CreatedAtUtc = nowUtc,
