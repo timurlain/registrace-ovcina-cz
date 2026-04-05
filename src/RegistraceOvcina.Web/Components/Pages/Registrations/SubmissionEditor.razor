@@ -235,27 +235,22 @@ else
                                 <div class="col-12 @(attendeeInput.AttendeeType == AttendeeType.Player ? "d-none" : "")" id="adult-roles-section">
                                     <label class="form-label required">Role dospělého (lze vybrat více)</label>
                                     <div class="form-check">
-                                        <input type="hidden" name="AdultRole_PlayMonster" value="false" />
                                         <input class="form-check-input" type="checkbox" name="AdultRole_PlayMonster" value="true" id="ar-monster" checked="@attendeeInput.AdultRole_PlayMonster" />
                                         <label class="form-check-label" for="ar-monster">se zájmem hrát cizí postavu — příšeru (např. skřet, kostlivec, vlci...)</label>
                                     </div>
                                     <div class="form-check">
-                                        <input type="hidden" name="AdultRole_OrganizationHelper" value="false" />
                                         <input class="form-check-input" type="checkbox" name="AdultRole_OrganizationHelper" value="true" id="ar-org" checked="@attendeeInput.AdultRole_OrganizationHelper" />
                                         <label class="form-check-label" for="ar-org">se zájmem pomoci organizaci (ve městech hráčů jako obchodník, či příručí)</label>
                                     </div>
                                     <div class="form-check">
-                                        <input type="hidden" name="AdultRole_TechSupport" value="false" />
                                         <input class="form-check-input" type="checkbox" name="AdultRole_TechSupport" value="true" id="ar-tech" checked="@attendeeInput.AdultRole_TechSupport" />
                                         <label class="form-check-label" for="ar-tech">se zájmem pomoci s technickou organizací (chystání svačiny, rozvoz jídla, spojka...)</label>
                                     </div>
                                     <div class="form-check">
-                                        <input type="hidden" name="AdultRole_RangerLeader" value="false" />
                                         <input class="form-check-input" type="checkbox" name="AdultRole_RangerLeader" value="true" id="ar-ranger" checked="@attendeeInput.AdultRole_RangerLeader" />
                                         <label class="form-check-label" for="ar-ranger">se zájmem vést skupinku menších dětí (hraničář)</label>
                                     </div>
                                     <div class="form-check">
-                                        <input type="hidden" name="AdultRole_Spectator" value="false" />
                                         <input class="form-check-input" type="checkbox" name="AdultRole_Spectator" value="true" id="ar-spectator" checked="@attendeeInput.AdultRole_Spectator" />
                                         <label class="form-check-label" for="ar-spectator">pouze přihlížející</label>
                                     </div>
