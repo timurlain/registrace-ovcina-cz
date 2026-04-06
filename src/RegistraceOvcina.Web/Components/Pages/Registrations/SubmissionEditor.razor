@@ -806,6 +806,13 @@ document.addEventListener('change', e => {
         else if (age > 0)
         {
             attendeeInput.AttendeeType = AttendeeType.Player;
+            attendeeInput.PlayerSubType = age switch
+            {
+                >= 10 => PlayerSubType.Pvp,
+                >= 8 => PlayerSubType.Independent,
+                >= 5 => PlayerSubType.WithRanger,
+                _ => PlayerSubType.WithParent
+            };
         }
     }
 
