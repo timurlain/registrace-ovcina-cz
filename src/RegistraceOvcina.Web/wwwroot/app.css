@@ -273,15 +273,17 @@ code, pre, .font-mono {
 .qr-wrapper {
   background: #fff;
   border: 2px solid var(--color-border);
-  display: flex;
-  justify-content: center;
   padding: 1.5rem;
   box-shadow: var(--shadow-card);
+  overflow: hidden;
 }
 
 .qr-wrapper svg {
+  width: 100%;
   height: auto;
-  max-width: 100%;
+  max-width: 300px;
+  display: block;
+  margin: 0 auto;
 }
 
 /* Generic parchment card — use for any content box */
