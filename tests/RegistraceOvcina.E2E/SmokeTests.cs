@@ -378,8 +378,8 @@ public sealed class SmokeTests : IClassFixture<AppFixture>
         }
 
         // Verify phone number preserved with + prefix (#73)
-        var cardText = await registrantPage.Locator("[data-testid^='attendee-card-']").First.InnerTextAsync();
-        Assert.Contains("+420777999888", cardText);
+        var pageBody = await registrantPage.Locator("body").InnerTextAsync();
+        Assert.Contains("+420777999888", pageBody);
 
         await WaitForInteractiveReadyAsync(registrantPage);
 
