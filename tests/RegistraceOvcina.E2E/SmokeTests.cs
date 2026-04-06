@@ -667,6 +667,174 @@ public sealed class SmokeTests : IClassFixture<AppFixture>
         }
     }
 
+    [Fact]
+    public async Task AddAdultAttendee_WithRole_Succeeds()
+    {
+        var page = await _fixture.Browser.NewPageAsync();
+        await LoginAsync(page, RegistrantEmail);
+
+        // Navigate to existing draft or create one
+        await page.GotoAsync($"{_fixture.BaseUrl}/moje-prihlasky");
+        await WaitForInteractiveReadyAsync(page);
+
+        // Click first available draft or create new
+        var existingDraft = page.Locator("[data-testid^='open-submission-']").First;
+        if (await existingDraft.IsVisibleAsync())
+        {
+            await existingDraft.ClickAsync();
+        }
+        else
+        {
+            await page.Locator("[data-testid^='create-draft-']").First.ClickAsync();
+        }
+
+        await page.WaitForURLAsync("**/prihlasky/*");
+        await WaitForInteractiveReadyAsync(page);
+
+        // Fill adult attendee
+        await page.GetByTestId("attendee-first-name").FillAsync("Tomáš");
+        await page.GetByTestId("attendee-last-name").FillAsync("Pajonk");
+        await page.GetByTestId("attendee-birth-year").FillAsync("1985");
+        await page.GetByTestId("type-adult").CheckAsync();
+
+        // Select an adult role
+        await page.Locator("#ar-tech").CheckAsync();
+
+        await page.GetByTestId("add-attendee-submit").ClickAsync();
+
+        try
+        {
+            await page.Locator("[data-testid^='attendee-card-']").Last.WaitForAsync(new LocatorWaitForOptions
+            {
+                Timeout = 5000
+            });
+            await page.GetByText("Účastník byl přidán.").WaitForAsync(new LocatorWaitForOptions
+            {
+                Timeout = 5000
+            });
+        }
+        catch (TimeoutException)
+        {
+            var bodyText = await page.Locator("body").InnerTextAsync();
+            throw new XunitException($"Adult attendee add failed. Page body:{Environment.NewLine}{bodyText}");
+        }
+
+        // Verify the attendee card shows "Dospělý"
+        var lastCard = page.Locator("[data-testid^='attendee-card-']").Last;
+        var cardText = await lastCard.InnerTextAsync();
+        Assert.Contains("Tomáš Pajonk", cardText);
+        Assert.Contains("Dospělý", cardText);
+
+        await AssertNoBlazorErrorsAsync(page);
+        await page.CloseAsync();
+    }
+
+    [Fact]
+    public async Task AddAdultAttendee_WithoutRole_ShowsValidationError()
+    {
+        var page = await _fixture.Browser.NewPageAsync();
+        await LoginAsync(page, RegistrantEmail);
+
+        await page.GotoAsync($"{_fixture.BaseUrl}/moje-prihlasky");
+        await WaitForInteractiveReadyAsync(page);
+
+        var existingDraft = page.Locator("[data-testid^='open-submission-']").First;
+        if (await existingDraft.IsVisibleAsync())
+        {
+            await existingDraft.ClickAsync();
+        }
+        else
+        {
+            await page.Locator("[data-testid^='create-draft-']").First.ClickAsync();
+        }
+
+        await page.WaitForURLAsync("**/prihlasky/*");
+        await WaitForInteractiveReadyAsync(page);
+
+        // Fill adult attendee WITHOUT selecting any role
+        await page.GetByTestId("attendee-first-name").FillAsync("Jana");
+        await page.GetByTestId("attendee-last-name").FillAsync("Nováková");
+        await page.GetByTestId("attendee-birth-year").FillAsync("1980");
+        await page.GetByTestId("type-adult").CheckAsync();
+
+        // Do NOT check any adult role checkbox
+        await page.GetByTestId("add-attendee-submit").ClickAsync();
+
+        // Validation error should appear, form should NOT reset
+        try
+        {
+            await page.GetByText("Vyberte alespoň jednu roli dospělého").WaitForAsync(new LocatorWaitForOptions
+            {
+                Timeout = 5000
+            });
+        }
+        catch (TimeoutException)
+        {
+            var bodyText = await page.Locator("body").InnerTextAsync();
+            throw new XunitException($"Validation error for missing adult role not shown. Page body:{Environment.NewLine}{bodyText}");
+        }
+
+        // Verify form fields are preserved (not reset)
+        var firstName = await page.GetByTestId("attendee-first-name").InputValueAsync();
+        Assert.Equal("Jana", firstName);
+
+        var lastName = await page.GetByTestId("attendee-last-name").InputValueAsync();
+        Assert.Equal("Nováková", lastName);
+
+        await AssertNoBlazorErrorsAsync(page);
+        await page.CloseAsync();
+    }
+
+    [Fact]
+    public async Task AddAdultAttendee_MultipleRoles_AllSaved()
+    {
+        var page = await _fixture.Browser.NewPageAsync();
+        await LoginAsync(page, RegistrantEmail);
+
+        await page.GotoAsync($"{_fixture.BaseUrl}/moje-prihlasky");
+        await WaitForInteractiveReadyAsync(page);
+
+        var existingDraft = page.Locator("[data-testid^='open-submission-']").First;
+        if (await existingDraft.IsVisibleAsync())
+        {
+            await existingDraft.ClickAsync();
+        }
+        else
+        {
+            await page.Locator("[data-testid^='create-draft-']").First.ClickAsync();
+        }
+
+        await page.WaitForURLAsync("**/prihlasky/*");
+        await WaitForInteractiveReadyAsync(page);
+
+        await page.GetByTestId("attendee-first-name").FillAsync("Blanka");
+        await page.GetByTestId("attendee-last-name").FillAsync("Richtarová");
+        await page.GetByTestId("attendee-birth-year").FillAsync("1982");
+        await page.GetByTestId("type-adult").CheckAsync();
+
+        // Select multiple roles
+        await page.Locator("#ar-monster").CheckAsync();
+        await page.Locator("#ar-tech").CheckAsync();
+
+        await page.GetByTestId("add-attendee-submit").ClickAsync();
+
+        try
+        {
+            await page.GetByText("Účastník byl přidán.").WaitForAsync(new LocatorWaitForOptions
+            {
+                Timeout = 5000
+            });
+        }
+        catch (TimeoutException)
+        {
+            var bodyText = await page.Locator("body").InnerTextAsync();
+            throw new XunitException($"Adult with multiple roles failed. Page body:{Environment.NewLine}{bodyText}");
+        }
+
+        await AssertNoBlazorErrorsAsync(page);
+        await page.CloseAsync();
+    }
+
     private sealed record SeededFoodSummaryData(
         int GameId,
         string GameName,
