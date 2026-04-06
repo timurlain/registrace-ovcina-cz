@@ -876,6 +876,8 @@ public sealed class SmokeTests : IClassFixture<AppFixture>
             throw new XunitException($"Adult parent add failed. Page body:{Environment.NewLine}{bodyText}");
         }
 
+        // Reload to get clean form
+        await page.ReloadAsync(new PageReloadOptions { WaitUntil = WaitUntilState.NetworkIdle });
         await WaitForInteractiveReadyAsync(page);
 
         // --- Add first child (older, independent player) ---
@@ -899,6 +901,8 @@ public sealed class SmokeTests : IClassFixture<AppFixture>
             throw new XunitException($"First child add failed. Page body:{Environment.NewLine}{bodyText}");
         }
 
+        // Reload to get clean form (EditForm in SSR doesn't reset inputs after model change)
+        await page.ReloadAsync(new PageReloadOptions { WaitUntil = WaitUntilState.NetworkIdle });
         await WaitForInteractiveReadyAsync(page);
 
         // --- Add second child (younger, with ranger) ---
