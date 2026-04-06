@@ -235,8 +235,9 @@ public sealed class InboxService(
         int? resolvedPersonId = linkToPersonId;
         if (resolvedPersonId is null && !string.IsNullOrWhiteSpace(toEmail))
         {
+            var normalizedToEmail = toEmail.Trim().ToLowerInvariant();
             resolvedPersonId = await db.People
-                .Where(p => !p.IsDeleted && p.Email == toEmail)
+                .Where(p => !p.IsDeleted && p.Email != null && p.Email.Trim().ToLower() == normalizedToEmail)
                 .Select(p => (int?)p.Id)
                 .FirstOrDefaultAsync(ct);
         }
@@ -244,7 +245,7 @@ public sealed class InboxService(
         // Store the outbound message locally
         var newMessage = new EmailMessage
         {
-            MailboxItemId = $"composed-{DateTime.UtcNow.Ticks}",
+            MailboxItemId = $"composed-{Guid.NewGuid()}",
             Direction = EmailDirection.Outbound,
             From = sharedMailbox,
             To = toEmail,
@@ -255,11 +256,12 @@ public sealed class InboxService(
         };
 
         db.EmailMessages.Add(newMessage);
+        await db.SaveChangesAsync(ct); // Save first so newMessage.Id is assigned
 
         db.AuditLogs.Add(new AuditLog
         {
             EntityType = nameof(EmailMessage),
-            EntityId = "new",
+            EntityId = newMessage.Id.ToString(),
             Action = "NewMessageSent",
             ActorUserId = actorUserId,
             CreatedAtUtc = DateTime.UtcNow,

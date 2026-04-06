@@ -294,7 +294,7 @@ public class Program
 
             return latestGameId.HasValue
                 ? Results.LocalRedirect($"/organizace/hry/{latestGameId.Value}/kralovstvi")
-                : Results.LocalRedirect("/admin/hry");
+                : Results.LocalRedirect("/organizace/prihlasky");
         }).RequireAuthorization(AuthorizationPolicies.StaffOnly);
         app.MapIntegrationApi();
         if (app.Environment.IsEnvironment("Testing"))

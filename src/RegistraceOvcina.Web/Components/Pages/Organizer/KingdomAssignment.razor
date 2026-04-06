@@ -59,7 +59,7 @@ else
                                  ondragstart="handleDragStart(event)">
                                 <div class="d-flex justify-content-between align-items-center">
                                     <span class="fw-semibold" style="font-size:0.8rem;">@player.PersonName</span>
-                                    <span class="text-muted" style="font-size:0.7rem;">@(2026 - player.BirthYear) let</span>
+                                    <span class="text-muted" style="font-size:0.7rem;">@(DateTime.UtcNow.Year - player.BirthYear) let</span>
                                 </div>
                                 @if (!string.IsNullOrWhiteSpace(player.PreferredKingdomName))
                                 {
@@ -76,7 +76,7 @@ else
         @foreach (var kingdom in board.Kingdoms)
         {
             var avgAge = kingdom.Players.Count > 0
-                ? Math.Round(kingdom.Players.Average(p => 2026.0 - p.BirthYear), 1)
+                ? Math.Round(kingdom.Players.Average(p => (double)(DateTime.UtcNow.Year - p.BirthYear)), 1)
                 : 0;
 
             <div class="col">
@@ -112,8 +112,18 @@ else
                                      ondragstart="handleDragStart(event)">
                                     <div class="d-flex justify-content-between align-items-center">
                                         <span class="fw-semibold" style="font-size:0.8rem;">@player.PersonName</span>
-                                        <span class="text-muted" style="font-size:0.7rem;">@(2026 - player.BirthYear) let</span>
+                                        <span class="text-muted" style="font-size:0.7rem;">@(DateTime.UtcNow.Year - player.BirthYear) let</span>
                                     </div>
+                                    <select class="reassign-select form-select form-select-sm mt-1"
+                                            style="font-size:0.65rem; padding:1px 4px; height:auto;"
+                                            onchange="reassignPlayer(this, '@player.RegistrationId')">
+                                        <option value="">Přesunout...</option>
+                                        <option value="">Nepřidělení</option>
+                                        @foreach (var k in board!.Kingdoms.Where(k => k.KingdomId != kingdom.KingdomId))
+                                        {
+                                            <option value="@k.KingdomId">@k.DisplayName</option>
+                                        }
+                                    </select>
                                 </div>
                             }
                         }
@@ -125,7 +135,7 @@ else
 }
 
 <form id="assign-form" method="post" action="/organizace/hry/@GameId/kralovstvi/pridelit" style="display:none;">
-    <input type="hidden" name="__RequestVerificationToken" />
+    <AntiforgeryToken />
     <input type="hidden" name="registrationId" id="assign-reg-id" />
     <input type="hidden" name="kingdomId" id="assign-kingdom-id" />
 </form>
@@ -144,11 +154,16 @@ else
         const kingdomId = target.dataset.kingdomId || '';
 
         const form = document.getElementById('assign-form');
-        const tokenInput = form.querySelector('[name="__RequestVerificationToken"]');
-        const pageToken = document.querySelector('input[name="__RequestVerificationToken"]');
-        if (pageToken) tokenInput.value = pageToken.value;
-
         document.getElementById('assign-reg-id').value = regId;
+        document.getElementById('assign-kingdom-id').value = kingdomId;
+        form.submit();
+    }
+
+    function reassignPlayer(selectEl, registrationId) {
+        const kingdomId = selectEl.value;
+        if (kingdomId === '' && selectEl.selectedIndex === 0) return; // "Přesunout..." placeholder
+        const form = document.getElementById('assign-form');
+        document.getElementById('assign-reg-id').value = registrationId;
         document.getElementById('assign-kingdom-id').value = kingdomId;
         form.submit();
     }
@@ -158,6 +173,8 @@ else
     .kingdom-card { cursor: grab; transition: box-shadow 0.15s; }
     .kingdom-card:active { cursor: grabbing; }
     .kingdom-card:hover { box-shadow: 0 2px 6px rgba(0,0,0,0.15); }
+    .reassign-select { display: none; }
+    .kingdom-card:hover .reassign-select { display: block; }
     [data-kingdom-id].drag-over { background: rgba(0,0,0,0.05); }
 </style>
 
