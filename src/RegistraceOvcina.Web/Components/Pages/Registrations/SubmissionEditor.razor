@@ -78,7 +78,7 @@ else
                                 </div>
                                 <div class="col-md-6">
                                     <label class="form-label" for="contact-phone">Kontaktní telefon</label>
-                                    <InputText id="contact-phone" @bind-Value="contactInput.PrimaryPhone" class="form-control" placeholder="např. 721 123 456" />
+                                    <input id="contact-phone" type="tel" @bind="contactInput.PrimaryPhone" class="form-control" placeholder="např. +420 721 123 456" />
                                     <ValidationMessage For="() => contactInput.PrimaryPhone" />
                                 </div>
                                 <div class="col-12">
@@ -308,7 +308,7 @@ else
                                 </div>
                                 <div class="col-md-6">
                                     <label class="form-label" for="attendee-phone">Telefon účastníka (volitelné)</label>
-                                    <InputText id="attendee-phone" @bind-Value="attendeeInput.ContactPhone" class="form-control" placeholder="např. 721 123 456" />
+                                    <input id="attendee-phone" type="tel" @bind="attendeeInput.ContactPhone" class="form-control" placeholder="např. +420 721 123 456" />
                                 </div>
 
                                 <div class="col-12">

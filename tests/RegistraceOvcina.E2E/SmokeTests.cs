@@ -351,8 +351,12 @@ public sealed class SmokeTests : IClassFixture<AppFixture>
         await registrantPage.GetByTestId("attendee-birth-year").FillAsync("2014");
         await registrantPage.GetByTestId("type-player").CheckAsync();
         await registrantPage.Locator("#pst-independent").CheckAsync();
+        await registrantPage.Locator("#attendee-phone").FillAsync("+420777999888");
+        await registrantPage.Locator("#attendee-phone").BlurAsync();
         await registrantPage.Locator("#guardian-name").FillAsync("Tomáš Smok");
+        await registrantPage.Locator("#guardian-name").BlurAsync();
         await registrantPage.Locator("#guardian-relationship").FillAsync("otec");
+        await registrantPage.Locator("#guardian-relationship").BlurAsync();
         await registrantPage.Locator("#guardian-confirmed").CheckAsync();
         await registrantPage.GetByTestId("add-attendee-submit").ClickAsync();
 
@@ -362,7 +366,7 @@ public sealed class SmokeTests : IClassFixture<AppFixture>
             {
                 Timeout = 5000
             });
-            await registrantPage.GetByText("Účastník byl přidaný.").WaitForAsync(new LocatorWaitForOptions
+            await registrantPage.GetByText("Účastník byl přidán").WaitForAsync(new LocatorWaitForOptions
             {
                 Timeout = 5000
             });
@@ -372,6 +376,10 @@ public sealed class SmokeTests : IClassFixture<AppFixture>
             var bodyText = await registrantPage.Locator("body").InnerTextAsync();
             throw new XunitException($"Attendee add did not complete. Page body:{Environment.NewLine}{bodyText}");
         }
+
+        // Verify phone number preserved with + prefix (#73)
+        var cardText = await registrantPage.Locator("[data-testid^='attendee-card-']").First.InnerTextAsync();
+        Assert.Contains("+420777999888", cardText);
 
         await WaitForInteractiveReadyAsync(registrantPage);
 
