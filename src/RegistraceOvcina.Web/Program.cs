@@ -279,6 +279,21 @@ public class Program
         await DatabaseInitializer.InitializeAsync(app);
 
         app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
+
+        // Redirect to kingdom assignment for the latest published game
+        app.MapGet("/organizace/rozdeleni", async (IDbContextFactory<ApplicationDbContext> dbFactory) =>
+        {
+            await using var db = await dbFactory.CreateDbContextAsync();
+            var latestGameId = await db.Games
+                .Where(x => x.IsPublished)
+                .OrderByDescending(x => x.StartsAtUtc)
+                .Select(x => (int?)x.Id)
+                .FirstOrDefaultAsync();
+
+            return latestGameId.HasValue
+                ? Results.LocalRedirect($"/organizace/hry/{latestGameId.Value}/kralovstvi")
+                : Results.LocalRedirect("/admin/hry");
+        }).RequireAuthorization(AuthorizationPolicies.StaffOnly);
         app.MapIntegrationApi();
         if (app.Environment.IsEnvironment("Testing"))
         {
