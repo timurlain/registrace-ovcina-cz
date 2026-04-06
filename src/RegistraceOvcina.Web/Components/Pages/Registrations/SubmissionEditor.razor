@@ -33,7 +33,7 @@ else
 
     @if (!string.IsNullOrWhiteSpace(statusMessage))
     {
-        <div class="alert alert-success" role="status">@statusMessage</div>
+        <div class="toast-success" id="success-toast">@statusMessage</div>
     }
 
     @if (!string.IsNullOrWhiteSpace(errorMessage))
@@ -175,7 +175,6 @@ else
                         <EditForm Model="attendeeInput" OnValidSubmit="SaveAttendeeAsync" OnInvalidSubmit="ScrollToErrors" FormName="attendee" id="attendee-form">
                             <DataAnnotationsValidator />
                             <h3 class="h5 mb-3">@(editingRegistrationId is not null ? "Upravit účastníka" : "Přidat účastníka")</h3>
-                            <ValidationSummary class="text-danger validation-errors" />
 
                             <div class="row g-3">
                                 <div class="col-md-6">
@@ -217,7 +216,7 @@ else
 
                                 <div class="col-md-4">
                                     <label class="form-label required" for="attendee-birth-year">Rok narození</label>
-                                    <InputNumber id="attendee-birth-year" @bind-Value="attendeeInput.BirthYear" class="form-control" placeholder="např. 2015" data-testid="attendee-birth-year" />
+                                    <InputNumber id="attendee-birth-year" @bind-Value="attendeeInput.BirthYear" @bind-Value:after="OnBirthYearChanged" class="form-control" placeholder="např. 2015" data-testid="attendee-birth-year" />
                                     <ValidationMessage For="() => attendeeInput.BirthYear" />
                                 </div>
                                 <div class="col-md-4 @(attendeeInput.AttendeeType == AttendeeType.Adult ? "d-none" : "")" id="kingdom-section">
@@ -411,8 +410,10 @@ else
                                 </div>
                             </div>
 
+                            <ValidationSummary class="text-danger validation-errors alert alert-danger mt-3 shake-on-show" />
+
                             <div class="d-flex gap-2">
-                                <button type="submit" class="btn btn-primary mt-4" data-testid="add-attendee-submit">
+                                <button type="submit" class="btn btn-primary mt-2" data-testid="add-attendee-submit">
                                     @(editingRegistrationId is not null ? "Uložit změny" : "Přidat účastníka")
                                 </button>
                                 @if (editingRegistrationId is not null)
@@ -795,6 +796,19 @@ document.addEventListener('change', e => {
             : null;
     }
 
+    private void OnBirthYearChanged()
+    {
+        var age = DateTime.UtcNow.Year - attendeeInput.BirthYear;
+        if (age >= 18)
+        {
+            attendeeInput.AttendeeType = AttendeeType.Adult;
+        }
+        else if (age > 0)
+        {
+            attendeeInput.AttendeeType = AttendeeType.Player;
+        }
+    }
+
     private async Task ScrollToErrors()
     {
         await JS.InvokeVoidAsync("eval", "document.querySelector('.validation-errors')?.scrollIntoView({behavior:'smooth',block:'center'})");
@@ -852,6 +866,7 @@ document.addEventListener('change', e => {
             attendeeInput = CreateDefaultAttendeeInput(null);
             personSuggestion = null;
             await LoadAsync();
+            await JS.InvokeVoidAsync("eval", "window.scrollTo({top:0,behavior:'smooth'})");
         }
         catch (System.ComponentModel.DataAnnotations.ValidationException ex)
         {
