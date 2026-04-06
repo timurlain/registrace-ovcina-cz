@@ -131,9 +131,30 @@ else
                                                 {
                                                     <div class="small">Postava: <strong>@attendee.CharacterName</strong></div>
                                                 }
-                                                @if (attendee.LodgingPreference is { } lp)
+                                                @{
+                                                    var attendeeFoodOrders = submission.ExistingFoodOrders
+                                                        .Where(x => x.RegistrationId == attendee.RegistrationId).ToList();
+                                                }
+                                                @if (attendeeFoodOrders.Count > 0 || attendee.LodgingPreference is not null)
                                                 {
-                                                    <div class="small">Ubytování: @GetLodgingLabel(lp)</div>
+                                                    <div class="small">
+                                                        @if (attendeeFoodOrders.Count > 0)
+                                                        {
+                                                            <span>Strava: @string.Join(", ", attendeeFoodOrders.Select(fo => {
+                                                                var day = submission.MealDays.FirstOrDefault(d => d.DayUtc.Date == fo.MealDayUtc.Date);
+                                                                var option = day?.Options.FirstOrDefault(o => o.Id == fo.MealOptionId);
+                                                                return option?.Name ?? "?";
+                                                            }))</span>
+                                                        }
+                                                        @if (attendeeFoodOrders.Count > 0 && attendee.LodgingPreference is not null)
+                                                        {
+                                                            <span> · </span>
+                                                        }
+                                                        @if (attendee.LodgingPreference is { } lp)
+                                                        {
+                                                            <span>Ubytování: @GetLodgingLabel(lp)</span>
+                                                        }
+                                                    </div>
                                                 }
                                                 @if (!string.IsNullOrWhiteSpace(attendee.AttendeeNote))
                                                 {

@@ -358,6 +358,17 @@ public sealed class SmokeTests : IClassFixture<AppFixture>
         await registrantPage.Locator("#guardian-relationship").FillAsync("otec");
         await registrantPage.Locator("#guardian-relationship").BlurAsync();
         await registrantPage.Locator("#guardian-confirmed").CheckAsync();
+
+        // Select lodging (#70 regression test)
+        await registrantPage.Locator("#lodge-tent").CheckAsync();
+
+        // Select food if meal options are visible (#70 regression test)
+        var firstMealRadio = registrantPage.Locator("input[type='radio'][name^='MealSelections']").First;
+        if (await firstMealRadio.IsVisibleAsync())
+        {
+            await firstMealRadio.CheckAsync();
+        }
+
         await registrantPage.GetByTestId("add-attendee-submit").ClickAsync();
 
         try
@@ -380,6 +391,9 @@ public sealed class SmokeTests : IClassFixture<AppFixture>
         // Verify phone number preserved with + prefix (#73)
         var pageBody = await registrantPage.Locator("body").InnerTextAsync();
         Assert.Contains("+420777999888", pageBody);
+
+        // Verify lodging was saved (#70)
+        Assert.Contains("Vlastní stan", pageBody);
 
         await WaitForInteractiveReadyAsync(registrantPage);
 

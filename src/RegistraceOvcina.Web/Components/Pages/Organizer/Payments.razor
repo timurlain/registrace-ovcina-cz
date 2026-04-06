@@ -69,7 +69,13 @@ else
                             <small class="text-secondary">@item.ContactEmail</small>
                         </td>
                         <td>@item.GameName</td>
-                        <td class="text-end">@item.ExpectedTotal.ToString("0.00") Kč</td>
+                        <td class="text-end">
+                            @item.ExpectedTotal.ToString("0.00") Kč
+                            @if (item.VoluntaryDonation > 0)
+                            {
+                                <br /><span class="badge text-bg-light text-muted fw-normal">z toho příspěvek: @item.VoluntaryDonation.ToString("0.00") Kč</span>
+                            }
+                        </td>
                         <td class="text-end">@item.PaidAmount.ToString("0.00") Kč</td>
                         <td><span class="badge @GetBalanceBadgeClass(item.BalanceStatus)">@GetBalanceLabel(item.BalanceStatus)</span></td>
                         <td>
