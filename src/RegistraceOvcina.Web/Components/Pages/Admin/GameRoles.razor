@@ -1,0 +1,213 @@
+@page "/admin/hry/{gameId:int}/role"
+@attribute [Authorize(Policy = AuthorizationPolicies.AdminOnly)]
+
+@inject GameRoleService GameRoleService
+@inject GameService GameService
+@inject UserManager<ApplicationUser> UserManager
+@inject NavigationManager Navigation
+
+<PageTitle>Role — @gameName</PageTitle>
+
+<div class="row g-4">
+    <div class="col-xl-5">
+        <section class="card shadow-sm h-100">
+            <div class="card-body p-4">
+                <h1 class="h3 mb-2">Role — @gameName</h1>
+                <p class="text-secondary">Správa herních rolí pro uživatele v této hře.</p>
+
+                @if (!string.IsNullOrWhiteSpace(statusMessage))
+                {
+                    <div class="alert alert-success" role="status">@statusMessage</div>
+                }
+
+                @if (!string.IsNullOrWhiteSpace(errorMessage))
+                {
+                    <div class="alert alert-danger" role="alert">@errorMessage</div>
+                }
+
+                <h2 class="h5 mt-4 mb-3">Přidělit roli</h2>
+                <form method="post" @formname="assign-role" @onsubmit="AssignRoleAsync">
+                    <AntiforgeryToken />
+                    <div class="mb-3">
+                        <label class="form-label" for="role-email">E-mail uživatele</label>
+                        <input id="role-email" @bind="assignEmail" class="form-control" placeholder="uzivatel@example.com" />
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label" for="role-name">Role</label>
+                        <select id="role-name" @bind="assignRole" class="form-select">
+                            <option value="">-- vyberte --</option>
+                            @foreach (var r in availableRoles)
+                            {
+                                <option value="@r">@r</option>
+                            }
+                        </select>
+                    </div>
+                    <button type="submit" class="btn btn-primary w-100">Přidělit roli</button>
+                </form>
+
+                <hr class="my-4" />
+
+                <form method="post" @formname="seed-roles" @onsubmit="SeedRolesAsync">
+                    <AntiforgeryToken />
+                    <button type="submit" class="btn btn-outline-secondary w-100">Odvodit z registrací</button>
+                </form>
+            </div>
+        </section>
+    </div>
+
+    <div class="col-xl-7">
+        <section class="card shadow-sm h-100">
+            <div class="card-body p-4">
+                <h2 class="h4 mb-3">Přehled rolí</h2>
+
+                @if (usersWithRoles is null)
+                {
+                    <p class="text-secondary">Načítám...</p>
+                }
+                else if (usersWithRoles.Count == 0)
+                {
+                    <div class="empty-state">Zatím nejsou přidělené žádné role.</div>
+                }
+                else
+                {
+                    <div class="table-responsive">
+                        <table class="table align-middle">
+                            <thead>
+                                <tr>
+                                    <th>E-mail</th>
+                                    <th>Jméno</th>
+                                    <th>Role</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var user in usersWithRoles)
+                                {
+                                    <tr>
+                                        <td>@user.Email</td>
+                                        <td>@user.DisplayName</td>
+                                        <td>
+                                            @foreach (var role in user.Roles)
+                                            {
+                                                <span class="badge bg-secondary me-1">
+                                                    @role
+                                                    <form method="post" @formname="@($"revoke-{user.Email}-{role}")" @onsubmit="() => RevokeRoleAsync(user.Email, role)" style="display:inline">
+                                                        <AntiforgeryToken />
+                                                        <button type="submit" class="btn btn-sm btn-link text-danger p-0 ms-1" title="Odebrat">Odebrat</button>
+                                                    </form>
+                                                </span>
+                                            }
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </div>
+        </section>
+    </div>
+</div>
+
+@code {
+    [Parameter]
+    public int GameId { get; set; }
+
+    private static readonly string[] availableRoles =
+        ["player", "npc", "king", "merchant", "ranger-leader", "tech-support", "organizer"];
+
+    private string gameName = "";
+    private List<UserWithRoles>? usersWithRoles;
+    private string assignEmail = "";
+    private string assignRole = "";
+    private string? statusMessage;
+    private string? errorMessage;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var game = await GameService.GetGameForEditAsync(GameId);
+        gameName = game?.Name ?? $"Hra #{GameId}";
+        await LoadRolesAsync();
+    }
+
+    private async Task LoadRolesAsync()
+    {
+        usersWithRoles = await GameRoleService.GetAllRolesForGameAsync(GameId);
+    }
+
+    private async Task AssignRoleAsync()
+    {
+        statusMessage = null;
+        errorMessage = null;
+
+        if (string.IsNullOrWhiteSpace(assignEmail) || string.IsNullOrWhiteSpace(assignRole))
+        {
+            errorMessage = "Vyplňte e-mail i roli.";
+            return;
+        }
+
+        try
+        {
+            var currentUser = await GetCurrentUserIdAsync();
+            await GameRoleService.AssignRoleAsync(assignEmail.Trim(), GameId, assignRole, currentUser);
+            statusMessage = $"Role '{assignRole}' přidělena uživateli {assignEmail}.";
+            assignEmail = "";
+            assignRole = "";
+            await LoadRolesAsync();
+        }
+        catch (InvalidOperationException ex)
+        {
+            errorMessage = ex.Message;
+        }
+    }
+
+    private async Task RevokeRoleAsync(string email, string role)
+    {
+        statusMessage = null;
+        errorMessage = null;
+
+        try
+        {
+            var currentUser = await GetCurrentUserIdAsync();
+            await GameRoleService.RevokeRoleAsync(email, GameId, role, currentUser);
+            statusMessage = $"Role '{role}' odebrána uživateli {email}.";
+            await LoadRolesAsync();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = ex.Message;
+        }
+    }
+
+    private async Task SeedRolesAsync()
+    {
+        statusMessage = null;
+        errorMessage = null;
+
+        try
+        {
+            var currentUser = await GetCurrentUserIdAsync();
+            var count = await GameRoleService.SeedRolesFromRegistrationsAsync(GameId, currentUser);
+            statusMessage = count > 0
+                ? $"Odvozeno {count} nových rolí z registrací."
+                : "Žádné nové role nebyly odvozeny.";
+            await LoadRolesAsync();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = ex.Message;
+        }
+    }
+
+    [CascadingParameter]
+    private Task<AuthenticationState>? AuthState { get; set; }
+
+    private async Task<string> GetCurrentUserIdAsync()
+    {
+        if (AuthState is null)
+            throw new InvalidOperationException("Authentication state not available.");
+
+        var state = await AuthState;
+        var user = await UserManager.GetUserAsync(state.User);
+        return user?.Id ?? throw new InvalidOperationException("User not found.");
+    }
+}

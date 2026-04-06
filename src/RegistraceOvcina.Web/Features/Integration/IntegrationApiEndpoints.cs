@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using RegistraceOvcina.Web.Data;
+using RegistraceOvcina.Web.Features.Roles;
 
 namespace RegistraceOvcina.Web.Features.Integration;
 
@@ -128,6 +129,75 @@ public static class IntegrationApiEndpoints
 
             return Results.Ok(new PresenceCheckDto(isRegistered));
         }).AllowAnonymous();
+
+        // GET /api/v1/users/{email}/roles?gameId={gameId} — game roles for a user
+        group.MapGet("/users/{email}/roles", async (
+            string email,
+            int gameId,
+            GameRoleService gameRoleService,
+            CancellationToken ct) =>
+        {
+            if (string.IsNullOrWhiteSpace(email))
+                return Results.BadRequest("email is required.");
+
+            var roles = await gameRoleService.GetRolesForUserAsync(email, gameId);
+            return Results.Ok(new UserGameRolesDto(roles));
+        }).AllowAnonymous();
+
+        // GET /api/v1/users/{email}/has-role?role={role}&gameId={gameId} — role check
+        group.MapGet("/users/{email}/has-role", async (
+            string email,
+            string role,
+            int gameId,
+            GameRoleService gameRoleService,
+            CancellationToken ct) =>
+        {
+            if (string.IsNullOrWhiteSpace(email))
+                return Results.BadRequest("email is required.");
+            if (string.IsNullOrWhiteSpace(role))
+                return Results.BadRequest("role is required.");
+
+            var hasRole = await gameRoleService.HasRoleAsync(email, gameId, role);
+            return Results.Ok(new HasRoleDto(hasRole));
+        }).AllowAnonymous();
+
+        // POST /api/v1/users/{email}/roles — assign a game role
+        group.MapPost("/users/{email}/roles", async (
+            string email,
+            AssignRoleRequest request,
+            GameRoleService gameRoleService,
+            CancellationToken ct) =>
+        {
+            if (string.IsNullOrWhiteSpace(email))
+                return Results.BadRequest("email is required.");
+            if (string.IsNullOrWhiteSpace(request.RoleName))
+                return Results.BadRequest("roleName is required.");
+
+            try
+            {
+                await gameRoleService.AssignRoleAsync(email, request.GameId, request.RoleName, actorUserId: "api");
+                return Results.Ok(new { assigned = true });
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.BadRequest(ex.Message);
+            }
+        });
+
+        // DELETE /api/v1/users/{email}/roles/{role}?gameId={gameId} — revoke a game role
+        group.MapDelete("/users/{email}/roles/{role}", async (
+            string email,
+            string role,
+            int gameId,
+            GameRoleService gameRoleService,
+            CancellationToken ct) =>
+        {
+            if (string.IsNullOrWhiteSpace(email))
+                return Results.BadRequest("email is required.");
+
+            await gameRoleService.RevokeRoleAsync(email, gameId, role, actorUserId: "api");
+            return Results.Ok(new { revoked = true });
+        });
 
         return app;
     }
