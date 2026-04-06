@@ -63,8 +63,16 @@
 
                     <div class="row g-3 mt-1">
                         <div class="col-md-6">
-                            <label class="form-label" for="player-price">Cena hráče</label>
+                            <label class="form-label" for="player-price">Cena 1. dítěte v rodině</label>
                             <input id="player-price" name="@nameof(CreateGameInput.PlayerBasePrice)" type="number" step="0.01" value="@CreateGameInput.FormatDecimal(input.PlayerBasePrice)" class="form-control" data-testid="player-price" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label" for="second-child-price">Cena 2. dítěte v rodině</label>
+                            <input id="second-child-price" name="@nameof(CreateGameInput.SecondChildPrice)" type="number" step="0.01" value="@CreateGameInput.FormatDecimal(input.SecondChildPrice)" class="form-control" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label" for="third-child-price">Cena 3.+ dítěte v rodině</label>
+                            <input id="third-child-price" name="@nameof(CreateGameInput.ThirdPlusChildPrice)" type="number" step="0.01" value="@CreateGameInput.FormatDecimal(input.ThirdPlusChildPrice)" class="form-control" />
                         </div>
                         <div class="col-md-6">
                             <label class="form-label" for="helper-price">Cena pomocníka / NPC</label>

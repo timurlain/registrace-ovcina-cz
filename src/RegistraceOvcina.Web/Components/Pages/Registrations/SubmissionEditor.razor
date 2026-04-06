@@ -84,6 +84,11 @@ else
                                     <label class="form-label" for="registrant-note">Poznámka pro organizátory</label>
                                     <InputTextArea id="registrant-note" @bind-Value="contactInput.RegistrantNote" class="form-control" rows="3" placeholder="Cokoliv, co chcete organizátorům sdělit předem." />
                                 </div>
+                                <div class="col-md-6">
+                                    <label class="form-label" for="donation">Dobrovolný příspěvek (Kč)</label>
+                                    <InputNumber id="donation" @bind-Value="contactInput.VoluntaryDonation" class="form-control" placeholder="0" data-testid="voluntary-donation" />
+                                    <div class="form-text">Volitelný příspěvek nad rámec registrace. Děkujeme!</div>
+                                </div>
                             </div>
 
                             <button type="submit" class="btn btn-outline-primary mt-3">Uložit kontakt</button>
@@ -516,10 +521,39 @@ else
                 <div class="card-body p-4">
                     <h2 class="h4 mb-3">Souhrn a platba</h2>
 
-                    <dl class="row mb-3">
-                        <dt class="col-sm-6 text-secondary">Aktuální částka</dt>
-                        <dd class="col-sm-6 fw-semibold" data-testid="submission-total">@submission.ExpectedTotalAmount.ToString("0.00") Kč</dd>
+                    @if (submission.PriceBreakdown.Count > 0)
+                    {
+                        <table class="table table-sm small mb-3">
+                            <tbody>
+                                @foreach (var line in submission.PriceBreakdown)
+                                {
+                                    <tr>
+                                        <td class="text-secondary">
+                                            @line.Label
+                                            @if (line.UnitPrice > 0)
+                                            {
+                                                <span class="text-muted">(@line.Count × @line.UnitPrice.ToString("0") Kč)</span>
+                                            }
+                                        </td>
+                                        <td class="text-end">@line.Total.ToString("0.00") Kč</td>
+                                    </tr>
+                                }
+                                <tr class="fw-semibold border-top">
+                                    <td>Celkem</td>
+                                    <td class="text-end" data-testid="submission-total">@submission.ExpectedTotalAmount.ToString("0.00") Kč</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    }
+                    else
+                    {
+                        <dl class="row mb-3">
+                            <dt class="col-sm-6 text-secondary">Aktuální částka</dt>
+                            <dd class="col-sm-6 fw-semibold" data-testid="submission-total">@submission.ExpectedTotalAmount.ToString("0.00") Kč</dd>
+                        </dl>
+                    }
 
+                    <dl class="row mb-3">
                         <dt class="col-sm-6 text-secondary">Stav platby</dt>
                         <dd class="col-sm-6">@GetBalanceLabel(submission.BalanceStatus)</dd>
 
@@ -684,7 +718,8 @@ document.addEventListener('change', e => {
             GroupName = submission.GroupName,
             PrimaryEmail = submission.PrimaryEmail,
             PrimaryPhone = submission.PrimaryPhone,
-            RegistrantNote = submission.RegistrantNote
+            RegistrantNote = submission.RegistrantNote,
+            VoluntaryDonation = submission.VoluntaryDonation
         };
         attendeeInput = CreateDefaultAttendeeInput(attendeeInput);
 

@@ -123,6 +123,8 @@ public sealed class Game
     public DateTime PaymentDueAtUtc { get; set; }
     public DateTime? AssignmentFreezeAtUtc { get; set; }
     public decimal PlayerBasePrice { get; set; }
+    public decimal SecondChildPrice { get; set; }
+    public decimal ThirdPlusChildPrice { get; set; }
     public decimal AdultHelperBasePrice { get; set; }
     public string BankAccount { get; set; } = "";
     public string BankAccountName { get; set; } = "";
@@ -168,6 +170,7 @@ public sealed class RegistrationSubmission
     public DateTime LastEditedAtUtc { get; set; }
     public decimal ExpectedTotalAmount { get; set; }
     public string? RegistrantNote { get; set; }
+    public decimal VoluntaryDonation { get; set; }
     public bool IsDeleted { get; set; }
     public string? PaymentVariableSymbol { get; set; }
     public Game Game { get; set; } = default!;
