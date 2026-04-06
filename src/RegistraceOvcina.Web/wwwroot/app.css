@@ -109,6 +109,15 @@ code, pre, .font-mono {
   opacity: 0.9;
 }
 
+.nav-divider {
+  display: inline-block;
+  width: 1px;
+  height: 1.2rem;
+  background: rgba(255, 248, 240, 0.3);
+  align-self: center;
+  margin: 0 0.25rem;
+}
+
 .app-header {
   background: var(--color-header) !important;
   border-bottom: 3px solid var(--color-card-border) !important;
