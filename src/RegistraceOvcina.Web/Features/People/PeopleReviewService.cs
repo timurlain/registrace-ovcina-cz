@@ -155,7 +155,8 @@ public sealed class PeopleReviewService(
                 string.IsNullOrWhiteSpace(x.Subject) ? "(bez předmětu)" : x.Subject,
                 x.From,
                 x.ReceivedAtUtc,
-                x.SentAtUtc))
+                x.SentAtUtc,
+                x.Direction))
             .ToListAsync(cancellationToken);
 
         var notes = await db.OrganizerNotes
@@ -689,7 +690,8 @@ public sealed record LinkedEmailMessageItem(
     string Subject,
     string From,
     DateTime? ReceivedAtUtc,
-    DateTime? SentAtUtc);
+    DateTime? SentAtUtc,
+    EmailDirection Direction);
 
 public sealed record PersonOrganizerNoteItem(
     int Id,

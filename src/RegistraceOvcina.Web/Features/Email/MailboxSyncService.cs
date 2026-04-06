@@ -102,6 +102,22 @@ internal sealed partial class MailboxSyncService(
                 ReceivedAtUtc = msg.ReceivedDateTime?.UtcDateTime,
             };
 
+            // Auto-link to person by sender email
+            if (emailMessage.LinkedPersonId is null && !string.IsNullOrWhiteSpace(fromAddress))
+            {
+                var matchedPerson = await dbContext.People
+                    .FirstOrDefaultAsync(
+                        x => x.Email != null
+                             && x.Email.ToLower() == fromAddress.ToLower()
+                             && !x.IsDeleted,
+                        cancellationToken);
+
+                if (matchedPerson is not null)
+                {
+                    emailMessage.LinkedPersonId = matchedPerson.Id;
+                }
+            }
+
             dbContext.EmailMessages.Add(emailMessage);
             newCount++;
         }
