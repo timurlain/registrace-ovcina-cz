@@ -48,6 +48,38 @@ else
             </section>
         </div>
 
+        @if (replied)
+        {
+            <div class="col-12">
+                <div class="alert alert-success mb-0">Odpověď byla odeslána.</div>
+            </div>
+        }
+
+        @if (replyError)
+        {
+            <div class="col-12">
+                <div class="alert alert-danger mb-0">Odpověď se nepodařilo odeslat.</div>
+            </div>
+        }
+
+        @if (InboxService.CanReply)
+        {
+            <div class="col-12">
+                <section class="card shadow-sm">
+                    <div class="card-body p-4">
+                        <h2 class="h5 mb-3">Odpovědět</h2>
+                        <form method="post" action="/organizace/posta/@messageId/odpovedet">
+                            <AntiforgeryToken />
+                            <div class="mb-3">
+                                <textarea name="ReplyBody" class="form-control" rows="5" placeholder="Napište odpověď..." data-testid="reply-body"></textarea>
+                            </div>
+                            <button type="submit" class="btn btn-primary" data-testid="reply-submit">Odeslat odpověď</button>
+                        </form>
+                    </div>
+                </section>
+            </div>
+        }
+
         <div class="col-12">
             <section class="card shadow-sm">
                 <div class="card-body p-4">
@@ -142,6 +174,12 @@ else
 
     [SupplyParameterFromQuery(Name = "unlinked")]
     private bool unlinked { get; set; }
+
+    [SupplyParameterFromQuery(Name = "replied")]
+    private bool replied { get; set; }
+
+    [SupplyParameterFromQuery(Name = "replyError")]
+    private bool replyError { get; set; }
 
     private EmailMessage? message;
     private List<SubmissionLookupItem>? submissions;

@@ -1,9 +1,16 @@
+using System.Net.Http.Headers;
+using System.Net.Http.Json;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using RegistraceOvcina.Web.Data;
 
 namespace RegistraceOvcina.Web.Features.Email;
 
-public sealed class InboxService(IDbContextFactory<ApplicationDbContext> dbContextFactory)
+public sealed class InboxService(
+    IDbContextFactory<ApplicationDbContext> dbContextFactory,
+    IOptions<MailboxEmailOptions> mailboxOptions,
+    IHttpClientFactory? httpClientFactory = null,
+    IGraphAccessTokenProvider? tokenProvider = null)
 {
     public async Task<InboxPageResult> GetMessagesAsync(int page = 1, int pageSize = 25)
     {
@@ -12,7 +19,7 @@ public sealed class InboxService(IDbContextFactory<ApplicationDbContext> dbConte
         var query = db.EmailMessages
             .Include(e => e.LinkedSubmission)
             .Include(e => e.LinkedPerson)
-            .OrderByDescending(e => e.ReceivedAtUtc)
+            .OrderByDescending(e => e.ReceivedAtUtc ?? e.SentAtUtc)
             .AsNoTracking();
 
         var totalCount = await query.CountAsync();
@@ -129,6 +136,113 @@ public sealed class InboxService(IDbContextFactory<ApplicationDbContext> dbConte
                 $"{p.LastName} {p.FirstName}"))
             .AsNoTracking()
             .ToListAsync();
+    }
+
+    public bool CanReply => mailboxOptions.Value.IsConfigured
+                            && httpClientFactory is not null
+                            && tokenProvider is not null;
+
+    public async Task<int> SendReplyAsync(
+        int originalMessageId,
+        string replyBody,
+        string actorUserId,
+        CancellationToken ct = default)
+    {
+        var emailOptions = mailboxOptions.Value;
+        if (!emailOptions.IsConfigured || httpClientFactory is null || tokenProvider is null)
+        {
+            throw new InvalidOperationException("Email is not configured. Cannot send replies.");
+        }
+
+        await using var db = await dbContextFactory.CreateDbContextAsync(ct);
+
+        var original = await db.EmailMessages.FindAsync([originalMessageId], ct)
+            ?? throw new InvalidOperationException($"Message {originalMessageId} not found.");
+
+        var recipientAddress = original.Direction == EmailDirection.Inbound
+            ? original.From
+            : original.To;
+
+        if (string.IsNullOrWhiteSpace(recipientAddress))
+        {
+            throw new InvalidOperationException("Cannot determine recipient address for reply.");
+        }
+
+        var sharedMailbox = emailOptions.SharedMailboxAddress!;
+        var replySubject = original.Subject.StartsWith("Re:", StringComparison.OrdinalIgnoreCase)
+            ? original.Subject
+            : $"Re: {original.Subject}";
+
+        // Send via Graph API
+        var accessToken = await tokenProvider.GetAccessTokenAsync(ct);
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"users/{Uri.EscapeDataString(sharedMailbox)}/sendMail");
+
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+        request.Content = JsonContent.Create(new
+        {
+            message = new
+            {
+                subject = replySubject,
+                body = new
+                {
+                    contentType = "Text",
+                    content = replyBody
+                },
+                toRecipients = new[]
+                {
+                    new
+                    {
+                        emailAddress = new
+                        {
+                            address = recipientAddress
+                        }
+                    }
+                }
+            },
+            saveToSentItems = true
+        });
+
+        using var httpClient = httpClientFactory.CreateClient(MicrosoftGraphMailboxEmailSender.GraphHttpClientName);
+        using var response = await httpClient.SendAsync(request, ct);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            var responseBody = await response.Content.ReadAsStringAsync(ct);
+            throw new InvalidOperationException(
+                $"Sending reply through Microsoft Graph failed with status {(int)response.StatusCode}: {responseBody}");
+        }
+
+        // Store the outbound message locally
+        var replyMessage = new EmailMessage
+        {
+            MailboxItemId = $"reply-{originalMessageId}-{DateTime.UtcNow.Ticks}",
+            Direction = EmailDirection.Outbound,
+            From = sharedMailbox,
+            To = recipientAddress,
+            Subject = replySubject,
+            BodyText = replyBody,
+            SentAtUtc = DateTime.UtcNow,
+            LinkedPersonId = original.LinkedPersonId,
+            LinkedSubmissionId = original.LinkedSubmissionId
+        };
+
+        db.EmailMessages.Add(replyMessage);
+
+        db.AuditLogs.Add(new AuditLog
+        {
+            EntityType = nameof(EmailMessage),
+            EntityId = originalMessageId.ToString(),
+            Action = "ReplySent",
+            ActorUserId = actorUserId,
+            CreatedAtUtc = DateTime.UtcNow,
+            DetailsJson = System.Text.Json.JsonSerializer.Serialize(new { replyTo = originalMessageId, recipient = recipientAddress })
+        });
+
+        await db.SaveChangesAsync(ct);
+
+        return replyMessage.Id;
     }
 }
 
