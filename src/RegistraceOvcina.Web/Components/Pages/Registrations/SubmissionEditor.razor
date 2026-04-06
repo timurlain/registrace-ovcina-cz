@@ -218,13 +218,13 @@ else
                                 </div>
                                 <div class="col-md-4 @(attendeeInput.AttendeeType == AttendeeType.Adult ? "d-none" : "")" id="kingdom-section">
                                     <label class="form-label" for="attendee-kingdom">Preferované království</label>
-                                    <select id="attendee-kingdom" name="@nameof(AttendeeInput.PreferredKingdomId)" class="form-select">
-                                        <option value="" selected="@(attendeeInput.PreferredKingdomId is null)">Bez preference</option>
+                                    <InputSelect id="attendee-kingdom" @bind-Value="attendeeInput.PreferredKingdomId" class="form-select">
+                                        <option value="">Bez preference</option>
                                         @foreach (var kingdom in submission.AvailableKingdoms)
                                         {
-                                            <option value="@kingdom.Id" selected="@(attendeeInput.PreferredKingdomId == kingdom.Id)">@kingdom.Name</option>
+                                            <option value="@kingdom.Id">@kingdom.Name</option>
                                         }
-                                    </select>
+                                    </InputSelect>
                                     @if (submission.AvailableKingdoms.Count == 0)
                                     {
                                         <div class="form-text">Království ještě nejsou nastavená, preference doplníme později.</div>
@@ -295,16 +295,16 @@ else
 
                                 <div class="col-md-6 @(attendeeInput.AttendeeType == AttendeeType.Adult ? "d-none" : "")" id="character-name-section">
                                     <label class="form-label" for="attendee-character-name">Jméno postavy</label>
-                                    <input id="attendee-character-name" name="CharacterName" value="@attendeeInput.CharacterName" class="form-control" placeholder="např. Thorin Pavéza" />
+                                    <InputText id="attendee-character-name" @bind-Value="attendeeInput.CharacterName" class="form-control" placeholder="např. Thorin Pavéza" />
                                 </div>
 
                                 <div class="col-md-6">
                                     <label class="form-label" for="attendee-email">E-mail účastníka (volitelné)</label>
-                                    <input id="attendee-email" name="@nameof(AttendeeInput.ContactEmail)" value="@attendeeInput.ContactEmail" class="form-control" placeholder="např. jan@email.cz" />
+                                    <InputText id="attendee-email" @bind-Value="attendeeInput.ContactEmail" class="form-control" placeholder="např. jan@email.cz" />
                                 </div>
                                 <div class="col-md-6">
                                     <label class="form-label" for="attendee-phone">Telefon účastníka (volitelné)</label>
-                                    <input id="attendee-phone" name="@nameof(AttendeeInput.ContactPhone)" value="@attendeeInput.ContactPhone" class="form-control" placeholder="např. 721 123 456" />
+                                    <InputText id="attendee-phone" @bind-Value="attendeeInput.ContactPhone" class="form-control" placeholder="např. 721 123 456" />
                                 </div>
 
                                 <div class="col-12">
@@ -316,10 +316,10 @@ else
                                     <div class="form-text mb-1 d-none" id="attendee-note-hint-adult">
                                         Pokud chcete být konkrétnější, s čím chcete pomáhat nebo jaká příšera jste byli minule.
                                     </div>
-                                    <textarea id="attendee-note" name="AttendeeNote" class="form-control" rows="3"
+                                    <InputTextArea id="attendee-note" @bind-Value="attendeeInput.AttendeeNote" class="form-control" rows="3"
                                               placeholder="např. Chceme být s kamarády z oddílu ve stejném národě."
                                               data-placeholder-player="např. Chceme být s kamarády z oddílu ve stejném národě."
-                                              data-placeholder-adult="např. Rád bych byl opět pavoukem na paloučku.">@attendeeInput.AttendeeNote</textarea>
+                                              data-placeholder-adult="např. Rád bych byl opět pavoukem na paloučku." />
                                 </div>
 
                                 <div class="col-12">
@@ -389,21 +389,15 @@ else
                                 <div class="row g-3">
                                     <div class="col-md-6">
                                         <label class="form-label" for="guardian-name">Zákonný zástupce</label>
-                                        <input id="guardian-name" name="@nameof(AttendeeInput.GuardianName)" value="@attendeeInput.GuardianName" class="form-control" placeholder="např. Jana Nováková" />
+                                        <InputText id="guardian-name" @bind-Value="attendeeInput.GuardianName" class="form-control" placeholder="např. Jana Nováková" />
                                     </div>
                                     <div class="col-md-6">
                                         <label class="form-label" for="guardian-relationship">Vztah k účastníkovi</label>
-                                        <input id="guardian-relationship" name="@nameof(AttendeeInput.GuardianRelationship)" value="@attendeeInput.GuardianRelationship" class="form-control" placeholder="např. matka" />
+                                        <InputText id="guardian-relationship" @bind-Value="attendeeInput.GuardianRelationship" class="form-control" placeholder="např. matka" />
                                     </div>
                                     <div class="col-12">
                                         <div class="form-check">
-                                            <input id="guardian-confirmed"
-                                                   name="@nameof(AttendeeInput.GuardianAuthorizationConfirmed)"
-                                                   type="checkbox"
-                                                   value="true"
-                                                   checked="@attendeeInput.GuardianAuthorizationConfirmed"
-                                                   class="form-check-input" />
-                                            <input type="hidden" name="@nameof(AttendeeInput.GuardianAuthorizationConfirmed)" value="false" />
+                                            <InputCheckbox id="guardian-confirmed" @bind-Value="attendeeInput.GuardianAuthorizationConfirmed" class="form-check-input" />
                                             <label class="form-check-label" for="guardian-confirmed">Potvrzuji souhlas zákonného zástupce.</label>
                                         </div>
                                     </div>
