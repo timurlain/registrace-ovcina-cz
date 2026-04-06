@@ -77,23 +77,32 @@ public class Program
             });
         }
 
-        // Seznam (OpenID Connect)
+        // Seznam (OAuth2 — not standard OIDC, uses custom endpoints)
         var seznamConfig = builder.Configuration.GetSection("ExternalAuth:Seznam");
         if (!string.IsNullOrEmpty(seznamConfig["ClientId"]) && !string.IsNullOrEmpty(seznamConfig["ClientSecret"]))
         {
-            authBuilder.AddOpenIdConnect("Seznam", "Seznam", options =>
+            authBuilder.AddOAuth("Seznam", "Seznam", options =>
             {
-                options.Authority = "https://login.szn.cz";
                 options.ClientId = seznamConfig["ClientId"]!;
                 options.ClientSecret = seznamConfig["ClientSecret"]!;
-                options.ResponseType = "code";
+                options.AuthorizationEndpoint = "https://login.szn.cz/api/v1/oauth/auth";
+                options.TokenEndpoint = "https://login.szn.cz/api/v1/oauth/token";
+                options.UserInformationEndpoint = "https://login.szn.cz/api/v1/user";
                 options.CallbackPath = "/signin-seznam";
-                options.Scope.Clear();
-                options.Scope.Add("openid");
-                options.Scope.Add("email");
-                options.Scope.Add("profile");
+                options.Scope.Add("identity");
                 options.SaveTokens = false;
-                options.GetClaimsFromUserInfoEndpoint = true;
+                options.ClaimActions.MapJsonKey(System.Security.Claims.ClaimTypes.NameIdentifier, "oauth_user_id");
+                options.ClaimActions.MapJsonKey(System.Security.Claims.ClaimTypes.Email, "email");
+                options.ClaimActions.MapJsonKey(System.Security.Claims.ClaimTypes.Name, "firstname");
+                options.Events.OnCreatingTicket = async context =>
+                {
+                    using var request = new HttpRequestMessage(HttpMethod.Get, context.Options.UserInformationEndpoint);
+                    request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", context.AccessToken);
+                    using var response = await context.Backchannel.SendAsync(request);
+                    response.EnsureSuccessStatusCode();
+                    var user = await response.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+                    context.RunClaimActions(user);
+                };
             });
         }
 
