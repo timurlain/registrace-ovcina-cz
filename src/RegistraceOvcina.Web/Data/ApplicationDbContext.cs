@@ -58,6 +58,8 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
             entity.Property(x => x.BankAccountName).HasMaxLength(200).IsRequired();
             entity.Property(x => x.VariableSymbolStrategy).HasConversion<string>().HasMaxLength(32);
             entity.Property(x => x.PlayerBasePrice).HasPrecision(18, 2);
+            entity.Property(x => x.SecondChildPrice).HasPrecision(18, 2);
+            entity.Property(x => x.ThirdPlusChildPrice).HasPrecision(18, 2);
             entity.Property(x => x.AdultHelperBasePrice).HasPrecision(18, 2);
             entity.HasMany(x => x.Submissions)
                 .WithOne(x => x.Game)
@@ -101,6 +103,7 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
             entity.Property(x => x.PrimaryPhone).HasMaxLength(40).IsRequired();
             entity.Property(x => x.Status).HasConversion<string>().HasMaxLength(32);
             entity.Property(x => x.ExpectedTotalAmount).HasPrecision(18, 2);
+            entity.Property(x => x.VoluntaryDonation).HasPrecision(18, 2);
             entity.Property(x => x.RegistrantNote).HasMaxLength(4000);
             entity.Property(x => x.PaymentVariableSymbol).HasMaxLength(20);
             entity.HasIndex(x => new { x.GameId, x.RegistrantUserId })

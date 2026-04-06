@@ -129,7 +129,7 @@ public sealed class SubmissionService(
             return null;
         }
 
-        var currentTotal = pricingService.CalculateExpectedTotal(submission.Game, submission.Registrations);
+        var currentTotal = pricingService.CalculateExpectedTotal(submission.Game, submission.Registrations, submission.VoluntaryDonation);
         var paidAmount = submission.Payments.Sum(x => x.Amount);
 
         var kingdoms = await db.Kingdoms
@@ -160,6 +160,11 @@ public sealed class SubmissionService(
             .ToListAsync(cancellationToken);
 
         var nowUtc = timeProvider.GetUtcNow().UtcDateTime;
+
+        // Price breakdown only for drafts (current prices); submitted uses persisted total
+        var pricingResult = submission.Status == SubmissionStatus.Draft
+            ? pricingService.CalculateBreakdown(submission.Game, submission.Registrations, submission.VoluntaryDonation)
+            : null;
 
         return new SubmissionEditorViewModel
         {
@@ -213,6 +218,8 @@ public sealed class SubmissionService(
                     x.GuardianName,
                     x.GuardianRelationship))
                 .ToList(),
+            VoluntaryDonation = submission.VoluntaryDonation,
+            PriceBreakdown = pricingResult?.Lines ?? [],
             MealDays = gameDays.Select(day => new MealDayViewModel(
                 day,
                 day.ToString("dddd d. M.", new System.Globalization.CultureInfo("cs-CZ")),
@@ -241,6 +248,7 @@ public sealed class SubmissionService(
         submission.PrimaryEmail = input.PrimaryEmail.Trim();
         submission.PrimaryPhone = input.PrimaryPhone.Trim();
         submission.RegistrantNote = string.IsNullOrWhiteSpace(input.RegistrantNote) ? null : input.RegistrantNote.Trim();
+        submission.VoluntaryDonation = Math.Max(0, input.VoluntaryDonation);
         submission.LastEditedAtUtc = timeProvider.GetUtcNow().UtcDateTime;
 
         await db.SaveChangesAsync(cancellationToken);
@@ -258,6 +266,8 @@ public sealed class SubmissionService(
         var submission = await db.RegistrationSubmissions
             .Include(x => x.Game)
                 .ThenInclude(x => x.MealOptions)
+            .Include(x => x.Registrations)
+                .ThenInclude(x => x.Person)
             .Include(x => x.Registrations)
                 .ThenInclude(x => x.FoodOrders)
             .FirstOrDefaultAsync(x => x.Id == submissionId && x.RegistrantUserId == userId, cancellationToken)
@@ -349,6 +359,8 @@ public sealed class SubmissionService(
             .Include(x => x.Game)
                 .ThenInclude(x => x.MealOptions)
             .Include(x => x.Registrations)
+                .ThenInclude(x => x.Person)
+            .Include(x => x.Registrations)
                 .ThenInclude(x => x.FoodOrders)
             .FirstOrDefaultAsync(x => x.Id == submissionId && x.RegistrantUserId == userId, cancellationToken)
             ?? throw new ValidationException("Přihláška nebyla nalezena.");
@@ -428,6 +440,8 @@ public sealed class SubmissionService(
         var submission = await db.RegistrationSubmissions
             .Include(x => x.Game)
             .Include(x => x.Registrations)
+                .ThenInclude(x => x.Person)
+            .Include(x => x.Registrations)
                 .ThenInclude(x => x.FoodOrders)
             .FirstOrDefaultAsync(x => x.Id == submissionId && x.RegistrantUserId == userId, cancellationToken)
             ?? throw new ValidationException("Přihláška nebyla nalezena.");
@@ -506,6 +520,8 @@ public sealed class SubmissionService(
         var submission = await db.RegistrationSubmissions
             .Include(x => x.Game)
             .Include(x => x.Registrations)
+                .ThenInclude(x => x.Person)
+            .Include(x => x.Registrations)
                 .ThenInclude(x => x.FoodOrders)
             .FirstOrDefaultAsync(x => x.Id == submissionId && x.RegistrantUserId == userId, cancellationToken)
             ?? throw new ValidationException("Přihláška nebyla nalezena.");
@@ -533,7 +549,7 @@ public sealed class SubmissionService(
         }
 
         var nowUtc = timeProvider.GetUtcNow().UtcDateTime;
-        submission.ExpectedTotalAmount = pricingService.CalculateExpectedTotal(submission.Game, submission.Registrations);
+        submission.ExpectedTotalAmount = pricingService.CalculateExpectedTotal(submission.Game, submission.Registrations, submission.VoluntaryDonation);
         submission.Status = SubmissionStatus.Submitted;
         submission.SubmittedAtUtc = nowUtc;
         submission.LastEditedAtUtc = nowUtc;
@@ -637,7 +653,7 @@ public sealed class SubmissionService(
     {
         if (submission.Status == SubmissionStatus.Submitted)
         {
-            submission.ExpectedTotalAmount = pricingService.CalculateExpectedTotal(submission.Game, submission.Registrations);
+            submission.ExpectedTotalAmount = pricingService.CalculateExpectedTotal(submission.Game, submission.Registrations, submission.VoluntaryDonation);
         }
     }
 
@@ -768,6 +784,7 @@ public sealed class SubmissionService(
         await db.SaveChangesAsync(cancellationToken);
 
         var clonedRegistrations = await db.Registrations
+            .Include(r => r.Person)
             .Where(r => r.SubmissionId == submission.Id)
             .ToListAsync(cancellationToken);
         submission.ExpectedTotalAmount = pricingService.CalculateExpectedTotal(game, clonedRegistrations);
@@ -848,7 +865,11 @@ public sealed class SubmissionEditorViewModel
     public IReadOnlyList<AttendeeViewModel> Attendees { get; init; } = [];
     public IReadOnlyList<MealDayViewModel> MealDays { get; init; } = [];
     public IReadOnlyList<FoodOrderViewModel> ExistingFoodOrders { get; init; } = [];
+    public decimal VoluntaryDonation { get; init; }
+    public IReadOnlyList<PriceBreakdownLine> PriceBreakdown { get; init; } = [];
 }
+
+public sealed record PriceBreakdownLine(string Label, int Count, decimal UnitPrice, decimal Total);
 
 public sealed class ContactInput
 {
@@ -870,6 +891,9 @@ public sealed class ContactInput
 
     [StringLength(4000)]
     public string? RegistrantNote { get; set; }
+
+    [Range(0, 100000, ErrorMessage = "Příspěvek musí být kladný nebo nulový.")]
+    public decimal VoluntaryDonation { get; set; }
 }
 
 public sealed class AttendeeInput : IValidatableObject

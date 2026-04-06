@@ -34,6 +34,12 @@ public sealed class CreateGameInput : IValidatableObject
     [Range(0, 50000, ErrorMessage = "Cena hráče musí být kladná nebo nulová.")]
     public decimal PlayerBasePrice { get; set; }
 
+    [Range(0, 50000, ErrorMessage = "Cena 2. dítěte musí být kladná nebo nulová.")]
+    public decimal SecondChildPrice { get; set; }
+
+    [Range(0, 50000, ErrorMessage = "Cena 3.+ dítěte musí být kladná nebo nulová.")]
+    public decimal ThirdPlusChildPrice { get; set; }
+
     [Range(0, 50000, ErrorMessage = "Cena pomocníka musí být kladná nebo nulová.")]
     public decimal AdultHelperBasePrice { get; set; }
 
@@ -151,6 +157,8 @@ public sealed class CreateGameInput : IValidatableObject
         ParseRequiredDate(PaymentDueAtLocalText),
         ParseOptionalDate(AssignmentFreezeAtLocalText),
         PlayerBasePrice,
+        SecondChildPrice,
+        ThirdPlusChildPrice,
         AdultHelperBasePrice,
         BankAccount,
         BankAccountName,
@@ -172,6 +180,8 @@ public sealed class CreateGameInput : IValidatableObject
                 ? FormatDate(CzechTime.ToLocal(freeze))
                 : null,
             PlayerBasePrice = game.PlayerBasePrice,
+            SecondChildPrice = game.SecondChildPrice,
+            ThirdPlusChildPrice = game.ThirdPlusChildPrice,
             AdultHelperBasePrice = game.AdultHelperBasePrice,
             BankAccount = game.BankAccount,
             BankAccountName = game.BankAccountName,
@@ -192,6 +202,8 @@ public sealed class CreateGameInput : IValidatableObject
             PaymentDueAtLocalText = FormatDate(start.AddDays(-5)),
             AssignmentFreezeAtLocalText = FormatDate(start.AddDays(-2)),
             PlayerBasePrice = 1200m,
+            SecondChildPrice = 900m,
+            ThirdPlusChildPrice = 600m,
             AdultHelperBasePrice = 0m,
             BankAccount = "CZ6508000000192000145399",
             BankAccountName = "Ovčina z.s.",
