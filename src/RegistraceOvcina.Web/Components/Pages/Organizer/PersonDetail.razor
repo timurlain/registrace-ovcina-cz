@@ -1,5 +1,6 @@
 @page "/organizace/osoby/{PersonId:int}"
 @attribute [Authorize(Policy = AuthorizationPolicies.StaffOnly)]
+@using RegistraceOvcina.Web.Data
 @using RegistraceOvcina.Web.Features.People
 @using RegistraceOvcina.Web.Infrastructure
 @inject PeopleReviewService PeopleReviewService
@@ -252,13 +253,13 @@ else
                 <section class="card shadow-sm border-0 h-100">
                     <div class="card-body d-flex flex-column gap-3">
                         <div>
-                            <h2 class="h5 mb-1">Související pošta</h2>
-                            <p class="text-secondary mb-0">Inbox zprávy už propojené s touto osobou.</p>
+                            <h2 class="h5 mb-1">Korespondence</h2>
+                            <p class="text-secondary mb-0">Příchozí a odchozí zprávy propojené s touto osobou.</p>
                         </div>
 
                         @if (model.LinkedMessages.Count == 0)
                         {
-                            <div class="alert alert-light border mb-0">Žádná propojená zpráva.</div>
+                            <div class="alert alert-light border mb-0">Žádná korespondence.</div>
                         }
                         else
                         {
@@ -266,7 +267,17 @@ else
                                 @foreach (var message in model.LinkedMessages)
                                 {
                                     <a href="/organizace/posta/@message.Id" class="border rounded p-3 text-decoration-none text-reset">
-                                        <div class="fw-semibold">@message.Subject</div>
+                                        <div class="d-flex align-items-center gap-2">
+                                            @if (message.Direction == EmailDirection.Inbound)
+                                            {
+                                                <span class="badge bg-secondary-subtle text-secondary-emphasis">Příchozí</span>
+                                            }
+                                            else
+                                            {
+                                                <span class="badge bg-success-subtle text-success-emphasis">Odesláno</span>
+                                            }
+                                            <span class="fw-semibold">@message.Subject</span>
+                                        </div>
                                         <div class="text-secondary small">@message.From</div>
                                         <div class="text-secondary small">
                                             @(message.ReceivedAtUtc is not null

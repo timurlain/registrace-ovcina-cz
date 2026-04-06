@@ -1,6 +1,7 @@
 @page "/organizace/posta"
 @attribute [Authorize(Policy = AuthorizationPolicies.StaffOnly)]
 
+@using RegistraceOvcina.Web.Data
 @using RegistraceOvcina.Web.Features.Email
 
 @inject InboxService InboxService
@@ -36,7 +37,7 @@ else
                     <div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-end gap-3">
                         <div>
                             <h1 class="h3 mb-2">Příchozí pošta</h1>
-                            <p class="text-secondary mb-0">Zprávy ze sdílené poštovní schránky.</p>
+                            <p class="text-secondary mb-0">Příchozí a odchozí zprávy ze sdílené poštovní schránky.</p>
                         </div>
                         <div class="d-flex gap-2">
                             @if (synced == 1)
@@ -67,6 +68,7 @@ else
                                 <thead>
                                     <tr>
                                         <th>Datum</th>
+                                        <th>Směr</th>
                                         <th>Od</th>
                                         <th>Předmět</th>
                                         <th>Propojeno s</th>
@@ -78,7 +80,19 @@ else
                                     {
                                         <tr data-testid="@($"inbox-row-{msg.Id}")">
                                             <td class="text-nowrap small">
-                                                @(msg.ReceivedAtUtc?.ToLocalTime().ToString("d.M.yyyy H:mm") ?? "—")
+                                                @(msg.ReceivedAtUtc?.ToLocalTime().ToString("d.M.yyyy H:mm")
+                                                    ?? msg.SentAtUtc?.ToLocalTime().ToString("d.M.yyyy H:mm")
+                                                    ?? "—")
+                                            </td>
+                                            <td>
+                                                @if (msg.Direction == EmailDirection.Inbound)
+                                                {
+                                                    <span class="badge bg-secondary-subtle text-secondary-emphasis">Příchozí</span>
+                                                }
+                                                else
+                                                {
+                                                    <span class="badge bg-success-subtle text-success-emphasis">Odesláno</span>
+                                                }
                                             </td>
                                             <td>@msg.From</td>
                                             <td>

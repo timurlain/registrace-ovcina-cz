@@ -68,6 +68,15 @@ internal sealed partial class MailboxSyncService(
             .Select(e => e.MailboxItemId)
             .ToHashSetAsync(cancellationToken);
 
+        // Preload people emails for auto-linking (avoids N+1 queries)
+        var peopleByEmail = await dbContext.People
+            .Where(x => x.Email != null && !x.IsDeleted)
+            .Select(x => new { x.Id, Email = x.Email!.ToLower() })
+            .ToListAsync(cancellationToken);
+        var emailToPersonId = peopleByEmail
+            .GroupBy(x => x.Email)
+            .ToDictionary(g => g.Key, g => g.First().Id);
+
         var newCount = 0;
 
         foreach (var msg in graphResponse.Value)
@@ -101,6 +110,16 @@ internal sealed partial class MailboxSyncService(
                 BodyText = bodyText,
                 ReceivedAtUtc = msg.ReceivedDateTime?.UtcDateTime,
             };
+
+            // Auto-link to person by sender email (in-memory lookup)
+            if (emailMessage.LinkedPersonId is null && !string.IsNullOrWhiteSpace(fromAddress))
+            {
+                var normalizedFrom = fromAddress.Trim().ToLowerInvariant();
+                if (emailToPersonId.TryGetValue(normalizedFrom, out var personId))
+                {
+                    emailMessage.LinkedPersonId = personId;
+                }
+            }
 
             dbContext.EmailMessages.Add(emailMessage);
             newCount++;
