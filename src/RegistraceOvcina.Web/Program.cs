@@ -924,7 +924,7 @@ public class Program
                         await inboxService.SendReplyAsync(messageId, replyBody.Trim(), user.Id, httpContext.RequestAborted);
                         return Results.LocalRedirect($"/organizace/posta/{messageId}?replied=1");
                     }
-                    catch (InvalidOperationException)
+                    catch (Exception ex) when (ex is InvalidOperationException or HttpRequestException or TaskCanceledException)
                     {
                         return Results.LocalRedirect($"/organizace/posta/{messageId}?replyError=1");
                     }

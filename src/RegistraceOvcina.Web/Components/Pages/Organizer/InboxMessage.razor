@@ -2,10 +2,8 @@
 @attribute [Authorize(Policy = AuthorizationPolicies.StaffOnly)]
 
 @using RegistraceOvcina.Web.Features.Email
-@using Microsoft.Extensions.Options
 
 @inject InboxService InboxService
-@inject IOptions<MailboxEmailOptions> MailboxOptions
 
 <PageTitle>Detail zprávy</PageTitle>
 

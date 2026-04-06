@@ -19,7 +19,7 @@ public sealed class InboxService(
         var query = db.EmailMessages
             .Include(e => e.LinkedSubmission)
             .Include(e => e.LinkedPerson)
-            .OrderByDescending(e => e.ReceivedAtUtc)
+            .OrderByDescending(e => e.ReceivedAtUtc ?? e.SentAtUtc)
             .AsNoTracking();
 
         var totalCount = await query.CountAsync();
@@ -237,7 +237,7 @@ public sealed class InboxService(
             Action = "ReplySent",
             ActorUserId = actorUserId,
             CreatedAtUtc = DateTime.UtcNow,
-            DetailsJson = $"{{\"replyTo\":{originalMessageId},\"recipient\":\"{recipientAddress}\"}}"
+            DetailsJson = System.Text.Json.JsonSerializer.Serialize(new { replyTo = originalMessageId, recipient = recipientAddress })
         });
 
         await db.SaveChangesAsync(ct);
