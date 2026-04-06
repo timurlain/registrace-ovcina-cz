@@ -142,6 +142,105 @@ public sealed class InboxService(
                             && httpClientFactory is not null
                             && tokenProvider is not null;
 
+    public async Task<int> SendNewMessageAsync(
+        string toEmail,
+        string subject,
+        string body,
+        int? linkToPersonId,
+        string actorUserId,
+        CancellationToken ct = default)
+    {
+        var emailOptions = mailboxOptions.Value;
+        if (!emailOptions.IsConfigured || httpClientFactory is null || tokenProvider is null)
+        {
+            throw new InvalidOperationException("Email is not configured. Cannot send messages.");
+        }
+
+        var sharedMailbox = emailOptions.SharedMailboxAddress!;
+
+        // Send via Graph API
+        var accessToken = await tokenProvider.GetAccessTokenAsync(ct);
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"users/{Uri.EscapeDataString(sharedMailbox)}/sendMail");
+
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+        request.Content = JsonContent.Create(new
+        {
+            message = new
+            {
+                subject,
+                body = new
+                {
+                    contentType = "Text",
+                    content = body
+                },
+                toRecipients = new[]
+                {
+                    new
+                    {
+                        emailAddress = new
+                        {
+                            address = toEmail
+                        }
+                    }
+                }
+            },
+            saveToSentItems = true
+        });
+
+        using var httpClient = httpClientFactory.CreateClient(MicrosoftGraphMailboxEmailSender.GraphHttpClientName);
+        using var response = await httpClient.SendAsync(request, ct);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            var responseBody = await response.Content.ReadAsStringAsync(ct);
+            throw new InvalidOperationException(
+                $"Sending message through Microsoft Graph failed with status {(int)response.StatusCode}: {responseBody}");
+        }
+
+        await using var db = await dbContextFactory.CreateDbContextAsync(ct);
+
+        // Auto-link to person by email if not explicitly provided
+        int? resolvedPersonId = linkToPersonId;
+        if (resolvedPersonId is null && !string.IsNullOrWhiteSpace(toEmail))
+        {
+            resolvedPersonId = await db.People
+                .Where(p => !p.IsDeleted && p.Email == toEmail)
+                .Select(p => (int?)p.Id)
+                .FirstOrDefaultAsync(ct);
+        }
+
+        // Store the outbound message locally
+        var newMessage = new EmailMessage
+        {
+            MailboxItemId = $"composed-{DateTime.UtcNow.Ticks}",
+            Direction = EmailDirection.Outbound,
+            From = sharedMailbox,
+            To = toEmail,
+            Subject = subject,
+            BodyText = body,
+            SentAtUtc = DateTime.UtcNow,
+            LinkedPersonId = resolvedPersonId
+        };
+
+        db.EmailMessages.Add(newMessage);
+
+        db.AuditLogs.Add(new AuditLog
+        {
+            EntityType = nameof(EmailMessage),
+            EntityId = "new",
+            Action = "NewMessageSent",
+            ActorUserId = actorUserId,
+            CreatedAtUtc = DateTime.UtcNow,
+            DetailsJson = System.Text.Json.JsonSerializer.Serialize(new { recipient = toEmail, subject })
+        });
+
+        await db.SaveChangesAsync(ct);
+
+        return newMessage.Id;
+    }
+
     public async Task<int> SendReplyAsync(
         int originalMessageId,
         string replyBody,
