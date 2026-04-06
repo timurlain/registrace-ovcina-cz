@@ -366,7 +366,7 @@ public sealed class SmokeTests : IClassFixture<AppFixture>
             {
                 Timeout = 5000
             });
-            await registrantPage.GetByText("Účastník byl přidán").WaitForAsync(new LocatorWaitForOptions
+            await registrantPage.GetByText("Účastník byl přidán.").WaitForAsync(new LocatorWaitForOptions
             {
                 Timeout = 5000
             });
