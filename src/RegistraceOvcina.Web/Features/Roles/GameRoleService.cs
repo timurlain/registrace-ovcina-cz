@@ -216,6 +216,34 @@ public sealed class GameRoleService(IDbContextFactory<ApplicationDbContext> dbFa
 
         return count;
     }
+
+    public async Task<List<AttendeeRoleRow>> GetRegisteredAttendeesForGameAsync(int gameId)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync();
+
+        return await db.Registrations
+            .AsNoTracking()
+            .Where(r => r.Submission.GameId == gameId && r.Status == RegistrationStatus.Active && !r.Submission.IsDeleted)
+            .Select(r => new AttendeeRoleRow
+            {
+                PersonId = r.PersonId,
+                PersonName = r.Person.FirstName + " " + r.Person.LastName,
+                Email = r.Person.Email,
+                IsPlayer = r.AttendeeType == AttendeeType.Player
+            })
+            .OrderBy(x => x.PersonName)
+            .ToListAsync();
+    }
 }
 
 public sealed record UserWithRoles(string Email, string DisplayName, List<string> Roles);
+
+public sealed class AttendeeRoleRow
+{
+    public int PersonId { get; set; }
+    public string PersonName { get; set; } = "";
+    public string? Email { get; set; }
+    public bool IsPlayer { get; set; }
+    public List<string> CurrentRoles { get; set; } = [];
+    public string SelectedRole { get; set; } = "";
+}

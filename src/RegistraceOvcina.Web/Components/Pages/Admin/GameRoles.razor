@@ -56,9 +56,9 @@
     </div>
 
     <div class="col-xl-7">
-        <section class="card shadow-sm h-100">
+        <section class="card shadow-sm mb-4">
             <div class="card-body p-4">
-                <h2 class="h4 mb-3">Přehled rolí</h2>
+                <h2 class="h5 mb-3">Přidělené role</h2>
 
                 @if (usersWithRoles is null)
                 {
@@ -71,11 +71,11 @@
                 else
                 {
                     <div class="table-responsive">
-                        <table class="table align-middle">
+                        <table class="table table-sm align-middle">
                             <thead>
                                 <tr>
-                                    <th>E-mail</th>
                                     <th>Jméno</th>
+                                    <th>E-mail</th>
                                     <th>Role</th>
                                 </tr>
                             </thead>
@@ -83,18 +83,100 @@
                                 @foreach (var user in usersWithRoles)
                                 {
                                     <tr>
-                                        <td>@user.Email</td>
-                                        <td>@user.DisplayName</td>
+                                        <td class="fw-semibold small">@user.DisplayName</td>
+                                        <td class="small text-secondary">@user.Email</td>
                                         <td>
                                             @foreach (var role in user.Roles)
                                             {
                                                 <span class="badge bg-secondary me-1">
                                                     @role
-                                                    <form method="post" @formname="@($"revoke-{user.Email}-{role}")" @onsubmit="() => RevokeRoleAsync(user.Email, role)" style="display:inline">
-                                                        <AntiforgeryToken />
-                                                        <button type="submit" class="btn btn-sm btn-link text-danger p-0 ms-1" title="Odebrat">Odebrat</button>
-                                                    </form>
+                                                    <button type="button" class="btn-close btn-close-white ms-1" style="font-size:0.5rem;"
+                                                            @onclick="() => RevokeRoleAsync(user.Email, role)" title="Odebrat"></button>
                                                 </span>
+                                            }
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </div>
+        </section>
+
+        <section class="card shadow-sm">
+            <div class="card-body p-4">
+                <h2 class="h5 mb-3">Registrovaní účastníci — přidělit roli</h2>
+
+                @if (registeredAttendees is null)
+                {
+                    <p class="text-secondary">Načítám...</p>
+                }
+                else if (registeredAttendees.Count == 0)
+                {
+                    <div class="empty-state">Žádní registrovaní účastníci pro tuto hru.</div>
+                }
+                else
+                {
+                    <div class="table-responsive" style="max-height: 50vh; overflow-y: auto;">
+                        <table class="table table-sm align-middle mb-0">
+                            <thead class="sticky-top bg-white">
+                                <tr>
+                                    <th>Jméno</th>
+                                    <th>Typ</th>
+                                    <th>Aktuální role</th>
+                                    <th>Přidělit</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var att in registeredAttendees)
+                                {
+                                    <tr>
+                                        <td>
+                                            <div class="fw-semibold small">@att.PersonName</div>
+                                            <div class="text-secondary" style="font-size:0.7rem;">@att.Email</div>
+                                        </td>
+                                        <td>
+                                            <span class="badge @(att.IsPlayer ? "text-bg-primary" : "text-bg-secondary")" style="font-size:0.7rem;">
+                                                @(att.IsPlayer ? "Hráč" : "Dospělý")
+                                            </span>
+                                        </td>
+                                        <td>
+                                            @if (att.CurrentRoles.Count > 0)
+                                            {
+                                                @foreach (var r in att.CurrentRoles)
+                                                {
+                                                    <span class="badge bg-info me-1" style="font-size:0.65rem;">@r</span>
+                                                }
+                                            }
+                                            else
+                                            {
+                                                <span class="text-muted small">—</span>
+                                            }
+                                        </td>
+                                        <td>
+                                            @if (!string.IsNullOrWhiteSpace(att.Email))
+                                            {
+                                                <div class="d-flex gap-1">
+                                                    <select class="form-select form-select-sm" style="font-size:0.75rem; min-width:100px;"
+                                                            @bind="att.SelectedRole">
+                                                        <option value="">--</option>
+                                                        @foreach (var r in availableRoles)
+                                                        {
+                                                            @if (!att.CurrentRoles.Contains(r))
+                                                            {
+                                                                <option value="@r">@r</option>
+                                                            }
+                                                        }
+                                                    </select>
+                                                    <button type="button" class="btn btn-sm btn-outline-primary" style="font-size:0.7rem;"
+                                                            disabled="@string.IsNullOrEmpty(att.SelectedRole)"
+                                                            @onclick="() => QuickAssignAsync(att)">+</button>
+                                                </div>
+                                            }
+                                            else
+                                            {
+                                                <span class="text-muted small">Bez e-mailu</span>
                                             }
                                         </td>
                                     </tr>
@@ -117,6 +199,7 @@
 
     private string gameName = "";
     private List<UserWithRoles>? usersWithRoles;
+    private List<AttendeeRoleRow>? registeredAttendees;
     private string assignEmail = "";
     private string assignRole = "";
     private string? statusMessage;
@@ -127,11 +210,52 @@
         var game = await GameService.GetGameForEditAsync(GameId);
         gameName = game?.Name ?? $"Hra #{GameId}";
         await LoadRolesAsync();
+        await LoadAttendeesAsync();
     }
 
     private async Task LoadRolesAsync()
     {
         usersWithRoles = await GameRoleService.GetAllRolesForGameAsync(GameId);
+    }
+
+    private async Task LoadAttendeesAsync()
+    {
+        registeredAttendees = await GameRoleService.GetRegisteredAttendeesForGameAsync(GameId);
+        // Populate current roles from usersWithRoles
+        if (usersWithRoles is not null && registeredAttendees is not null)
+        {
+            var roleLookup = usersWithRoles.ToDictionary(u => u.Email.ToLower(), u => u.Roles);
+            foreach (var att in registeredAttendees)
+            {
+                if (!string.IsNullOrWhiteSpace(att.Email) && roleLookup.TryGetValue(att.Email.ToLower(), out var roles))
+                {
+                    att.CurrentRoles = roles;
+                }
+            }
+        }
+    }
+
+    private async Task QuickAssignAsync(AttendeeRoleRow att)
+    {
+        if (string.IsNullOrWhiteSpace(att.Email) || string.IsNullOrWhiteSpace(att.SelectedRole))
+            return;
+
+        statusMessage = null;
+        errorMessage = null;
+
+        try
+        {
+            var currentUser = await GetCurrentUserIdAsync();
+            await GameRoleService.AssignRoleAsync(att.Email, GameId, att.SelectedRole, currentUser);
+            statusMessage = $"Role '{att.SelectedRole}' přidělena: {att.PersonName}";
+            att.CurrentRoles.Add(att.SelectedRole);
+            att.SelectedRole = "";
+            await LoadRolesAsync();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = ex.Message;
+        }
     }
 
     private async Task AssignRoleAsync()
