@@ -106,91 +106,83 @@
 
         <section class="card shadow-sm">
             <div class="card-body p-4">
-                <h2 class="h5 mb-3">Dospělí a pomocníci — přidělit roli</h2>
-                <p class="text-secondary small mb-3">Hráči (děti) jsou přiděleni do království, dospělí dostávají herní role.</p>
+                <h2 class="h5 mb-3">Dospělí a pomocníci</h2>
+                <p class="text-secondary small mb-3">Přiřaďte herní role dospělým účastníkům. Hráči (děti) se přidělují do království na stránce <a href="/organizace/rozdeleni">Rozdělení</a>.</p>
 
                 @if (registeredAttendees is null)
                 {
                     <p class="text-secondary">Načítám...</p>
                 }
-                else if (registeredAttendees.Count == 0)
-                {
-                    <div class="empty-state">Žádní registrovaní účastníci pro tuto hru.</div>
-                }
                 else
                 {
-                    <div class="table-responsive" style="max-height: 50vh; overflow-y: auto;">
-                        <table class="table table-sm align-middle mb-0">
-                            <thead class="sticky-top bg-white">
-                                <tr>
-                                    <th>Jméno</th>
-                                    <th>Typ</th>
-                                    <th>Aktuální role</th>
-                                    <th>Přidělit</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                @{ bool shownPlayerDivider = false; }
-                                @foreach (var att in registeredAttendees)
-                                {
-                                    @if (att.IsPlayer && !shownPlayerDivider)
-                                    {
-                                        shownPlayerDivider = true;
-                                        <tr><td colspan="4" class="text-secondary small border-top pt-2 pb-1"><em>Hráči (přidělení přes Rozdělení do království)</em></td></tr>
-                                    }
-                                    <tr class="@(att.IsPlayer ? "opacity-50" : "")">
-                                        <td>
-                                            <div class="fw-semibold small">@att.PersonName</div>
-                                            <div class="text-secondary" style="font-size:0.7rem;">@att.Email</div>
-                                        </td>
-                                        <td>
-                                            <span class="badge @(att.IsPlayer ? "text-bg-primary" : "text-bg-secondary")" style="font-size:0.7rem;">
-                                                @(att.IsPlayer ? "Hráč" : "Dospělý")
-                                            </span>
-                                        </td>
-                                        <td>
-                                            @if (att.CurrentRoles.Count > 0)
-                                            {
-                                                @foreach (var r in att.CurrentRoles)
-                                                {
-                                                    <span class="badge bg-info me-1" style="font-size:0.65rem;">@r</span>
-                                                }
-                                            }
-                                            else
-                                            {
-                                                <span class="text-muted small">—</span>
-                                            }
-                                        </td>
-                                        <td>
-                                            @if (!string.IsNullOrWhiteSpace(att.Email))
-                                            {
-                                                <div class="d-flex gap-1">
-                                                    <select class="form-select form-select-sm" style="font-size:0.75rem; min-width:100px;"
-                                                            @bind="att.SelectedRole">
-                                                        <option value="">--</option>
-                                                        @foreach (var r in availableRoles)
-                                                        {
-                                                            @if (!att.CurrentRoles.Contains(r))
-                                                            {
-                                                                <option value="@r">@r</option>
-                                                            }
-                                                        }
-                                                    </select>
-                                                    <button type="button" class="btn btn-sm btn-outline-primary" style="font-size:0.7rem;"
-                                                            disabled="@string.IsNullOrEmpty(att.SelectedRole)"
-                                                            @onclick="() => QuickAssignAsync(att)">+</button>
-                                                </div>
-                                            }
-                                            else
-                                            {
-                                                <span class="text-muted small">Bez e-mailu</span>
-                                            }
-                                        </td>
+                    var adults = registeredAttendees.Where(a => !a.IsPlayer).ToList();
+                    @if (adults.Count == 0)
+                    {
+                        <div class="empty-state">Žádní dospělí účastníci pro tuto hru.</div>
+                    }
+                    else
+                    {
+                        <div class="table-responsive" style="max-height: 50vh; overflow-y: auto;">
+                            <table class="table table-sm align-middle mb-0">
+                                <thead class="sticky-top bg-white">
+                                    <tr>
+                                        <th>Jméno</th>
+                                        <th>Aktuální role</th>
+                                        <th>Přidělit</th>
                                     </tr>
-                                }
-                            </tbody>
-                        </table>
-                    </div>
+                                </thead>
+                                <tbody>
+                                    @foreach (var att in adults)
+                                    {
+                                        <tr>
+                                            <td>
+                                                <div class="fw-semibold small">@att.PersonName</div>
+                                                <div class="text-secondary" style="font-size:0.7rem;">@att.Email</div>
+                                            </td>
+                                            <td>
+                                                @if (att.CurrentRoles.Count > 0)
+                                                {
+                                                    @foreach (var r in att.CurrentRoles)
+                                                    {
+                                                        <span class="badge bg-info me-1" style="font-size:0.65rem;">@r</span>
+                                                    }
+                                                }
+                                                else
+                                                {
+                                                    <span class="text-muted small">—</span>
+                                                }
+                                            </td>
+                                            <td>
+                                                @if (!string.IsNullOrWhiteSpace(att.Email))
+                                                {
+                                                    <div class="d-flex gap-1">
+                                                        <select class="form-select form-select-sm" style="font-size:0.75rem; min-width:100px;"
+                                                                @bind="att.SelectedRole">
+                                                            <option value="">--</option>
+                                                            @foreach (var r in availableRoles)
+                                                            {
+                                                                @if (!att.CurrentRoles.Contains(r))
+                                                                {
+                                                                    <option value="@r">@r</option>
+                                                                }
+                                                            }
+                                                        </select>
+                                                        <button type="button" class="btn btn-sm btn-outline-primary" style="font-size:0.7rem;"
+                                                                disabled="@string.IsNullOrEmpty(att.SelectedRole)"
+                                                                @onclick="() => QuickAssignAsync(att)">+</button>
+                                                    </div>
+                                                }
+                                                else
+                                                {
+                                                    <span class="text-muted small">Bez e-mailu</span>
+                                                }
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
                 }
             </div>
         </section>
