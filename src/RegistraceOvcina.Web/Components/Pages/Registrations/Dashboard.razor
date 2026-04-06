@@ -92,7 +92,7 @@
                         @foreach (var game in games)
                         {
                             var existing = submissions?.FirstOrDefault(x => x.GameId == game.Id);
-                            var lastSubmission = submissions?.Where(x => x.GameId != game.Id && x.Status == SubmissionStatus.Submitted).FirstOrDefault();
+                            var lastSubmission = submissions?.Where(x => x.GameId != game.Id && x.Status == SubmissionStatus.Submitted).OrderByDescending(x => x.SubmittedAtUtc).FirstOrDefault();
 
                             <article class="card border-0 bg-light">
                                 <div class="card-body d-flex flex-column gap-3">
