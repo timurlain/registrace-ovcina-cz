@@ -84,11 +84,6 @@ else
                                     <label class="form-label" for="registrant-note">Poznámka pro organizátory</label>
                                     <InputTextArea id="registrant-note" @bind-Value="contactInput.RegistrantNote" class="form-control" rows="3" placeholder="Cokoliv, co chcete organizátorům sdělit předem." />
                                 </div>
-                                <div class="col-md-6">
-                                    <label class="form-label" for="donation">Dobrovolný příspěvek (Kč)</label>
-                                    <InputNumber id="donation" @bind-Value="contactInput.VoluntaryDonation" class="form-control" placeholder="0" data-testid="voluntary-donation" />
-                                    <div class="form-text">Volitelný příspěvek nad rámec registrace. Děkujeme!</div>
-                                </div>
                             </div>
 
                             <button type="submit" class="btn btn-outline-primary mt-3">Uložit kontakt</button>
@@ -569,6 +564,17 @@ else
 
                     @if (submission.Status == SubmissionStatus.Draft)
                     {
+                        <div class="mb-3">
+                            <label class="form-label" for="donation-summary">Dobrovolný příspěvek (Kč)</label>
+                            <EditForm Model="contactInput" OnValidSubmit="SaveContactAsync" FormName="donation">
+                                <div class="input-group">
+                                    <InputNumber id="donation-summary" @bind-Value="contactInput.VoluntaryDonation" class="form-control" placeholder="0" data-testid="voluntary-donation" />
+                                    <button type="submit" class="btn btn-outline-primary">Uložit</button>
+                                </div>
+                            </EditForm>
+                            <div class="form-text">Volitelný příspěvek nad rámec registrace. Děkujeme!</div>
+                        </div>
+
                         <div class="alert alert-light border">
                             Platební instrukce a QR se zobrazí až po odeslání finální přihlášky.
                         </div>
