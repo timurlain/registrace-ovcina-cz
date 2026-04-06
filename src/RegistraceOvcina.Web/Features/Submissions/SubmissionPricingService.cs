@@ -95,6 +95,62 @@ public sealed class SubmissionPricingService(TimeProvider timeProvider)
         return name;
     }
 
+    public PricingResult CalculateBreakdown(Game game, IEnumerable<Registration> registrations, decimal voluntaryDonation = 0m)
+    {
+        var lines = new List<PriceBreakdownLine>();
+        var activeRegs = registrations.Where(x => x.Status == RegistrationStatus.Active).ToList();
+
+        var players = activeRegs.Where(x => x.AttendeeType == AttendeeType.Player).ToList();
+        var familyGroups = players.GroupBy(x => NormalizeFamilySurname(x.Person.LastName));
+
+        var firstChildCount = 0;
+        var secondChildCount = 0;
+        var thirdPlusChildCount = 0;
+
+        foreach (var family in familyGroups)
+        {
+            var childIndex = 0;
+            foreach (var _ in family)
+            {
+                switch (childIndex)
+                {
+                    case 0: firstChildCount++; break;
+                    case 1: secondChildCount++; break;
+                    default: thirdPlusChildCount++; break;
+                }
+                childIndex++;
+            }
+        }
+
+        if (firstChildCount > 0 && game.PlayerBasePrice > 0)
+            lines.Add(new("Hráči — 1. dítě v rodině", firstChildCount, game.PlayerBasePrice, firstChildCount * game.PlayerBasePrice));
+        if (secondChildCount > 0)
+        {
+            var price = GetChildPrice(game, 1);
+            if (price > 0) lines.Add(new("Hráči — 2. dítě v rodině", secondChildCount, price, secondChildCount * price));
+        }
+        if (thirdPlusChildCount > 0)
+        {
+            var price = GetChildPrice(game, 2);
+            if (price > 0) lines.Add(new("Hráči — 3.+ dítě v rodině", thirdPlusChildCount, price, thirdPlusChildCount * price));
+        }
+
+        var adultCount = activeRegs.Count(x => x.AttendeeType == AttendeeType.Adult);
+        if (adultCount > 0 && game.AdultHelperBasePrice > 0)
+            lines.Add(new("Dospělí / NPC", adultCount, game.AdultHelperBasePrice, adultCount * game.AdultHelperBasePrice));
+
+        var foodOrders = activeRegs.SelectMany(x => x.FoodOrders).ToList();
+        var foodTotal = foodOrders.Sum(x => x.Price);
+        if (foodTotal > 0)
+            lines.Add(new("Stravování", foodOrders.Count, 0, foodTotal));
+
+        if (voluntaryDonation > 0)
+            lines.Add(new("Dobrovolný příspěvek", 1, voluntaryDonation, voluntaryDonation));
+
+        var total = decimal.Round(lines.Sum(x => x.Total), 2, MidpointRounding.AwayFromZero);
+        return new PricingResult(lines, total);
+    }
+
     public BalanceStatus CalculateBalanceStatus(decimal expectedAmount, decimal paidAmount)
     {
         if (expectedAmount <= 0)
@@ -122,3 +178,5 @@ public sealed class SubmissionPricingService(TimeProvider timeProvider)
 
     public bool RequiresGuardianData(int birthYear) => timeProvider.GetUtcNow().Year - birthYear < 18;
 }
+
+public sealed record PricingResult(IReadOnlyList<PriceBreakdownLine> Lines, decimal Total);
