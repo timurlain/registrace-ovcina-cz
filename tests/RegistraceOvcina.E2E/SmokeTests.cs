@@ -695,10 +695,10 @@ public sealed class SmokeTests : IClassFixture<AppFixture>
         await page.GetByTestId("attendee-first-name").FillAsync("Tomáš");
         await page.GetByTestId("attendee-last-name").FillAsync("Pajonk");
         await page.GetByTestId("attendee-birth-year").FillAsync("1985");
-        await page.GetByTestId("type-adult").CheckAsync();
+        await page.GetByTestId("type-adult").ClickAsync();
 
         // Select an adult role
-        await page.Locator("#ar-tech").CheckAsync();
+        await page.Locator("#ar-tech").ClickAsync();
 
         await page.GetByTestId("add-attendee-submit").ClickAsync();
 
@@ -755,7 +755,7 @@ public sealed class SmokeTests : IClassFixture<AppFixture>
         await page.GetByTestId("attendee-first-name").FillAsync("Jana");
         await page.GetByTestId("attendee-last-name").FillAsync("Nováková");
         await page.GetByTestId("attendee-birth-year").FillAsync("1980");
-        await page.GetByTestId("type-adult").CheckAsync();
+        await page.GetByTestId("type-adult").ClickAsync();
 
         // Do NOT check any adult role checkbox
         await page.GetByTestId("add-attendee-submit").ClickAsync();
@@ -810,11 +810,11 @@ public sealed class SmokeTests : IClassFixture<AppFixture>
         await page.GetByTestId("attendee-first-name").FillAsync("Blanka");
         await page.GetByTestId("attendee-last-name").FillAsync("Richtarová");
         await page.GetByTestId("attendee-birth-year").FillAsync("1982");
-        await page.GetByTestId("type-adult").CheckAsync();
+        await page.GetByTestId("type-adult").ClickAsync();
 
         // Select multiple roles
-        await page.Locator("#ar-monster").CheckAsync();
-        await page.Locator("#ar-tech").CheckAsync();
+        await page.Locator("#ar-monster").ClickAsync();
+        await page.Locator("#ar-tech").ClickAsync();
 
         await page.GetByTestId("add-attendee-submit").ClickAsync();
 
@@ -862,8 +862,8 @@ public sealed class SmokeTests : IClassFixture<AppFixture>
         await page.GetByTestId("attendee-first-name").FillAsync("Karel");
         await page.GetByTestId("attendee-last-name").FillAsync("Dvořák");
         await page.GetByTestId("attendee-birth-year").FillAsync("1982");
-        await page.GetByTestId("type-adult").CheckAsync();
-        await page.Locator("#ar-tech").CheckAsync();
+        await page.GetByTestId("type-adult").ClickAsync();
+        await page.Locator("#ar-tech").ClickAsync();
         await page.GetByTestId("add-attendee-submit").ClickAsync();
 
         try
@@ -882,11 +882,11 @@ public sealed class SmokeTests : IClassFixture<AppFixture>
         await page.GetByTestId("attendee-first-name").FillAsync("Eliška");
         await page.GetByTestId("attendee-last-name").FillAsync("Dvořáková");
         await page.GetByTestId("attendee-birth-year").FillAsync("2013");
-        await page.GetByTestId("type-player").CheckAsync();
-        await page.Locator("#pst-independent").CheckAsync();
+        await page.GetByTestId("type-player").ClickAsync();
+        await page.Locator("#pst-independent").ClickAsync();
         await page.Locator("#guardian-name").FillAsync("Karel Dvořák");
         await page.Locator("#guardian-relationship").FillAsync("otec");
-        await page.Locator("#guardian-confirmed").CheckAsync();
+        await page.Locator("#guardian-confirmed").ClickAsync();
         await page.GetByTestId("add-attendee-submit").ClickAsync();
 
         try
@@ -905,11 +905,11 @@ public sealed class SmokeTests : IClassFixture<AppFixture>
         await page.GetByTestId("attendee-first-name").FillAsync("Matěj");
         await page.GetByTestId("attendee-last-name").FillAsync("Dvořák");
         await page.GetByTestId("attendee-birth-year").FillAsync("2018");
-        await page.GetByTestId("type-player").CheckAsync();
-        await page.Locator("#pst-ranger").CheckAsync();
+        await page.GetByTestId("type-player").ClickAsync();
+        await page.Locator("#pst-ranger").ClickAsync();
         await page.Locator("#guardian-name").FillAsync("Karel Dvořák");
         await page.Locator("#guardian-relationship").FillAsync("otec");
-        await page.Locator("#guardian-confirmed").CheckAsync();
+        await page.Locator("#guardian-confirmed").ClickAsync();
         await page.GetByTestId("add-attendee-submit").ClickAsync();
 
         try
@@ -927,7 +927,11 @@ public sealed class SmokeTests : IClassFixture<AppFixture>
         // Verify all 3 attendees appear
         var attendeeCards = page.Locator("[data-testid^='attendee-card-']");
         var cardCount = await attendeeCards.CountAsync();
-        Assert.True(cardCount >= 3, $"Expected at least 3 attendee cards, got {cardCount}");
+        if (cardCount < 3)
+        {
+            var bodyText = await page.Locator("body").InnerTextAsync();
+            throw new XunitException($"Expected at least 3 attendee cards, got {cardCount}. Page body:{Environment.NewLine}{bodyText}");
+        }
 
         // Verify names appear
         var pageText = await page.Locator("body").InnerTextAsync();
