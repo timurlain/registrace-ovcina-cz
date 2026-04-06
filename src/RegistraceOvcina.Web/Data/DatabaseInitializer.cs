@@ -64,7 +64,7 @@ public static class DatabaseInitializer
             "Tomáš Pajonk", nowUtc, adminRoles);
         await EnsureUserAsync(userManager, "stanam@email.cz", adminFallbackPassword,
             "Stanam", nowUtc, adminRoles);
-        await EnsureUserAsync(userManager, "blanka.richtar@gmail.com", adminFallbackPassword,
+        await EnsureUserAsync(userManager, "bl.richtar@gmail.com", adminFallbackPassword,
             "Blanka Richtar", nowUtc, adminRoles);
 
         var seedDemoUsers = configuration.GetValue<bool?>("SeedData:SeedDemoUsers")

@@ -695,10 +695,10 @@ public sealed class SmokeTests : IClassFixture<AppFixture>
         await page.GetByTestId("attendee-first-name").FillAsync("Tomáš");
         await page.GetByTestId("attendee-last-name").FillAsync("Pajonk");
         await page.GetByTestId("attendee-birth-year").FillAsync("1985");
-        await page.GetByTestId("type-adult").CheckAsync();
+        await page.GetByTestId("type-adult").ClickAsync();
 
         // Select an adult role
-        await page.Locator("#ar-tech").CheckAsync();
+        await page.Locator("#ar-tech").ClickAsync();
 
         await page.GetByTestId("add-attendee-submit").ClickAsync();
 
@@ -755,7 +755,7 @@ public sealed class SmokeTests : IClassFixture<AppFixture>
         await page.GetByTestId("attendee-first-name").FillAsync("Jana");
         await page.GetByTestId("attendee-last-name").FillAsync("Nováková");
         await page.GetByTestId("attendee-birth-year").FillAsync("1980");
-        await page.GetByTestId("type-adult").CheckAsync();
+        await page.GetByTestId("type-adult").ClickAsync();
 
         // Do NOT check any adult role checkbox
         await page.GetByTestId("add-attendee-submit").ClickAsync();
@@ -810,11 +810,11 @@ public sealed class SmokeTests : IClassFixture<AppFixture>
         await page.GetByTestId("attendee-first-name").FillAsync("Blanka");
         await page.GetByTestId("attendee-last-name").FillAsync("Richtarová");
         await page.GetByTestId("attendee-birth-year").FillAsync("1982");
-        await page.GetByTestId("type-adult").CheckAsync();
+        await page.GetByTestId("type-adult").ClickAsync();
 
         // Select multiple roles
-        await page.Locator("#ar-monster").CheckAsync();
-        await page.Locator("#ar-tech").CheckAsync();
+        await page.Locator("#ar-monster").ClickAsync();
+        await page.Locator("#ar-tech").ClickAsync();
 
         await page.GetByTestId("add-attendee-submit").ClickAsync();
 
@@ -830,6 +830,122 @@ public sealed class SmokeTests : IClassFixture<AppFixture>
             var bodyText = await page.Locator("body").InnerTextAsync();
             throw new XunitException($"Adult with multiple roles failed. Page body:{Environment.NewLine}{bodyText}");
         }
+
+        await AssertNoBlazorErrorsAsync(page);
+        await page.CloseAsync();
+    }
+
+    [Fact]
+    public async Task RegisterFamilyOfThree_AdultAndTwoChildren()
+    {
+        var page = await _fixture.Browser.NewPageAsync();
+        await LoginAsync(page, RegistrantEmail);
+
+        await page.GotoAsync($"{_fixture.BaseUrl}/moje-prihlasky");
+        await WaitForInteractiveReadyAsync(page);
+
+        // Create or resume draft
+        var existingDraft = page.Locator("[data-testid^='open-submission-']").First;
+        if (await existingDraft.IsVisibleAsync())
+        {
+            await existingDraft.ClickAsync();
+        }
+        else
+        {
+            await page.Locator("[data-testid^='create-draft-']").First.ClickAsync();
+        }
+
+        await page.WaitForURLAsync("**/prihlasky/*");
+        await WaitForInteractiveReadyAsync(page);
+
+        // --- Add adult parent ---
+        await page.GetByTestId("attendee-first-name").FillAsync("Karel");
+        await page.GetByTestId("attendee-last-name").FillAsync("Dvořák");
+        await page.GetByTestId("attendee-birth-year").FillAsync("1982");
+        await page.GetByTestId("type-adult").ClickAsync();
+        await page.Locator("#ar-tech").ClickAsync();
+        await page.GetByTestId("add-attendee-submit").ClickAsync();
+
+        try
+        {
+            await page.GetByText("Účastník byl přidán.").WaitForAsync(new LocatorWaitForOptions { Timeout = 5000 });
+        }
+        catch (TimeoutException)
+        {
+            var bodyText = await page.Locator("body").InnerTextAsync();
+            throw new XunitException($"Adult parent add failed. Page body:{Environment.NewLine}{bodyText}");
+        }
+
+        // Reload to get clean form
+        await page.ReloadAsync(new PageReloadOptions { WaitUntil = WaitUntilState.NetworkIdle });
+        await WaitForInteractiveReadyAsync(page);
+
+        // --- Add first child (older, independent player) ---
+        await page.GetByTestId("attendee-first-name").FillAsync("Eliška");
+        await page.GetByTestId("attendee-last-name").FillAsync("Dvořáková");
+        await page.GetByTestId("attendee-birth-year").FillAsync("2013");
+        await page.GetByTestId("type-player").ClickAsync();
+        await page.Locator("#pst-independent").ClickAsync();
+        await page.Locator("#guardian-name").FillAsync("Karel Dvořák");
+        await page.Locator("#guardian-relationship").FillAsync("otec");
+        await page.Locator("#guardian-confirmed").ClickAsync();
+        await page.GetByTestId("add-attendee-submit").ClickAsync();
+
+        try
+        {
+            await page.GetByText("Účastník byl přidán.").WaitForAsync(new LocatorWaitForOptions { Timeout = 5000 });
+        }
+        catch (TimeoutException)
+        {
+            var bodyText = await page.Locator("body").InnerTextAsync();
+            throw new XunitException($"First child add failed. Page body:{Environment.NewLine}{bodyText}");
+        }
+
+        // Reload to get clean form (EditForm in SSR doesn't reset inputs after model change)
+        await page.ReloadAsync(new PageReloadOptions { WaitUntil = WaitUntilState.NetworkIdle });
+        await WaitForInteractiveReadyAsync(page);
+
+        // --- Add second child (younger, with ranger) ---
+        await page.GetByTestId("attendee-first-name").FillAsync("Matěj");
+        await page.GetByTestId("attendee-last-name").FillAsync("Dvořák");
+        await page.GetByTestId("attendee-birth-year").FillAsync("2018");
+        await page.GetByTestId("type-player").ClickAsync();
+        await page.Locator("#pst-ranger").ClickAsync();
+        await page.Locator("#guardian-name").FillAsync("Karel Dvořák");
+        await page.Locator("#guardian-relationship").FillAsync("otec");
+        await page.Locator("#guardian-confirmed").ClickAsync();
+        await page.GetByTestId("add-attendee-submit").ClickAsync();
+
+        try
+        {
+            await page.GetByText("Účastník byl přidán.").WaitForAsync(new LocatorWaitForOptions { Timeout = 5000 });
+        }
+        catch (TimeoutException)
+        {
+            var bodyText = await page.Locator("body").InnerTextAsync();
+            throw new XunitException($"Second child add failed. Page body:{Environment.NewLine}{bodyText}");
+        }
+
+        await WaitForInteractiveReadyAsync(page);
+
+        // Verify all 3 attendees appear
+        var attendeeCards = page.Locator("[data-testid^='attendee-card-']");
+        var cardCount = await attendeeCards.CountAsync();
+        if (cardCount < 3)
+        {
+            var bodyText = await page.Locator("body").InnerTextAsync();
+            throw new XunitException($"Expected at least 3 attendee cards, got {cardCount}. Page body:{Environment.NewLine}{bodyText}");
+        }
+
+        // Verify names appear
+        var pageText = await page.Locator("body").InnerTextAsync();
+        Assert.Contains("Karel Dvořák", pageText);
+        Assert.Contains("Eliška Dvořáková", pageText);
+        Assert.Contains("Matěj Dvořák", pageText);
+
+        // Verify mix of roles
+        Assert.Contains("Dospělý", pageText);
+        Assert.Contains("Hráč", pageText);
 
         await AssertNoBlazorErrorsAsync(page);
         await page.CloseAsync();

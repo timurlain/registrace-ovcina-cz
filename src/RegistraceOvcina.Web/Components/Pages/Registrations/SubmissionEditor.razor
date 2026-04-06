@@ -6,6 +6,7 @@
 @inject SubmissionPricingService SubmissionPricingService
 @inject SpaydPaymentQrService PaymentQrService
 @inject UserManager<ApplicationUser> UserManager
+@inject IJSRuntime JS
 
 <PageTitle>Přihláška</PageTitle>
 
@@ -56,9 +57,9 @@ else
                     <div class="card-body p-4">
                         <h2 class="h4 mb-3">Přihlašovatel / registrátor — hlavní kontakt skupiny nebo rodiny</h2>
 
-                        <EditForm Model="contactInput" OnValidSubmit="SaveContactAsync" FormName="contact">
+                        <EditForm Model="contactInput" OnValidSubmit="SaveContactAsync" OnInvalidSubmit="ScrollToErrors" FormName="contact" id="contact-form">
                             <DataAnnotationsValidator />
-                            <ValidationSummary class="text-danger" />
+                            <ValidationSummary class="text-danger validation-errors" />
                             <div class="row g-3">
                                 <div class="col-md-6">
                                     <label class="form-label" for="contact-name">Hlavní kontakt</label>
@@ -171,19 +172,21 @@ else
                             </div>
                         }
 
-                        <EditForm Model="attendeeInput" OnValidSubmit="SaveAttendeeAsync" FormName="attendee">
+                        <EditForm Model="attendeeInput" OnValidSubmit="SaveAttendeeAsync" OnInvalidSubmit="ScrollToErrors" FormName="attendee" id="attendee-form">
                             <DataAnnotationsValidator />
                             <h3 class="h5 mb-3">@(editingRegistrationId is not null ? "Upravit účastníka" : "Přidat účastníka")</h3>
-                            <ValidationSummary class="text-danger" />
+                            <ValidationSummary class="text-danger validation-errors" />
 
                             <div class="row g-3">
                                 <div class="col-md-6">
                                     <label class="form-label required" for="attendee-first-name">Jméno</label>
-                                    <input id="attendee-first-name" name="@nameof(AttendeeInput.FirstName)" @bind="attendeeInput.FirstName" class="form-control" placeholder="např. Jan" data-testid="attendee-first-name" />
+                                    <InputText id="attendee-first-name" @bind-Value="attendeeInput.FirstName" class="form-control" placeholder="např. Jan" data-testid="attendee-first-name" />
+                                    <ValidationMessage For="() => attendeeInput.FirstName" />
                                 </div>
                                 <div class="col-md-6">
                                     <label class="form-label required" for="attendee-last-name">Příjmení</label>
-                                    <input id="attendee-last-name" name="@nameof(AttendeeInput.LastName)" @bind="attendeeInput.LastName" @onblur="CheckExistingPersonAsync" class="form-control" placeholder="např. Novák" data-testid="attendee-last-name" />
+                                    <InputText id="attendee-last-name" @bind-Value="attendeeInput.LastName" @onblur="CheckExistingPersonAsync" class="form-control" placeholder="např. Novák" data-testid="attendee-last-name" />
+                                    <ValidationMessage For="() => attendeeInput.LastName" />
                                 </div>
 
                                 @if (personSuggestion is not null)
@@ -214,17 +217,18 @@ else
 
                                 <div class="col-md-4">
                                     <label class="form-label required" for="attendee-birth-year">Rok narození</label>
-                                    <input id="attendee-birth-year" name="@nameof(AttendeeInput.BirthYear)" type="number" @bind="attendeeInput.BirthYear" class="form-control" placeholder="např. 2015" data-testid="attendee-birth-year" />
+                                    <InputNumber id="attendee-birth-year" @bind-Value="attendeeInput.BirthYear" class="form-control" placeholder="např. 2015" data-testid="attendee-birth-year" />
+                                    <ValidationMessage For="() => attendeeInput.BirthYear" />
                                 </div>
                                 <div class="col-md-4 @(attendeeInput.AttendeeType == AttendeeType.Adult ? "d-none" : "")" id="kingdom-section">
                                     <label class="form-label" for="attendee-kingdom">Preferované království</label>
-                                    <select id="attendee-kingdom" name="@nameof(AttendeeInput.PreferredKingdomId)" class="form-select">
-                                        <option value="" selected="@(attendeeInput.PreferredKingdomId is null)">Bez preference</option>
+                                    <InputSelect id="attendee-kingdom" @bind-Value="attendeeInput.PreferredKingdomId" class="form-select">
+                                        <option value="">Bez preference</option>
                                         @foreach (var kingdom in submission.AvailableKingdoms)
                                         {
-                                            <option value="@kingdom.Id" selected="@(attendeeInput.PreferredKingdomId == kingdom.Id)">@kingdom.Name</option>
+                                            <option value="@kingdom.Id">@kingdom.Name</option>
                                         }
-                                    </select>
+                                    </InputSelect>
                                     @if (submission.AvailableKingdoms.Count == 0)
                                     {
                                         <div class="form-text">Království ještě nejsou nastavená, preference doplníme později.</div>
@@ -295,16 +299,16 @@ else
 
                                 <div class="col-md-6 @(attendeeInput.AttendeeType == AttendeeType.Adult ? "d-none" : "")" id="character-name-section">
                                     <label class="form-label" for="attendee-character-name">Jméno postavy</label>
-                                    <input id="attendee-character-name" name="CharacterName" value="@attendeeInput.CharacterName" class="form-control" placeholder="např. Thorin Pavéza" />
+                                    <InputText id="attendee-character-name" @bind-Value="attendeeInput.CharacterName" class="form-control" placeholder="např. Thorin Pavéza" />
                                 </div>
 
                                 <div class="col-md-6">
                                     <label class="form-label" for="attendee-email">E-mail účastníka (volitelné)</label>
-                                    <input id="attendee-email" name="@nameof(AttendeeInput.ContactEmail)" value="@attendeeInput.ContactEmail" class="form-control" placeholder="např. jan@email.cz" />
+                                    <InputText id="attendee-email" @bind-Value="attendeeInput.ContactEmail" class="form-control" placeholder="např. jan@email.cz" />
                                 </div>
                                 <div class="col-md-6">
                                     <label class="form-label" for="attendee-phone">Telefon účastníka (volitelné)</label>
-                                    <input id="attendee-phone" name="@nameof(AttendeeInput.ContactPhone)" value="@attendeeInput.ContactPhone" class="form-control" placeholder="např. 721 123 456" />
+                                    <InputText id="attendee-phone" @bind-Value="attendeeInput.ContactPhone" class="form-control" placeholder="např. 721 123 456" />
                                 </div>
 
                                 <div class="col-12">
@@ -316,10 +320,10 @@ else
                                     <div class="form-text mb-1 d-none" id="attendee-note-hint-adult">
                                         Pokud chcete být konkrétnější, s čím chcete pomáhat nebo jaká příšera jste byli minule.
                                     </div>
-                                    <textarea id="attendee-note" name="AttendeeNote" class="form-control" rows="3"
+                                    <InputTextArea id="attendee-note" @bind-Value="attendeeInput.AttendeeNote" class="form-control" rows="3"
                                               placeholder="např. Chceme být s kamarády z oddílu ve stejném národě."
                                               data-placeholder-player="např. Chceme být s kamarády z oddílu ve stejném národě."
-                                              data-placeholder-adult="např. Rád bych byl opět pavoukem na paloučku.">@attendeeInput.AttendeeNote</textarea>
+                                              data-placeholder-adult="např. Rád bych byl opět pavoukem na paloučku." />
                                 </div>
 
                                 <div class="col-12">
@@ -389,22 +393,19 @@ else
                                 <div class="row g-3">
                                     <div class="col-md-6">
                                         <label class="form-label" for="guardian-name">Zákonný zástupce</label>
-                                        <input id="guardian-name" name="@nameof(AttendeeInput.GuardianName)" value="@attendeeInput.GuardianName" class="form-control" placeholder="např. Jana Nováková" />
+                                        <InputText id="guardian-name" @bind-Value="attendeeInput.GuardianName" class="form-control" placeholder="např. Jana Nováková" />
+                                        <ValidationMessage For="() => attendeeInput.GuardianName" />
                                     </div>
                                     <div class="col-md-6">
                                         <label class="form-label" for="guardian-relationship">Vztah k účastníkovi</label>
-                                        <input id="guardian-relationship" name="@nameof(AttendeeInput.GuardianRelationship)" value="@attendeeInput.GuardianRelationship" class="form-control" placeholder="např. matka" />
+                                        <InputText id="guardian-relationship" @bind-Value="attendeeInput.GuardianRelationship" class="form-control" placeholder="např. matka" />
+                                        <ValidationMessage For="() => attendeeInput.GuardianRelationship" />
                                     </div>
                                     <div class="col-12">
                                         <div class="form-check">
-                                            <input id="guardian-confirmed"
-                                                   name="@nameof(AttendeeInput.GuardianAuthorizationConfirmed)"
-                                                   type="checkbox"
-                                                   value="true"
-                                                   checked="@attendeeInput.GuardianAuthorizationConfirmed"
-                                                   class="form-check-input" />
-                                            <input type="hidden" name="@nameof(AttendeeInput.GuardianAuthorizationConfirmed)" value="false" />
+                                            <InputCheckbox id="guardian-confirmed" @bind-Value="attendeeInput.GuardianAuthorizationConfirmed" class="form-check-input" />
                                             <label class="form-check-label" for="guardian-confirmed">Potvrzuji souhlas zákonného zástupce.</label>
+                                            <ValidationMessage For="() => attendeeInput.GuardianAuthorizationConfirmed" />
                                         </div>
                                     </div>
                                 </div>
@@ -516,6 +517,32 @@ else
                                 </article>
                             }
                         </div>
+
+                        @if (submission.PriceBreakdown.Count > 0)
+                        {
+                            <h3 class="h5 mb-3 mt-4">Cenový rozpis</h3>
+                            <table class="table table-sm small mb-3">
+                                <tbody>
+                                    @foreach (var line in submission.PriceBreakdown)
+                                    {
+                                        <tr>
+                                            <td class="text-secondary">
+                                                @line.Label
+                                                @if (line.UnitPrice > 0)
+                                                {
+                                                    <span class="text-muted">(@line.Count × @line.UnitPrice.ToString("0") Kč)</span>
+                                                }
+                                            </td>
+                                            <td class="text-end">@line.Total.ToString("0.00") Kč</td>
+                                        </tr>
+                                    }
+                                    <tr class="fw-semibold border-top">
+                                        <td>Celkem</td>
+                                        <td class="text-end">@submission.ExpectedTotalAmount.ToString("0.00") Kč</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        }
                     </div>
                 </section>
             }
@@ -766,6 +793,11 @@ document.addEventListener('change', e => {
                     PaymentVariableSymbol = submission.PaymentVariableSymbol
                 })
             : null;
+    }
+
+    private async Task ScrollToErrors()
+    {
+        await JS.InvokeVoidAsync("eval", "document.querySelector('.validation-errors')?.scrollIntoView({behavior:'smooth',block:'center'})");
     }
 
     private async Task SaveContactAsync()

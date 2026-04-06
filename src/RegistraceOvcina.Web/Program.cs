@@ -21,6 +21,7 @@ using RegistraceOvcina.Web.Features.Kingdoms;
 using RegistraceOvcina.Web.Features.People;
 using RegistraceOvcina.Web.Features.Submissions;
 using RegistraceOvcina.Web.Features.Integration;
+using RegistraceOvcina.Web.Features.Roles;
 using RegistraceOvcina.Web.Features.Users;
 using RegistraceOvcina.Web.Security;
 
@@ -198,6 +199,7 @@ public class Program
         builder.Services.AddScoped<OrganizerSubmissionService>();
         builder.Services.AddScoped<PaymentService>();
         builder.Services.AddScoped<UserAdministrationService>();
+        builder.Services.AddScoped<GameRoleService>();
         builder.Services.Configure<IntegrationApiOptions>(
             builder.Configuration.GetSection(IntegrationApiOptions.SectionName));
 
@@ -292,7 +294,7 @@ public class Program
 
             return latestGameId.HasValue
                 ? Results.LocalRedirect($"/organizace/hry/{latestGameId.Value}/kralovstvi")
-                : Results.LocalRedirect("/admin/hry");
+                : Results.LocalRedirect("/organizace/prihlasky");
         }).RequireAuthorization(AuthorizationPolicies.StaffOnly);
         app.MapIntegrationApi();
         if (app.Environment.IsEnvironment("Testing"))
@@ -964,6 +966,39 @@ public class Program
                     {
                         await inboxService.SendNewMessageAsync(toEmail.Trim(), subject.Trim(), body.Trim(), null, user.Id, httpContext.RequestAborted);
                         return Results.LocalRedirect("/organizace/posta?sent=1");
+                    }
+                    catch (Exception ex) when (ex is InvalidOperationException or HttpRequestException or TaskCanceledException)
+                    {
+                        return Results.LocalRedirect("/organizace/posta?sendError=1");
+                    }
+                })
+            .RequireAuthorization(AuthorizationPolicies.StaffOnly);
+        app.MapPost(
+                "/organizace/posta/hromadne",
+                async ([FromForm] string subject, [FromForm] string body, [FromForm] int? gameId, HttpContext httpContext, UserManager<ApplicationUser> userManager, InboxService inboxService) =>
+                {
+                    var user = await userManager.GetUserAsync(httpContext.User);
+                    if (user is null)
+                    {
+                        return Results.LocalRedirect($"/Account/Login?ReturnUrl={Uri.EscapeDataString("/organizace/posta")}");
+                    }
+
+                    if (string.IsNullOrWhiteSpace(subject) || string.IsNullOrWhiteSpace(body))
+                    {
+                        return Results.LocalRedirect("/organizace/posta?sendError=1");
+                    }
+
+                    var recipients = await inboxService.GetBulkRecipientsAsync(gameId, httpContext.RequestAborted);
+                    if (recipients.Count == 0)
+                    {
+                        return Results.LocalRedirect("/organizace/posta?sendError=1");
+                    }
+
+                    try
+                    {
+                        var (sent, failed) = await inboxService.SendBulkEmailAsync(
+                            recipients, subject.Trim(), body.Trim(), user.Id, httpContext.RequestAborted);
+                        return Results.LocalRedirect($"/organizace/posta?bulkSent={sent}&bulkFailed={failed}");
                     }
                     catch (Exception ex) when (ex is InvalidOperationException or HttpRequestException or TaskCanceledException)
                     {

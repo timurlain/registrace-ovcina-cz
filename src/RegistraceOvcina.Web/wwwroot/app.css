@@ -870,4 +870,35 @@ code, pre, .font-mono {
     line-height: 1.6rem;
     font-size: 0.8rem;
   }
+
+  /* Compact header on mobile */
+  .app-header .container {
+    padding-top: 0.5rem !important;
+    padding-bottom: 0.5rem !important;
+  }
+
+  .brand-link {
+    font-size: 1.1rem;
+  }
+
+  .app-header .header-subtitle {
+    display: none;
+  }
+
+  .app-header .nav-link {
+    font-size: 0.8rem;
+    padding: 0.2rem 0.4rem !important;
+  }
+
+  .app-header nav {
+    overflow-x: auto;
+    flex-wrap: nowrap !important;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    white-space: nowrap;
+  }
+
+  .app-header nav::-webkit-scrollbar {
+    display: none;
+  }
 }

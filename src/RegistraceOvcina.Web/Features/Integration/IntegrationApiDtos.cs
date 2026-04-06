@@ -24,3 +24,12 @@ public sealed record RegistrationDto(
 
 /// <summary>Presence check result.</summary>
 public sealed record PresenceCheckDto(bool IsRegistered);
+
+/// <summary>Game roles for a user.</summary>
+public sealed record UserGameRolesDto(List<string> Roles);
+
+/// <summary>Has-role check result.</summary>
+public sealed record HasRoleDto(bool HasRole);
+
+/// <summary>Role assignment request body.</summary>
+public sealed record AssignRoleRequest(int GameId, string RoleName);
