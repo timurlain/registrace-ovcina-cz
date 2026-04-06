@@ -28,16 +28,18 @@
                         <Authorized>
                             <a class="nav-link" href="/organizace/prihlasky">Přihlášky</a>
                             <a class="nav-link" href="/organizace/platby">Platby</a>
-                            <a class="nav-link" href="/organizace/rozdeleni">Rozdělení</a>
-                            <a class="nav-link" href="/organizace/osoby">Osoby</a>
-                            <a class="nav-link" href="/organizace/strava">Přehled stravy</a>
+                            <a class="nav-link" href="/organizace/rozdeleni">Království</a>
+                            <a class="nav-link" href="/organizace/role">Role</a>
+                            <a class="nav-link" href="/organizace/strava">Strava</a>
                             <a class="nav-link" href="/organizace/posta">Pošta</a>
+                            <span class="nav-divider"></span>
+                            <a class="nav-link" href="/organizace/osoby">Osoby</a>
                         </Authorized>
                     </AuthorizeView>
                     <AuthorizeView Roles="@RoleNames.Admin">
                         <Authorized>
-                            <a class="nav-link" href="/admin/hry">Správa her</a>
-                            <a class="nav-link" href="/admin/kralovstvi">Království</a>
+                            <a class="nav-link" href="/admin/hry">Hry</a>
+                            <a class="nav-link" href="/admin/kralovstvi">Správa království</a>
                             <a class="nav-link" href="/admin/organizatori">Organizátoři</a>
                         </Authorized>
                     </AuthorizeView>

@@ -1,0 +1,27 @@
+@page "/organizace/rozdeleni"
+@attribute [Authorize(Policy = AuthorizationPolicies.StaffOnly)]
+
+@inject GameService GameService
+@inject NavigationManager NavigationManager
+
+<PageTitle>Rozdělení do království</PageTitle>
+
+@if (latestGameId is null)
+{
+    <div class="empty-state">Žádná hra není k dispozici.</div>
+}
+
+@code {
+    private int? latestGameId;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var games = await GameService.GetAdminGamesAsync();
+        var latest = games.FirstOrDefault();
+        if (latest is not null)
+        {
+            latestGameId = latest.Id;
+            NavigationManager.NavigateTo($"/organizace/hry/{latest.Id}/kralovstvi", replace: true);
+        }
+    }
+}

@@ -173,6 +173,10 @@ jobs:
             secret_args+=("externalauth-seznam-clientsecret=$EXTERNALAUTH__SEZNAM__CLIENTSECRET")
           fi
 
+          if [ -n "$INTEGRATIONAPI__APIKEY" ]; then
+            secret_args+=("integrationapi-apikey=$INTEGRATIONAPI__APIKEY")
+          fi
+
           if [ -n "$Email__SharedMailboxAddress" ]; then
             secret_args+=("email-graph-client-secret=$Email__Graph__ClientSecret")
           fi
@@ -216,11 +220,18 @@ jobs:
             )
           fi
 
+          if [ -n "$INTEGRATIONAPI__APIKEY" ]; then
+            env_args+=(
+              "IntegrationApi__ApiKey=secretref:integrationapi-apikey"
+            )
+          fi
+
           az containerapp update -n "$AZURE_CONTAINER_APP_NAME" -g "$AZURE_RESOURCE_GROUP" \
             --set-env-vars "${env_args[@]}" \
             --output none
         env:
           AZURE_POSTGRES_CONNECTION_STRING: ${{ secrets.AZURE_POSTGRES_CONNECTION_STRING }}
+          INTEGRATIONAPI__APIKEY: ${{ secrets.INTEGRATIONAPI__APIKEY }}
           Email__SharedMailboxAddress: ${{ vars.Email__SharedMailboxAddress }}
           Email__Graph__TenantId: ${{ vars.Email__Graph__TenantId }}
           Email__Graph__ClientId: ${{ vars.Email__Graph__ClientId }}

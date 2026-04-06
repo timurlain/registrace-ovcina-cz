@@ -442,6 +442,8 @@ public sealed class PeopleReviewService(
         canonical.UpdatedAtUtc = timeProvider.GetUtcNow().UtcDateTime;
 
         duplicate.IsDeleted = true;
+        duplicate.Email = null;   // Free unique email constraint for reuse
+        duplicate.Phone = null;
         duplicate.UpdatedAtUtc = timeProvider.GetUtcNow().UtcDateTime;
 
         db.AuditLogs.Add(new AuditLog

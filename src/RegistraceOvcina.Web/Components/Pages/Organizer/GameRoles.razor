@@ -1,0 +1,132 @@
+@page "/organizace/role"
+@attribute [Authorize(Policy = AuthorizationPolicies.StaffOnly)]
+
+@using RegistraceOvcina.Web.Infrastructure
+@using Microsoft.EntityFrameworkCore
+@inject IDbContextFactory<ApplicationDbContext> DbFactory
+@inject GameService GameService
+
+<PageTitle>Role dospělých</PageTitle>
+
+<div class="d-flex justify-content-between align-items-end mb-4">
+    <div>
+        <h1 class="h3 mb-1">Role dospělých</h1>
+        <p class="text-secondary mb-0">Přehled dospělých účastníků a jejich rolí pro aktuální hru.</p>
+    </div>
+    <div>
+        <form method="get" class="d-flex align-items-center gap-2">
+            <label class="form-label mb-0 text-nowrap" for="game-filter">Hra</label>
+            <select id="game-filter" name="gameId" class="form-select form-select-sm" style="min-width: 200px;" onchange="this.form.submit()">
+                @if (games is not null)
+                {
+                    @foreach (var game in games)
+                    {
+                        <option value="@game.Id" selected="@(selectedGameId == game.Id)">@game.Name</option>
+                    }
+                }
+            </select>
+        </form>
+    </div>
+</div>
+
+@if (adults is null)
+{
+    <p class="text-secondary">Načítám...</p>
+}
+else if (adults.Count == 0)
+{
+    <div class="empty-state">Žádní dospělí účastníci pro tuto hru.</div>
+}
+else
+{
+    <div class="table-responsive">
+        <table class="table align-middle">
+            <thead>
+                <tr>
+                    <th>Jméno</th>
+                    <th>Skupina</th>
+                    <th>Zvolené role</th>
+                    <th>Poznámka</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var adult in adults)
+                {
+                    <tr>
+                        <td class="fw-semibold">@adult.FullName</td>
+                        <td>@adult.GroupName</td>
+                        <td>
+                            @if (adult.Roles.Count > 0)
+                            {
+                                <div class="d-flex flex-wrap gap-1">
+                                    @foreach (var role in adult.Roles)
+                                    {
+                                        <span class="badge text-bg-secondary">@role</span>
+                                    }
+                                </div>
+                            }
+                            else
+                            {
+                                <span class="text-secondary">Bez role</span>
+                            }
+                        </td>
+                        <td class="small text-secondary">@(adult.Note ?? "—")</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+
+    <div class="text-secondary small mt-2">Celkem: <strong>@adults.Count</strong> dospělých</div>
+}
+
+@code {
+    [SupplyParameterFromQuery(Name = "gameId")]
+    private int? selectedGameId { get; set; }
+
+    private IReadOnlyList<GameSummary>? games;
+    private IReadOnlyList<AdultRoleView>? adults;
+
+    protected override async Task OnInitializedAsync()
+    {
+        games = await GameService.GetAdminGamesAsync();
+
+        if (!selectedGameId.HasValue && games.Count > 0)
+        {
+            selectedGameId = games[0].Id;
+        }
+
+        if (selectedGameId.HasValue)
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+            adults = await db.Registrations
+                .AsNoTracking()
+                .Where(r => r.Submission.GameId == selectedGameId.Value
+                    && r.AttendeeType == AttendeeType.Adult
+                    && r.Status == RegistrationStatus.Active
+                    && !r.Submission.IsDeleted)
+                .OrderBy(r => r.Person.LastName)
+                .ThenBy(r => r.Person.FirstName)
+                .Select(r => new AdultRoleView(
+                    r.Id,
+                    $"{r.Person.FirstName} {r.Person.LastName}",
+                    r.Submission.GroupName,
+                    GetRoleLabels(r.AdultRoles),
+                    r.RegistrantNote))
+                .ToListAsync();
+        }
+    }
+
+    private static List<string> GetRoleLabels(AdultRoleFlags flags)
+    {
+        var labels = new List<string>();
+        if (flags.HasFlag(AdultRoleFlags.PlayMonster)) labels.Add("Příšera");
+        if (flags.HasFlag(AdultRoleFlags.OrganizationHelper)) labels.Add("Pomocník");
+        if (flags.HasFlag(AdultRoleFlags.TechSupport)) labels.Add("Technická pomoc");
+        if (flags.HasFlag(AdultRoleFlags.RangerLeader)) labels.Add("Hraničář");
+        if (flags.HasFlag(AdultRoleFlags.Spectator)) labels.Add("Přihlížející");
+        return labels;
+    }
+
+    private sealed record AdultRoleView(int RegistrationId, string FullName, string GroupName, List<string> Roles, string? Note);
+}
