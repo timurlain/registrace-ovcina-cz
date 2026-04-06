@@ -130,6 +130,10 @@ else
                                                 @if (msg.Direction == EmailDirection.Inbound)
                                                 {
                                                     <span class="badge bg-secondary-subtle text-secondary-emphasis">Příchozí</span>
+                                                    @if (result.HasReply(msg.Id))
+                                                    {
+                                                        <span class="badge bg-success-subtle text-success-emphasis ms-1">Odpovězeno</span>
+                                                    }
                                                 }
                                                 else
                                                 {

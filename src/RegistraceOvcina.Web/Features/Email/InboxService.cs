@@ -28,7 +28,37 @@ public sealed class InboxService(
             .Take(pageSize)
             .ToListAsync();
 
-        return new InboxPageResult(messages, totalCount, page, pageSize);
+        // For inbound messages on this page, check if a related outbound reply exists
+        var inboundIds = messages
+            .Where(m => m.Direction == EmailDirection.Inbound)
+            .Select(m => m.Id)
+            .ToList();
+
+        var repliedIds = new HashSet<int>();
+        if (inboundIds.Count > 0)
+        {
+            // Find inbound messages that have a later outbound message to the same sender
+            var inboundFromAddresses = messages
+                .Where(m => m.Direction == EmailDirection.Inbound && !string.IsNullOrWhiteSpace(m.From))
+                .Select(m => new { m.Id, From = m.From.Trim().ToLowerInvariant(), m.ReceivedAtUtc })
+                .ToList();
+
+            foreach (var inbound in inboundFromAddresses)
+            {
+                var hasReply = await db.EmailMessages
+                    .AnyAsync(e =>
+                        e.Direction == EmailDirection.Outbound
+                        && e.To.ToLower() == inbound.From
+                        && e.SentAtUtc > inbound.ReceivedAtUtc);
+
+                if (hasReply)
+                {
+                    repliedIds.Add(inbound.Id);
+                }
+            }
+        }
+
+        return new InboxPageResult(messages, totalCount, page, pageSize, repliedIds);
     }
 
     public async Task<EmailMessage?> GetMessageAsync(int id)
@@ -349,11 +379,13 @@ public sealed record InboxPageResult(
     List<EmailMessage> Messages,
     int TotalCount,
     int Page,
-    int PageSize)
+    int PageSize,
+    HashSet<int>? RepliedMessageIds = null)
 {
     public int TotalPages => (int)Math.Ceiling((double)TotalCount / PageSize);
     public bool HasPreviousPage => Page > 1;
     public bool HasNextPage => Page < TotalPages;
+    public bool HasReply(int messageId) => RepliedMessageIds?.Contains(messageId) == true;
 }
 
 public sealed record SubmissionLookupItem(int Id, string Label);
