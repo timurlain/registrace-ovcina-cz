@@ -176,9 +176,10 @@ else
                             </div>
                         }
 
-                        <form method="post" action="@(editingRegistrationId is not null ? $"/prihlasky/{SubmissionId}/ucastnici/{editingRegistrationId}/upravit" : $"/prihlasky/{SubmissionId}/ucastnici")">
-                            <AntiforgeryToken />
+                        <EditForm Model="attendeeInput" OnValidSubmit="SaveAttendeeAsync" FormName="attendee">
+                            <DataAnnotationsValidator />
                             <h3 class="h5 mb-3">@(editingRegistrationId is not null ? "Upravit účastníka" : "Přidat účastníka")</h3>
+                            <ValidationSummary class="text-danger" />
 
                             <div class="row g-3">
                                 <div class="col-md-6">
@@ -419,7 +420,7 @@ else
                                     <button type="button" class="btn btn-outline-secondary mt-4" @onclick="CancelEditing">Zrušit</button>
                                 }
                             </div>
-                        </form>
+                        </EditForm>
                     </div>
                 </section>
 
@@ -773,6 +774,41 @@ document.addEventListener('change', e => {
         {
             await SubmissionService.UpdateContactAsync(SubmissionId, user.Id, contactInput);
             statusMessage = "Kontaktní údaje byly uložené.";
+            await LoadAsync();
+        }
+        catch (System.ComponentModel.DataAnnotations.ValidationException ex)
+        {
+            errorMessage = ex.Message;
+        }
+    }
+
+    private async Task SaveAttendeeAsync()
+    {
+        errorMessage = null;
+        statusMessage = null;
+
+        var user = await GetCurrentUserAsync();
+        if (user is null)
+        {
+            errorMessage = "Nepodařilo se načíst přihlášeného uživatele.";
+            return;
+        }
+
+        try
+        {
+            if (editingRegistrationId is not null)
+            {
+                await SubmissionService.UpdateAttendeeAsync(SubmissionId, editingRegistrationId.Value, user.Id, attendeeInput);
+                statusMessage = "Účastník byl upraven.";
+                editingRegistrationId = null;
+            }
+            else
+            {
+                await SubmissionService.AddAttendeeAsync(SubmissionId, user.Id, attendeeInput);
+                statusMessage = "Účastník byl přidán.";
+            }
+            attendeeInput = CreateDefaultAttendeeInput(null);
+            personSuggestion = null;
             await LoadAsync();
         }
         catch (System.ComponentModel.DataAnnotations.ValidationException ex)
