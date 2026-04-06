@@ -70,6 +70,37 @@ public static class IntegrationApiEndpoints
             return Results.Ok(registrations);
         }).AllowAnonymous();
 
+        // GET /api/v1/users/by-email?email=... — user existence check for OvčinaHra auth
+        group.MapGet("/users/by-email", async (
+            string email,
+            IDbContextFactory<ApplicationDbContext> dbFactory,
+            CancellationToken ct) =>
+        {
+            if (string.IsNullOrWhiteSpace(email))
+                return Results.BadRequest("email is required.");
+
+            await using var db = await dbFactory.CreateDbContextAsync(ct);
+
+            var normalizedEmail = email.Trim().ToUpperInvariant();
+
+            var user = await db.Users
+                .AsNoTracking()
+                .Where(u => u.NormalizedEmail == normalizedEmail)
+                .Select(u => new { u.Id, u.DisplayName, u.IsActive })
+                .FirstOrDefaultAsync(ct);
+
+            if (user is null || !user.IsActive)
+                return Results.Ok(new { Exists = false, DisplayName = (string?)null, Roles = (List<string>?)null });
+
+            var roles = await db.UserRoles
+                .AsNoTracking()
+                .Where(ur => ur.UserId == user.Id)
+                .Join(db.Roles, ur => ur.RoleId, r => r.Id, (ur, r) => r.Name!)
+                .ToListAsync(ct);
+
+            return Results.Ok(new { Exists = true, DisplayName = user.DisplayName, Roles = roles });
+        }).AllowAnonymous();
+
         // GET /api/v1/registrations/check?email=...&gameId=... — presence check
         group.MapGet("/registrations/check", async (
             string email,
