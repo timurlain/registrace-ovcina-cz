@@ -177,4 +177,27 @@ public sealed class PaymentAndPricingTests
         Assert.Contains("X-VS:0000000042", result.SpaydPayload);
         Assert.Contains("<svg", result.SvgMarkup, StringComparison.OrdinalIgnoreCase);
     }
+
+    [Fact]
+    public void Build_SvgContainsViewBox()
+    {
+        var service = new SpaydPaymentQrService();
+        var game = new Game
+        {
+            Name = "Ovčina 2026",
+            BankAccount = "CZ6508000000192000145399",
+            BankAccountName = "Ovčina z.s."
+        };
+
+        var submission = new RegistrationSubmission
+        {
+            Id = 1,
+            ExpectedTotalAmount = 500m
+        };
+
+        var result = service.Build(game, submission);
+
+        Assert.NotNull(result);
+        Assert.Contains("viewBox", result!.SvgMarkup, StringComparison.OrdinalIgnoreCase);
+    }
 }
