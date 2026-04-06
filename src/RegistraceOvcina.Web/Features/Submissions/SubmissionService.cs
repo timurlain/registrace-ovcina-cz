@@ -161,53 +161,10 @@ public sealed class SubmissionService(
 
         var nowUtc = timeProvider.GetUtcNow().UtcDateTime;
 
-        // Build price breakdown with family-grouped tiered pricing
-        var activeRegistrations = submission.Registrations.Where(x => x.Status == RegistrationStatus.Active).ToList();
-        var adultCount = activeRegistrations.Count(x => x.AttendeeType == AttendeeType.Adult);
-        var foodTotal = activeRegistrations.SelectMany(x => x.FoodOrders).Sum(x => x.Price);
-
-        var breakdown = new List<PriceBreakdownLine>();
-
-        // Count children per tier across all families
-        var players = activeRegistrations.Where(x => x.AttendeeType == AttendeeType.Player).ToList();
-        var familyGroups = players.GroupBy(x => SubmissionPricingService.NormalizeFamilySurname(x.Person.LastName));
-
-        var firstChildCount = 0;
-        var secondChildCount = 0;
-        var thirdPlusChildCount = 0;
-
-        foreach (var family in familyGroups)
-        {
-            var childIndex = 0;
-            foreach (var _ in family)
-            {
-                switch (childIndex)
-                {
-                    case 0: firstChildCount++; break;
-                    case 1: secondChildCount++; break;
-                    default: thirdPlusChildCount++; break;
-                }
-                childIndex++;
-            }
-        }
-
-        var firstChildPrice = submission.Game.PlayerBasePrice;
-        var secondChildPrice = SubmissionPricingService.GetChildPrice(submission.Game, 1);
-        var thirdPlusChildPrice = SubmissionPricingService.GetChildPrice(submission.Game, 2);
-
-        if (firstChildCount > 0 && firstChildPrice > 0)
-            breakdown.Add(new("Hráči — 1. dítě v rodině", firstChildCount, firstChildPrice, firstChildCount * firstChildPrice));
-        if (secondChildCount > 0 && secondChildPrice > 0)
-            breakdown.Add(new("Hráči — 2. dítě v rodině", secondChildCount, secondChildPrice, secondChildCount * secondChildPrice));
-        if (thirdPlusChildCount > 0 && thirdPlusChildPrice > 0)
-            breakdown.Add(new("Hráči — 3.+ dítě v rodině", thirdPlusChildCount, thirdPlusChildPrice, thirdPlusChildCount * thirdPlusChildPrice));
-
-        if (adultCount > 0 && submission.Game.AdultHelperBasePrice > 0)
-            breakdown.Add(new("Dospělí / NPC", adultCount, submission.Game.AdultHelperBasePrice, adultCount * submission.Game.AdultHelperBasePrice));
-        if (foodTotal > 0)
-            breakdown.Add(new("Stravování", activeRegistrations.SelectMany(x => x.FoodOrders).Count(), 0, foodTotal));
-        if (submission.VoluntaryDonation > 0)
-            breakdown.Add(new("Dobrovolný příspěvek", 1, submission.VoluntaryDonation, submission.VoluntaryDonation));
+        // Price breakdown only for drafts (current prices); submitted uses persisted total
+        var pricingResult = submission.Status == SubmissionStatus.Draft
+            ? pricingService.CalculateBreakdown(submission.Game, submission.Registrations, submission.VoluntaryDonation)
+            : null;
 
         return new SubmissionEditorViewModel
         {
@@ -262,7 +219,7 @@ public sealed class SubmissionService(
                     x.GuardianRelationship))
                 .ToList(),
             VoluntaryDonation = submission.VoluntaryDonation,
-            PriceBreakdown = breakdown,
+            PriceBreakdown = pricingResult?.Lines ?? [],
             MealDays = gameDays.Select(day => new MealDayViewModel(
                 day,
                 day.ToString("dddd d. M.", new System.Globalization.CultureInfo("cs-CZ")),
