@@ -309,12 +309,17 @@ else
 
                                 <div class="col-12">
                                     <label class="form-label" for="attendee-note">Poznámka pro organizátory</label>
-                                    <div class="form-text mb-1">
+                                    <div class="form-text mb-1" id="attendee-note-hint-player">
                                         Zejména v jaké skupině a národu děti chtějí nebo naopak nechtějí být.
                                         Napište i pokud je vám to jedno — velmi nám to usnadní třídění, aby byly národy vyrovnané.
                                     </div>
+                                    <div class="form-text mb-1 d-none" id="attendee-note-hint-adult">
+                                        Pokud chcete být konkrétnější, s čím chcete pomáhat nebo jaká příšera jste byli minule.
+                                    </div>
                                     <textarea id="attendee-note" name="AttendeeNote" class="form-control" rows="3"
-                                              placeholder="např. Chceme být s kamarády z oddílu ve stejném národě.">@attendeeInput.AttendeeNote</textarea>
+                                              placeholder="např. Chceme být s kamarády z oddílu ve stejném národě."
+                                              data-placeholder-player="např. Chceme být s kamarády z oddílu ve stejném národě."
+                                              data-placeholder-adult="např. Rád bych byl opět pavoukem na paloučku.">@attendeeInput.AttendeeNote</textarea>
                                 </div>
 
                                 <div class="col-12">
@@ -626,6 +631,10 @@ document.addEventListener('change', e => {
     document.getElementById('character-name-section')?.classList.toggle('d-none', !isPlayer);
     document.getElementById('guardian-section')?.classList.toggle('d-none', !isPlayer);
     document.getElementById('adult-roles-section')?.classList.toggle('d-none', isPlayer);
+    document.getElementById('attendee-note-hint-player')?.classList.toggle('d-none', !isPlayer);
+    document.getElementById('attendee-note-hint-adult')?.classList.toggle('d-none', isPlayer);
+    const noteField = document.getElementById('attendee-note');
+    if (noteField) noteField.placeholder = noteField.dataset[isPlayer ? 'placeholderPlayer' : 'placeholderAdult'] || '';
 });
 </script>
 
