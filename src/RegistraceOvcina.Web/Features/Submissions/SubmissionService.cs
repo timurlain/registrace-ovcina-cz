@@ -129,7 +129,7 @@ public sealed class SubmissionService(
             return null;
         }
 
-        var currentTotal = pricingService.CalculateExpectedTotal(submission.Game, submission.Registrations);
+        var currentTotal = pricingService.CalculateExpectedTotal(submission.Game, submission.Registrations, submission.VoluntaryDonation);
         var paidAmount = submission.Payments.Sum(x => x.Amount);
 
         var kingdoms = await db.Kingdoms
@@ -160,6 +160,54 @@ public sealed class SubmissionService(
             .ToListAsync(cancellationToken);
 
         var nowUtc = timeProvider.GetUtcNow().UtcDateTime;
+
+        // Build price breakdown with family-grouped tiered pricing
+        var activeRegistrations = submission.Registrations.Where(x => x.Status == RegistrationStatus.Active).ToList();
+        var adultCount = activeRegistrations.Count(x => x.AttendeeType == AttendeeType.Adult);
+        var foodTotal = activeRegistrations.SelectMany(x => x.FoodOrders).Sum(x => x.Price);
+
+        var breakdown = new List<PriceBreakdownLine>();
+
+        // Count children per tier across all families
+        var players = activeRegistrations.Where(x => x.AttendeeType == AttendeeType.Player).ToList();
+        var familyGroups = players.GroupBy(x => SubmissionPricingService.NormalizeFamilySurname(x.Person.LastName));
+
+        var firstChildCount = 0;
+        var secondChildCount = 0;
+        var thirdPlusChildCount = 0;
+
+        foreach (var family in familyGroups)
+        {
+            var childIndex = 0;
+            foreach (var _ in family)
+            {
+                switch (childIndex)
+                {
+                    case 0: firstChildCount++; break;
+                    case 1: secondChildCount++; break;
+                    default: thirdPlusChildCount++; break;
+                }
+                childIndex++;
+            }
+        }
+
+        var firstChildPrice = submission.Game.PlayerBasePrice;
+        var secondChildPrice = SubmissionPricingService.GetChildPrice(submission.Game, 1);
+        var thirdPlusChildPrice = SubmissionPricingService.GetChildPrice(submission.Game, 2);
+
+        if (firstChildCount > 0 && firstChildPrice > 0)
+            breakdown.Add(new("Hráči — 1. dítě v rodině", firstChildCount, firstChildPrice, firstChildCount * firstChildPrice));
+        if (secondChildCount > 0 && secondChildPrice > 0)
+            breakdown.Add(new("Hráči — 2. dítě v rodině", secondChildCount, secondChildPrice, secondChildCount * secondChildPrice));
+        if (thirdPlusChildCount > 0 && thirdPlusChildPrice > 0)
+            breakdown.Add(new("Hráči — 3.+ dítě v rodině", thirdPlusChildCount, thirdPlusChildPrice, thirdPlusChildCount * thirdPlusChildPrice));
+
+        if (adultCount > 0 && submission.Game.AdultHelperBasePrice > 0)
+            breakdown.Add(new("Dospělí / NPC", adultCount, submission.Game.AdultHelperBasePrice, adultCount * submission.Game.AdultHelperBasePrice));
+        if (foodTotal > 0)
+            breakdown.Add(new("Stravování", activeRegistrations.SelectMany(x => x.FoodOrders).Count(), 0, foodTotal));
+        if (submission.VoluntaryDonation > 0)
+            breakdown.Add(new("Dobrovolný příspěvek", 1, submission.VoluntaryDonation, submission.VoluntaryDonation));
 
         return new SubmissionEditorViewModel
         {
@@ -213,6 +261,8 @@ public sealed class SubmissionService(
                     x.GuardianName,
                     x.GuardianRelationship))
                 .ToList(),
+            VoluntaryDonation = submission.VoluntaryDonation,
+            PriceBreakdown = breakdown,
             MealDays = gameDays.Select(day => new MealDayViewModel(
                 day,
                 day.ToString("dddd d. M.", new System.Globalization.CultureInfo("cs-CZ")),
@@ -241,6 +291,7 @@ public sealed class SubmissionService(
         submission.PrimaryEmail = input.PrimaryEmail.Trim();
         submission.PrimaryPhone = input.PrimaryPhone.Trim();
         submission.RegistrantNote = string.IsNullOrWhiteSpace(input.RegistrantNote) ? null : input.RegistrantNote.Trim();
+        submission.VoluntaryDonation = Math.Max(0, input.VoluntaryDonation);
         submission.LastEditedAtUtc = timeProvider.GetUtcNow().UtcDateTime;
 
         await db.SaveChangesAsync(cancellationToken);
@@ -258,6 +309,8 @@ public sealed class SubmissionService(
         var submission = await db.RegistrationSubmissions
             .Include(x => x.Game)
                 .ThenInclude(x => x.MealOptions)
+            .Include(x => x.Registrations)
+                .ThenInclude(x => x.Person)
             .Include(x => x.Registrations)
                 .ThenInclude(x => x.FoodOrders)
             .FirstOrDefaultAsync(x => x.Id == submissionId && x.RegistrantUserId == userId, cancellationToken)
@@ -349,6 +402,8 @@ public sealed class SubmissionService(
             .Include(x => x.Game)
                 .ThenInclude(x => x.MealOptions)
             .Include(x => x.Registrations)
+                .ThenInclude(x => x.Person)
+            .Include(x => x.Registrations)
                 .ThenInclude(x => x.FoodOrders)
             .FirstOrDefaultAsync(x => x.Id == submissionId && x.RegistrantUserId == userId, cancellationToken)
             ?? throw new ValidationException("Přihláška nebyla nalezena.");
@@ -428,6 +483,8 @@ public sealed class SubmissionService(
         var submission = await db.RegistrationSubmissions
             .Include(x => x.Game)
             .Include(x => x.Registrations)
+                .ThenInclude(x => x.Person)
+            .Include(x => x.Registrations)
                 .ThenInclude(x => x.FoodOrders)
             .FirstOrDefaultAsync(x => x.Id == submissionId && x.RegistrantUserId == userId, cancellationToken)
             ?? throw new ValidationException("Přihláška nebyla nalezena.");
@@ -506,6 +563,8 @@ public sealed class SubmissionService(
         var submission = await db.RegistrationSubmissions
             .Include(x => x.Game)
             .Include(x => x.Registrations)
+                .ThenInclude(x => x.Person)
+            .Include(x => x.Registrations)
                 .ThenInclude(x => x.FoodOrders)
             .FirstOrDefaultAsync(x => x.Id == submissionId && x.RegistrantUserId == userId, cancellationToken)
             ?? throw new ValidationException("Přihláška nebyla nalezena.");
@@ -533,7 +592,7 @@ public sealed class SubmissionService(
         }
 
         var nowUtc = timeProvider.GetUtcNow().UtcDateTime;
-        submission.ExpectedTotalAmount = pricingService.CalculateExpectedTotal(submission.Game, submission.Registrations);
+        submission.ExpectedTotalAmount = pricingService.CalculateExpectedTotal(submission.Game, submission.Registrations, submission.VoluntaryDonation);
         submission.Status = SubmissionStatus.Submitted;
         submission.SubmittedAtUtc = nowUtc;
         submission.LastEditedAtUtc = nowUtc;
@@ -637,7 +696,7 @@ public sealed class SubmissionService(
     {
         if (submission.Status == SubmissionStatus.Submitted)
         {
-            submission.ExpectedTotalAmount = pricingService.CalculateExpectedTotal(submission.Game, submission.Registrations);
+            submission.ExpectedTotalAmount = pricingService.CalculateExpectedTotal(submission.Game, submission.Registrations, submission.VoluntaryDonation);
         }
     }
 
@@ -768,6 +827,7 @@ public sealed class SubmissionService(
         await db.SaveChangesAsync(cancellationToken);
 
         var clonedRegistrations = await db.Registrations
+            .Include(r => r.Person)
             .Where(r => r.SubmissionId == submission.Id)
             .ToListAsync(cancellationToken);
         submission.ExpectedTotalAmount = pricingService.CalculateExpectedTotal(game, clonedRegistrations);
@@ -848,7 +908,11 @@ public sealed class SubmissionEditorViewModel
     public IReadOnlyList<AttendeeViewModel> Attendees { get; init; } = [];
     public IReadOnlyList<MealDayViewModel> MealDays { get; init; } = [];
     public IReadOnlyList<FoodOrderViewModel> ExistingFoodOrders { get; init; } = [];
+    public decimal VoluntaryDonation { get; init; }
+    public IReadOnlyList<PriceBreakdownLine> PriceBreakdown { get; init; } = [];
 }
+
+public sealed record PriceBreakdownLine(string Label, int Count, decimal UnitPrice, decimal Total);
 
 public sealed class ContactInput
 {
@@ -870,6 +934,9 @@ public sealed class ContactInput
 
     [StringLength(4000)]
     public string? RegistrantNote { get; set; }
+
+    [Range(0, 100000, ErrorMessage = "Příspěvek musí být kladný nebo nulový.")]
+    public decimal VoluntaryDonation { get; set; }
 }
 
 public sealed class AttendeeInput : IValidatableObject

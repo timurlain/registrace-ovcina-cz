@@ -104,6 +104,8 @@ public sealed class GameService(IDbContextFactory<ApplicationDbContext> dbContex
                 ? CzechTime.ToUtc(assignmentFreeze)
                 : null,
             PlayerBasePrice = command.PlayerBasePrice,
+            SecondChildPrice = command.SecondChildPrice,
+            ThirdPlusChildPrice = command.ThirdPlusChildPrice,
             AdultHelperBasePrice = command.AdultHelperBasePrice,
             BankAccount = command.BankAccount.Trim(),
             BankAccountName = command.BankAccountName.Trim(),
@@ -163,6 +165,8 @@ public sealed class GameService(IDbContextFactory<ApplicationDbContext> dbContex
             ? CzechTime.ToUtc(assignmentFreeze)
             : null;
         game.PlayerBasePrice = command.PlayerBasePrice;
+        game.SecondChildPrice = command.SecondChildPrice;
+        game.ThirdPlusChildPrice = command.ThirdPlusChildPrice;
         game.AdultHelperBasePrice = command.AdultHelperBasePrice;
         game.BankAccount = command.BankAccount.Trim();
         game.BankAccountName = command.BankAccountName.Trim();
@@ -219,6 +223,8 @@ public sealed record CreateGameCommand(
     DateTime PaymentDueAtLocal,
     DateTime? AssignmentFreezeAtLocal,
     decimal PlayerBasePrice,
+    decimal SecondChildPrice,
+    decimal ThirdPlusChildPrice,
     decimal AdultHelperBasePrice,
     string BankAccount,
     string BankAccountName,

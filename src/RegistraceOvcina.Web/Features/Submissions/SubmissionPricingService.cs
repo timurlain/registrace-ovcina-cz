@@ -4,23 +4,95 @@ namespace RegistraceOvcina.Web.Features.Submissions;
 
 public sealed class SubmissionPricingService(TimeProvider timeProvider)
 {
-    public decimal CalculateExpectedTotal(Game game, IEnumerable<Registration> registrations)
+    public decimal CalculateExpectedTotal(Game game, IEnumerable<Registration> registrations, decimal voluntaryDonation = 0m)
     {
         var total = 0m;
+        var activeRegs = registrations.Where(x => x.Status == RegistrationStatus.Active).ToList();
 
-        foreach (var registration in registrations.Where(x => x.Status == RegistrationStatus.Active))
+        // Group players by family surname for tiered pricing
+        var players = activeRegs.Where(x => x.AttendeeType == AttendeeType.Player).ToList();
+        var familyGroups = players.GroupBy(x => NormalizeFamilySurname(x.Person.LastName));
+
+        foreach (var family in familyGroups)
         {
-            total += registration.AttendeeType == AttendeeType.Player
-                ? game.PlayerBasePrice
-                : game.AdultHelperBasePrice;
-
-            if (registration.FoodOrders is { Count: > 0 })
+            var childIndex = 0;
+            foreach (var player in family)
             {
-                total += registration.FoodOrders.Sum(fo => fo.Price);
+                total += GetChildPrice(game, childIndex);
+                childIndex++;
             }
         }
 
+        // Adults
+        foreach (var adult in activeRegs.Where(x => x.AttendeeType == AttendeeType.Adult))
+        {
+            total += game.AdultHelperBasePrice;
+        }
+
+        // Food orders
+        total += activeRegs.SelectMany(x => x.FoodOrders).Sum(x => x.Price);
+
+        // Voluntary donation
+        total += Math.Max(0, voluntaryDonation);
+
         return decimal.Round(total, 2, MidpointRounding.AwayFromZero);
+    }
+
+    /// <summary>
+    /// Returns the price for a child at the given index within a family group.
+    /// Falls back to PlayerBasePrice if tiered prices are not configured (zero).
+    /// </summary>
+    internal static decimal GetChildPrice(Game game, int childIndex)
+    {
+        return childIndex switch
+        {
+            0 => game.PlayerBasePrice,
+            1 => game.SecondChildPrice > 0 ? game.SecondChildPrice : game.PlayerBasePrice,
+            _ => game.ThirdPlusChildPrice > 0 ? game.ThirdPlusChildPrice : game.PlayerBasePrice
+        };
+    }
+
+    /// <summary>
+    /// Normalizes a Czech surname to a family key by stripping common feminine suffixes.
+    /// E.g. "Nováková" → "novák", "Branková" → "brank", "Nová" → "nov"
+    /// </summary>
+    /// <summary>
+    /// Normalizes a Czech surname to a family key by stripping common feminine suffixes
+    /// and masculine endings to produce a shared root.
+    /// E.g. "Novák" and "Nováková" both → "novák"
+    ///      "Svoboda" and "Svobodová" both → "svobod"
+    ///      "Nový" and "Nová" both → "nov"
+    /// </summary>
+    internal static string NormalizeFamilySurname(string lastName)
+    {
+        if (string.IsNullOrWhiteSpace(lastName)) return "";
+        var name = lastName.Trim().ToLowerInvariant();
+
+        // Czech feminine → strip -ová suffix (requires at least 2 chars base)
+        if (name.EndsWith("ová") && name.Length > 5)
+        {
+            return name[..^3];
+        }
+
+        // Feminine adjective form: strip -á
+        if (name.EndsWith("á") && name.Length > 2)
+        {
+            return name[..^1];
+        }
+
+        // Masculine adjective form: strip -ý to match feminine -á → same root
+        if (name.EndsWith("ý") && name.Length > 2)
+        {
+            return name[..^1];
+        }
+
+        // Masculine noun ending in -a (e.g. Svoboda): strip to match Svobodová → "svobod"
+        if (name.EndsWith("a") && name.Length > 3)
+        {
+            return name[..^1];
+        }
+
+        return name;
     }
 
     public BalanceStatus CalculateBalanceStatus(decimal expectedAmount, decimal paidAmount)
