@@ -279,6 +279,21 @@ public class Program
         await DatabaseInitializer.InitializeAsync(app);
 
         app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
+
+        // Redirect to kingdom assignment for the latest published game
+        app.MapGet("/organizace/rozdeleni", async (IDbContextFactory<ApplicationDbContext> dbFactory) =>
+        {
+            await using var db = await dbFactory.CreateDbContextAsync();
+            var latestGameId = await db.Games
+                .Where(x => x.IsPublished)
+                .OrderByDescending(x => x.StartsAtUtc)
+                .Select(x => (int?)x.Id)
+                .FirstOrDefaultAsync();
+
+            return latestGameId.HasValue
+                ? Results.LocalRedirect($"/organizace/hry/{latestGameId.Value}/kralovstvi")
+                : Results.LocalRedirect("/admin/hry");
+        }).RequireAuthorization(AuthorizationPolicies.StaffOnly);
         app.MapIntegrationApi();
         if (app.Environment.IsEnvironment("Testing"))
         {
@@ -927,6 +942,32 @@ public class Program
                     catch (Exception ex) when (ex is InvalidOperationException or HttpRequestException or TaskCanceledException)
                     {
                         return Results.LocalRedirect($"/organizace/posta/{messageId}?replyError=1");
+                    }
+                })
+            .RequireAuthorization(AuthorizationPolicies.StaffOnly);
+        app.MapPost(
+                "/organizace/posta/odeslat",
+                async ([FromForm] string toEmail, [FromForm] string subject, [FromForm] string body, HttpContext httpContext, UserManager<ApplicationUser> userManager, InboxService inboxService) =>
+                {
+                    var user = await userManager.GetUserAsync(httpContext.User);
+                    if (user is null)
+                    {
+                        return Results.LocalRedirect($"/Account/Login?ReturnUrl={Uri.EscapeDataString("/organizace/posta")}");
+                    }
+
+                    if (string.IsNullOrWhiteSpace(toEmail) || string.IsNullOrWhiteSpace(subject) || string.IsNullOrWhiteSpace(body))
+                    {
+                        return Results.LocalRedirect("/organizace/posta");
+                    }
+
+                    try
+                    {
+                        await inboxService.SendNewMessageAsync(toEmail.Trim(), subject.Trim(), body.Trim(), null, user.Id, httpContext.RequestAborted);
+                        return Results.LocalRedirect("/organizace/posta?sent=1");
+                    }
+                    catch (Exception ex) when (ex is InvalidOperationException or HttpRequestException or TaskCanceledException)
+                    {
+                        return Results.LocalRedirect("/organizace/posta?sendError=1");
                     }
                 })
             .RequireAuthorization(AuthorizationPolicies.StaffOnly);
