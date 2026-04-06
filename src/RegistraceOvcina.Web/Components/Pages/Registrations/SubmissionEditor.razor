@@ -580,6 +580,14 @@ else
                                 Odeslat přihlášku
                             </button>
                         </form>
+
+                        <form method="post" action="@($"/prihlasky/{SubmissionId}/smazat")"
+                              onsubmit="return confirm('Opravdu chcete smazat celou přihlášku? Tuto akci nelze vrátit.');">
+                            <AntiforgeryToken />
+                            <button type="submit" class="btn btn-outline-danger btn-sm mt-3" data-testid="delete-submission">
+                                Smazat přihlášku
+                            </button>
+                        </form>
                     }
                     else if (paymentQr is not null)
                     {

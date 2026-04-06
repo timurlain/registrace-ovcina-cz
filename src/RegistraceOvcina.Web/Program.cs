@@ -808,6 +808,48 @@ public class Program
                 })
             .RequireAuthorization();
         app.MapPost(
+                "/prihlasky/{submissionId:int}/smazat",
+                async (HttpContext httpContext, int submissionId, UserManager<ApplicationUser> userManager, SubmissionService submissionService) =>
+                {
+                    var user = await userManager.GetUserAsync(httpContext.User);
+                    if (user is null)
+                    {
+                        return Results.LocalRedirect($"/Account/Login?ReturnUrl={Uri.EscapeDataString("/moje-prihlasky")}");
+                    }
+
+                    try
+                    {
+                        await submissionService.DeleteSubmissionAsync(submissionId, user.Id, isStaff: false);
+                        return Results.LocalRedirect("/moje-prihlasky?deleted=1");
+                    }
+                    catch (ValidationException ex)
+                    {
+                        return Results.LocalRedirect($"/prihlasky/{submissionId}?error={Uri.EscapeDataString(ex.Message)}");
+                    }
+                })
+            .RequireAuthorization();
+        app.MapPost(
+                "/organizace/prihlasky/{submissionId:int}/smazat",
+                async (HttpContext httpContext, int submissionId, UserManager<ApplicationUser> userManager, SubmissionService submissionService) =>
+                {
+                    var user = await userManager.GetUserAsync(httpContext.User);
+                    if (user is null)
+                    {
+                        return Results.LocalRedirect($"/Account/Login?ReturnUrl={Uri.EscapeDataString("/organizace/prihlasky")}");
+                    }
+
+                    try
+                    {
+                        await submissionService.DeleteSubmissionAsync(submissionId, user.Id, isStaff: true);
+                        return Results.LocalRedirect("/organizace/prihlasky?deleted=1");
+                    }
+                    catch (ValidationException ex)
+                    {
+                        return Results.LocalRedirect($"/organizace/prihlasky?error={Uri.EscapeDataString(ex.Message)}");
+                    }
+                })
+            .RequireAuthorization(AuthorizationPolicies.StaffOnly);
+        app.MapPost(
                 "/organizace/posta/sync",
                 async (HttpContext httpContext, MailboxSyncService? syncService) =>
                 {

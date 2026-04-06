@@ -14,6 +14,11 @@
     <p class="text-secondary mb-0">Ke každé hře můžete mít právě jednu přihlášku skupiny či rodiny na přihlášený kontakt. Pokud už přihlášku máte, znovu ji otevřete.</p>
 </section>
 
+@if (deleted == 1)
+{
+    <div class="alert alert-success" role="status">Přihláška byla smazaná.</div>
+}
+
 @if (!string.IsNullOrWhiteSpace(errorMessage))
 {
     <div class="alert alert-danger" role="alert">@errorMessage</div>
@@ -145,6 +150,9 @@
 @code {
     [SupplyParameterFromQuery(Name = "error")]
     private string? queryError { get; set; }
+
+    [SupplyParameterFromQuery(Name = "deleted")]
+    private int? deleted { get; set; }
 
     private string? errorMessage;
     private IReadOnlyList<GameSummary>? games;

@@ -30,6 +30,11 @@
     </div>
 </div>
 
+@if (deleted == 1)
+{
+    <div class="alert alert-success" role="status">Přihláška byla smazaná.</div>
+}
+
 @if (submissions is null)
 {
     <p class="text-secondary">Načítám přihlášky...</p>
@@ -52,6 +57,7 @@ else
                     <th class="text-end">Celkem</th>
                     <th>Platba</th>
                     <th>Odesláno</th>
+                    <th></th>
                 </tr>
             </thead>
             <tbody>
@@ -66,6 +72,14 @@ else
                         <td class="text-end">@s.ExpectedTotalAmount.ToString("0.00") Kč</td>
                         <td><span class="badge @GetBalanceBadgeClass(s.BalanceStatus)">@GetBalanceLabel(s.BalanceStatus)</span></td>
                         <td>@(s.SubmittedAtUtc.HasValue ? CzechTime.Format(s.SubmittedAtUtc.Value) : "—")</td>
+                        <td>
+                            <form method="post" action="@($"/organizace/prihlasky/{s.Id}/smazat")"
+                                  onsubmit="return confirm('Opravdu chcete smazat celou přihlášku? Tuto akci nelze vrátit.');"
+                                  onclick="event.stopPropagation();">
+                                <AntiforgeryToken />
+                                <button type="submit" class="btn btn-outline-danger btn-sm" data-testid="@($"delete-submission-{s.Id}")">Smazat</button>
+                            </form>
+                        </td>
                     </tr>
                 }
             </tbody>
@@ -79,6 +93,9 @@ else
 
     [SupplyParameterFromQuery(Name = "q")]
     private string? searchQuery { get; set; }
+
+    [SupplyParameterFromQuery(Name = "deleted")]
+    private int? deleted { get; set; }
 
     private IReadOnlyList<OrganizerSubmissionSummary>? submissions;
     private IReadOnlyList<GameFilterItem>? gameFilters;
