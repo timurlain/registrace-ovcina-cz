@@ -517,6 +517,32 @@ else
                                 </article>
                             }
                         </div>
+
+                        @if (submission.PriceBreakdown.Count > 0)
+                        {
+                            <h3 class="h5 mb-3 mt-4">Cenový rozpis</h3>
+                            <table class="table table-sm small mb-3">
+                                <tbody>
+                                    @foreach (var line in submission.PriceBreakdown)
+                                    {
+                                        <tr>
+                                            <td class="text-secondary">
+                                                @line.Label
+                                                @if (line.UnitPrice > 0)
+                                                {
+                                                    <span class="text-muted">(@line.Count × @line.UnitPrice.ToString("0") Kč)</span>
+                                                }
+                                            </td>
+                                            <td class="text-end">@line.Total.ToString("0.00") Kč</td>
+                                        </tr>
+                                    }
+                                    <tr class="fw-semibold border-top">
+                                        <td>Celkem</td>
+                                        <td class="text-end">@submission.ExpectedTotalAmount.ToString("0.00") Kč</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        }
                     </div>
                 </section>
             }
