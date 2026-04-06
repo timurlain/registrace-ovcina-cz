@@ -1,0 +1,17 @@
+version: 2
+
+secret:
+  # Ignore known non-secret patterns in development/testing config
+  ignored-paths:
+    - "appsettings.Development.json"
+    - "appsettings.Testing.json"
+    - "**/*Migrations*"
+    - "data/"
+
+  ignored-matches:
+    # Generic local dev PostgreSQL password
+    - name: "Local dev postgres password"
+      match: "Password=postgres"
+    # Default seed user passwords (not used in production)
+    - name: "Seed user test password"
+      match: "Pass123!"
