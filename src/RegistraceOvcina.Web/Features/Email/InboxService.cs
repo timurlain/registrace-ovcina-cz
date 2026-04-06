@@ -373,6 +373,91 @@ public sealed class InboxService(
 
         return replyMessage.Id;
     }
+
+    public async Task<List<GameLookupItem>> GetGamesForBulkEmailAsync(CancellationToken ct = default)
+    {
+        await using var db = await dbContextFactory.CreateDbContextAsync(ct);
+
+        return await db.Games
+            .OrderByDescending(g => g.StartsAtUtc)
+            .Select(g => new GameLookupItem(g.Id, g.Name))
+            .AsNoTracking()
+            .ToListAsync(ct);
+    }
+
+    public async Task<List<string>> GetBulkRecipientsAsync(int? gameId, CancellationToken ct = default)
+    {
+        await using var db = await dbContextFactory.CreateDbContextAsync(ct);
+
+        if (gameId is { } gid)
+        {
+            // People registered for a specific game (via submissions)
+            var submissionEmails = await db.RegistrationSubmissions
+                .Where(s => s.GameId == gid && !s.IsDeleted && s.Status != SubmissionStatus.Cancelled)
+                .Select(s => s.PrimaryEmail)
+                .Distinct()
+                .ToListAsync(ct);
+
+            var registrationEmails = await db.Registrations
+                .Where(r => r.Submission.GameId == gid && !r.Submission.IsDeleted
+                    && r.Submission.Status != SubmissionStatus.Cancelled
+                    && r.ContactEmail != null && r.ContactEmail != "")
+                .Select(r => r.ContactEmail!)
+                .Distinct()
+                .ToListAsync(ct);
+
+            return submissionEmails
+                .Concat(registrationEmails)
+                .Where(e => !string.IsNullOrWhiteSpace(e))
+                .Select(e => e.Trim().ToLowerInvariant())
+                .Distinct()
+                .ToList();
+        }
+
+        // All contacts: people with email + submission primary emails
+        var personEmails = await db.People
+            .Where(p => !p.IsDeleted && p.Email != null && p.Email != "")
+            .Select(p => p.Email!)
+            .ToListAsync(ct);
+
+        var allSubmissionEmails = await db.RegistrationSubmissions
+            .Where(s => !s.IsDeleted && s.Status != SubmissionStatus.Cancelled && s.PrimaryEmail != "")
+            .Select(s => s.PrimaryEmail)
+            .ToListAsync(ct);
+
+        return personEmails
+            .Concat(allSubmissionEmails)
+            .Where(e => !string.IsNullOrWhiteSpace(e))
+            .Select(e => e.Trim().ToLowerInvariant())
+            .Distinct()
+            .ToList();
+    }
+
+    public async Task<(int Sent, int Failed)> SendBulkEmailAsync(
+        List<string> recipients,
+        string subject,
+        string body,
+        string actorUserId,
+        CancellationToken ct = default)
+    {
+        var sent = 0;
+        var failed = 0;
+
+        foreach (var email in recipients)
+        {
+            try
+            {
+                await SendNewMessageAsync(email, subject, body, null, actorUserId, ct);
+                sent++;
+            }
+            catch (Exception ex) when (ex is InvalidOperationException or HttpRequestException or TaskCanceledException)
+            {
+                failed++;
+            }
+        }
+
+        return (sent, failed);
+    }
 }
 
 public sealed record InboxPageResult(
@@ -390,3 +475,4 @@ public sealed record InboxPageResult(
 
 public sealed record SubmissionLookupItem(int Id, string Label);
 public sealed record PersonLookupItem(int Id, string Name);
+public sealed record GameLookupItem(int Id, string Name);

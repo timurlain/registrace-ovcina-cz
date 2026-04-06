@@ -52,6 +52,10 @@ else
                             {
                                 <span class="badge bg-danger align-self-center">Odeslání se nezdařilo.</span>
                             }
+                            @if (bulkSent is not null)
+                            {
+                                <span class="badge bg-success align-self-center">Hromadně odesláno @bulkSent z @(bulkSent + (bulkFailed ?? 0)).</span>
+                            }
                             <form method="post" action="/organizace/posta/sync">
                                 <AntiforgeryToken />
                                 <button type="submit" class="btn btn-outline-primary" data-testid="inbox-sync-button">Synchronizovat</button>
@@ -65,9 +69,14 @@ else
         @if (InboxService.CanReply)
         {
             <div class="col-12">
-                <button type="button" class="btn btn-primary mb-3" @onclick="ToggleCompose">
-                    @(showCompose ? "Skrýt" : "Nová zpráva")
-                </button>
+                <div class="d-flex gap-2 mb-3">
+                    <button type="button" class="btn btn-primary" @onclick="ToggleCompose">
+                        @(showCompose ? "Skrýt" : "Nová zpráva")
+                    </button>
+                    <button type="button" class="btn btn-outline-primary" @onclick="ToggleBulk">
+                        @(showBulk ? "Skrýt hromadný email" : "Hromadný email")
+                    </button>
+                </div>
 
                 @if (showCompose)
                 {
@@ -89,6 +98,47 @@ else
                                     <textarea name="Body" class="form-control" rows="5" placeholder="Dobrý den,..." required></textarea>
                                 </div>
                                 <button type="submit" class="btn btn-primary">Odeslat</button>
+                            </form>
+                        </div>
+                    </div>
+                }
+
+                @if (showBulk)
+                {
+                    <div class="card shadow-sm mb-4">
+                        <div class="card-body p-4">
+                            <h3 class="h5 mb-3">Hromadný email</h3>
+                            <form method="post" action="/organizace/posta/hromadne">
+                                <AntiforgeryToken />
+                                <div class="mb-3">
+                                    <label class="form-label">Příjemci</label>
+                                    <select name="GameId" class="form-select" @onchange="OnBulkFilterChanged">
+                                        <option value="">Všichni kontakty</option>
+                                        @if (games is not null)
+                                        {
+                                            @foreach (var game in games)
+                                            {
+                                                <option value="@game.Id">Přihlášení na: @game.Name</option>
+                                            }
+                                        }
+                                    </select>
+                                    @if (bulkRecipientCount is not null)
+                                    {
+                                        <div class="form-text">Zpráva bude odeslána <strong>@bulkRecipientCount</strong> příjemcům.</div>
+                                    }
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label">Předmět</label>
+                                    <input name="Subject" class="form-control" placeholder="Ovčina — ..." required />
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label">Text zprávy</label>
+                                    <textarea name="Body" class="form-control" rows="5" placeholder="Dobrý den,..." required></textarea>
+                                </div>
+                                <button type="submit" class="btn btn-warning"
+                                        onclick="return confirm('Opravdu chcete odeslat hromadný email? Tuto akci nelze vrátit.');">
+                                    Odeslat hromadně
+                                </button>
                             </form>
                         </div>
                     </div>
@@ -212,12 +262,43 @@ else
     [SupplyParameterFromQuery(Name = "sendError")]
     private int? sendError { get; set; }
 
+    [SupplyParameterFromQuery(Name = "bulkSent")]
+    private int? bulkSent { get; set; }
+
+    [SupplyParameterFromQuery(Name = "bulkFailed")]
+    private int? bulkFailed { get; set; }
+
     private InboxPageResult? result;
     private bool showCompose;
+    private bool showBulk;
+    private List<GameLookupItem>? games;
+    private int? bulkRecipientCount;
+    private int? selectedGameId;
 
     private void ToggleCompose()
     {
         showCompose = !showCompose;
+        if (showCompose) showBulk = false;
+    }
+
+    private async Task ToggleBulk()
+    {
+        showBulk = !showBulk;
+        if (showBulk)
+        {
+            showCompose = false;
+            games ??= await InboxService.GetGamesForBulkEmailAsync();
+            selectedGameId = null;
+            var recipients = await InboxService.GetBulkRecipientsAsync(null);
+            bulkRecipientCount = recipients.Count;
+        }
+    }
+
+    private async Task OnBulkFilterChanged(ChangeEventArgs e)
+    {
+        selectedGameId = int.TryParse(e.Value?.ToString(), out var gid) ? gid : null;
+        var recipients = await InboxService.GetBulkRecipientsAsync(selectedGameId);
+        bulkRecipientCount = recipients.Count;
     }
 
     protected override async Task OnParametersSetAsync()
