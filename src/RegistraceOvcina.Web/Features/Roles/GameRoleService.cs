@@ -231,7 +231,8 @@ public sealed class GameRoleService(IDbContextFactory<ApplicationDbContext> dbFa
                 Email = r.Person.Email,
                 IsPlayer = r.AttendeeType == AttendeeType.Player
             })
-            .OrderBy(x => x.PersonName)
+            .OrderBy(x => x.IsPlayer)  // Adults first
+            .ThenBy(x => x.PersonName)
             .ToListAsync();
     }
 }

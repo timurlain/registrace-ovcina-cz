@@ -106,7 +106,8 @@
 
         <section class="card shadow-sm">
             <div class="card-body p-4">
-                <h2 class="h5 mb-3">Registrovaní účastníci — přidělit roli</h2>
+                <h2 class="h5 mb-3">Dospělí a pomocníci — přidělit roli</h2>
+                <p class="text-secondary small mb-3">Hráči (děti) jsou přiděleni do království, dospělí dostávají herní role.</p>
 
                 @if (registeredAttendees is null)
                 {
@@ -129,9 +130,15 @@
                                 </tr>
                             </thead>
                             <tbody>
+                                @{ bool shownPlayerDivider = false; }
                                 @foreach (var att in registeredAttendees)
                                 {
-                                    <tr>
+                                    @if (att.IsPlayer && !shownPlayerDivider)
+                                    {
+                                        shownPlayerDivider = true;
+                                        <tr><td colspan="4" class="text-secondary small border-top pt-2 pb-1"><em>Hráči (přidělení přes Rozdělení do království)</em></td></tr>
+                                    }
+                                    <tr class="@(att.IsPlayer ? "opacity-50" : "")">
                                         <td>
                                             <div class="fw-semibold small">@att.PersonName</div>
                                             <div class="text-secondary" style="font-size:0.7rem;">@att.Email</div>
