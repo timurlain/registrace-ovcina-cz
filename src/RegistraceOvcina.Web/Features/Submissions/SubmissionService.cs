@@ -627,6 +627,39 @@ public sealed class SubmissionService(
             LastAdultRoles: lastRegistration?.AdultRoles ?? AdultRoleFlags.None);
     }
 
+    public async Task DeleteSubmissionAsync(
+        int submissionId,
+        string userId,
+        bool isStaff,
+        CancellationToken ct = default)
+    {
+        await using var db = await dbContextFactory.CreateDbContextAsync(ct);
+        var submission = await db.RegistrationSubmissions
+            .FirstOrDefaultAsync(x => x.Id == submissionId, ct)
+            ?? throw new ValidationException("Přihláška nebyla nalezena.");
+
+        if (!isStaff && submission.RegistrantUserId != userId)
+        {
+            throw new ValidationException("Nemáte oprávnění smazat tuto přihlášku.");
+        }
+
+        var nowUtc = timeProvider.GetUtcNow().UtcDateTime;
+        submission.IsDeleted = true;
+        submission.LastEditedAtUtc = nowUtc;
+
+        db.AuditLogs.Add(new AuditLog
+        {
+            EntityType = nameof(RegistrationSubmission),
+            EntityId = submission.Id.ToString(),
+            Action = "SubmissionDeleted",
+            ActorUserId = userId,
+            CreatedAtUtc = nowUtc,
+            DetailsJson = JsonSerializer.Serialize(new { submission.GameId, IsStaff = isStaff })
+        });
+
+        await db.SaveChangesAsync(ct);
+    }
+
     private static void EnsureEditable(RegistrationSubmission submission)
     {
         if (submission.Status == SubmissionStatus.Cancelled)

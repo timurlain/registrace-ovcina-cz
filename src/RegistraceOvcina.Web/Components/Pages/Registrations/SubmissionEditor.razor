@@ -84,11 +84,6 @@ else
                                     <label class="form-label" for="registrant-note">Poznámka pro organizátory</label>
                                     <InputTextArea id="registrant-note" @bind-Value="contactInput.RegistrantNote" class="form-control" rows="3" placeholder="Cokoliv, co chcete organizátorům sdělit předem." />
                                 </div>
-                                <div class="col-md-6">
-                                    <label class="form-label" for="donation">Dobrovolný příspěvek (Kč)</label>
-                                    <InputNumber id="donation" @bind-Value="contactInput.VoluntaryDonation" class="form-control" placeholder="0" data-testid="voluntary-donation" />
-                                    <div class="form-text">Volitelný příspěvek nad rámec registrace. Děkujeme!</div>
-                                </div>
                             </div>
 
                             <button type="submit" class="btn btn-outline-primary mt-3">Uložit kontakt</button>
@@ -176,9 +171,10 @@ else
                             </div>
                         }
 
-                        <form method="post" action="@(editingRegistrationId is not null ? $"/prihlasky/{SubmissionId}/ucastnici/{editingRegistrationId}/upravit" : $"/prihlasky/{SubmissionId}/ucastnici")">
-                            <AntiforgeryToken />
+                        <EditForm Model="attendeeInput" OnValidSubmit="SaveAttendeeAsync" FormName="attendee">
+                            <DataAnnotationsValidator />
                             <h3 class="h5 mb-3">@(editingRegistrationId is not null ? "Upravit účastníka" : "Přidat účastníka")</h3>
+                            <ValidationSummary class="text-danger" />
 
                             <div class="row g-3">
                                 <div class="col-md-6">
@@ -237,58 +233,62 @@ else
 
                                 <div class="col-12">
                                     <label class="form-label required">Typ účastníka</label>
-                                    <div class="d-flex gap-4 mb-2">
-                                        <div class="form-check">
-                                            <input class="form-check-input" type="radio" name="AttendeeType" id="type-player" value="Player" checked="@(attendeeInput.AttendeeType == AttendeeType.Player)" data-testid="type-player" />
-                                            <label class="form-check-label" for="type-player">Hráč (dítě)</label>
+                                    <InputRadioGroup @bind-Value="attendeeInput.AttendeeType">
+                                        <div class="d-flex gap-4 mb-2">
+                                            <div class="form-check">
+                                                <InputRadio class="form-check-input" id="type-player" Value="AttendeeType.Player" data-testid="type-player" />
+                                                <label class="form-check-label" for="type-player">Hráč (dítě)</label>
+                                            </div>
+                                            <div class="form-check">
+                                                <InputRadio class="form-check-input" id="type-adult" Value="AttendeeType.Adult" data-testid="type-adult" />
+                                                <label class="form-check-label" for="type-adult">Dospělý</label>
+                                            </div>
                                         </div>
-                                        <div class="form-check">
-                                            <input class="form-check-input" type="radio" name="AttendeeType" id="type-adult" value="Adult" checked="@(attendeeInput.AttendeeType == AttendeeType.Adult)" data-testid="type-adult" />
-                                            <label class="form-check-label" for="type-adult">Dospělý</label>
-                                        </div>
-                                    </div>
+                                    </InputRadioGroup>
                                 </div>
 
                                 <div class="col-12 @(attendeeInput.AttendeeType == AttendeeType.Adult ? "d-none" : "")" id="player-subtype-section">
                                     <label class="form-label required">Kategorie hráče</label>
-                                    <div class="form-check">
-                                        <input class="form-check-input" type="radio" name="PlayerSubType" id="pst-pvp" value="Pvp" checked="@(attendeeInput.PlayerSubType == PlayerSubType.Pvp)" />
-                                        <label class="form-check-label" for="pst-pvp">hrající samostatné dítě (cca 10+, které chce naplno soutěžit s dalšími — PVP hráč)</label>
-                                    </div>
-                                    <div class="form-check">
-                                        <input class="form-check-input" type="radio" name="PlayerSubType" id="pst-independent" value="Independent" checked="@(attendeeInput.PlayerSubType == PlayerSubType.Independent)" />
-                                        <label class="form-check-label" for="pst-independent">hrající samostatné dítě (cca 8+)</label>
-                                    </div>
-                                    <div class="form-check">
-                                        <input class="form-check-input" type="radio" name="PlayerSubType" id="pst-ranger" value="WithRanger" checked="@(attendeeInput.PlayerSubType == PlayerSubType.WithRanger)" />
-                                        <label class="form-check-label" for="pst-ranger">hrající dítě ve skupince s hraničárem (cca 5–7)</label>
-                                    </div>
-                                    <div class="form-check">
-                                        <input class="form-check-input" type="radio" name="PlayerSubType" id="pst-parent" value="WithParent" checked="@(attendeeInput.PlayerSubType == PlayerSubType.WithParent)" />
-                                        <label class="form-check-label" for="pst-parent">hrající dítě v doprovodu rodiče (cca 4+)</label>
-                                    </div>
+                                    <InputRadioGroup @bind-Value="attendeeInput.PlayerSubType">
+                                        <div class="form-check">
+                                            <InputRadio class="form-check-input" id="pst-pvp" Value="PlayerSubType.Pvp" />
+                                            <label class="form-check-label" for="pst-pvp">hrající samostatné dítě (cca 10+, které chce naplno soutěžit s dalšími — PVP hráč)</label>
+                                        </div>
+                                        <div class="form-check">
+                                            <InputRadio class="form-check-input" id="pst-independent" Value="PlayerSubType.Independent" />
+                                            <label class="form-check-label" for="pst-independent">hrající samostatné dítě (cca 8+)</label>
+                                        </div>
+                                        <div class="form-check">
+                                            <InputRadio class="form-check-input" id="pst-ranger" Value="PlayerSubType.WithRanger" />
+                                            <label class="form-check-label" for="pst-ranger">hrající dítě ve skupince s hraničárem (cca 5–7)</label>
+                                        </div>
+                                        <div class="form-check">
+                                            <InputRadio class="form-check-input" id="pst-parent" Value="PlayerSubType.WithParent" />
+                                            <label class="form-check-label" for="pst-parent">hrající dítě v doprovodu rodiče (cca 4+)</label>
+                                        </div>
+                                    </InputRadioGroup>
                                 </div>
 
                                 <div class="col-12 @(attendeeInput.AttendeeType == AttendeeType.Player ? "d-none" : "")" id="adult-roles-section">
                                     <label class="form-label required">Role dospělého (lze vybrat více)</label>
                                     <div class="form-check">
-                                        <input class="form-check-input" type="checkbox" name="AdultRole_PlayMonster" value="true" id="ar-monster" checked="@attendeeInput.AdultRole_PlayMonster" />
+                                        <InputCheckbox @bind-Value="attendeeInput.AdultRole_PlayMonster" class="form-check-input" id="ar-monster" />
                                         <label class="form-check-label" for="ar-monster">se zájmem hrát cizí postavu — příšeru (např. skřet, kostlivec, vlci...)</label>
                                     </div>
                                     <div class="form-check">
-                                        <input class="form-check-input" type="checkbox" name="AdultRole_OrganizationHelper" value="true" id="ar-org" checked="@attendeeInput.AdultRole_OrganizationHelper" />
+                                        <InputCheckbox @bind-Value="attendeeInput.AdultRole_OrganizationHelper" class="form-check-input" id="ar-org" />
                                         <label class="form-check-label" for="ar-org">se zájmem pomoci organizaci (ve městech hráčů jako obchodník, či příručí)</label>
                                     </div>
                                     <div class="form-check">
-                                        <input class="form-check-input" type="checkbox" name="AdultRole_TechSupport" value="true" id="ar-tech" checked="@attendeeInput.AdultRole_TechSupport" />
+                                        <InputCheckbox @bind-Value="attendeeInput.AdultRole_TechSupport" class="form-check-input" id="ar-tech" />
                                         <label class="form-check-label" for="ar-tech">se zájmem pomoci s technickou organizací (chystání svačiny, rozvoz jídla, spojka...)</label>
                                     </div>
                                     <div class="form-check">
-                                        <input class="form-check-input" type="checkbox" name="AdultRole_RangerLeader" value="true" id="ar-ranger" checked="@attendeeInput.AdultRole_RangerLeader" />
+                                        <InputCheckbox @bind-Value="attendeeInput.AdultRole_RangerLeader" class="form-check-input" id="ar-ranger" />
                                         <label class="form-check-label" for="ar-ranger">se zájmem vést skupinku menších dětí (hraničář)</label>
                                     </div>
                                     <div class="form-check">
-                                        <input class="form-check-input" type="checkbox" name="AdultRole_Spectator" value="true" id="ar-spectator" checked="@attendeeInput.AdultRole_Spectator" />
+                                        <InputCheckbox @bind-Value="attendeeInput.AdultRole_Spectator" class="form-check-input" id="ar-spectator" />
                                         <label class="form-check-label" for="ar-spectator">pouze přihlížející</label>
                                     </div>
                                 </div>
@@ -309,12 +309,17 @@ else
 
                                 <div class="col-12">
                                     <label class="form-label" for="attendee-note">Poznámka pro organizátory</label>
-                                    <div class="form-text mb-1">
+                                    <div class="form-text mb-1" id="attendee-note-hint-player">
                                         Zejména v jaké skupině a národu děti chtějí nebo naopak nechtějí být.
                                         Napište i pokud je vám to jedno — velmi nám to usnadní třídění, aby byly národy vyrovnané.
                                     </div>
+                                    <div class="form-text mb-1 d-none" id="attendee-note-hint-adult">
+                                        Pokud chcete být konkrétnější, s čím chcete pomáhat nebo jaká příšera jste byli minule.
+                                    </div>
                                     <textarea id="attendee-note" name="AttendeeNote" class="form-control" rows="3"
-                                              placeholder="např. Chceme být s kamarády z oddílu ve stejném národě.">@attendeeInput.AttendeeNote</textarea>
+                                              placeholder="např. Chceme být s kamarády z oddílu ve stejném národě."
+                                              data-placeholder-player="např. Chceme být s kamarády z oddílu ve stejném národě."
+                                              data-placeholder-adult="např. Rád bych byl opět pavoukem na paloučku.">@attendeeInput.AttendeeNote</textarea>
                                 </div>
 
                                 <div class="col-12">
@@ -414,7 +419,7 @@ else
                                     <button type="button" class="btn btn-outline-secondary mt-4" @onclick="CancelEditing">Zrušit</button>
                                 }
                             </div>
-                        </form>
+                        </EditForm>
                     </div>
                 </section>
 
@@ -563,6 +568,17 @@ else
 
                     @if (submission.Status == SubmissionStatus.Draft)
                     {
+                        <div class="mb-3">
+                            <label class="form-label" for="donation-summary">Dobrovolný příspěvek (Kč)</label>
+                            <EditForm Model="contactInput" OnValidSubmit="SaveContactAsync" FormName="donation">
+                                <div class="input-group">
+                                    <InputNumber id="donation-summary" @bind-Value="contactInput.VoluntaryDonation" class="form-control" placeholder="0" data-testid="voluntary-donation" />
+                                    <button type="submit" class="btn btn-outline-primary">Uložit</button>
+                                </div>
+                            </EditForm>
+                            <div class="form-text">Volitelný příspěvek nad rámec registrace. Děkujeme!</div>
+                        </div>
+
                         <div class="alert alert-light border">
                             Platební instrukce a QR se zobrazí až po odeslání finální přihlášky.
                         </div>
@@ -573,6 +589,14 @@ else
                                     class="btn btn-success w-100"
                                     data-testid="submit-submission">
                                 Odeslat přihlášku
+                            </button>
+                        </form>
+
+                        <form method="post" action="@($"/prihlasky/{SubmissionId}/smazat")"
+                              onsubmit="return confirm('Opravdu chcete smazat celou přihlášku? Tuto akci nelze vrátit.');">
+                            <AntiforgeryToken />
+                            <button type="submit" class="btn btn-outline-danger btn-sm mt-3" data-testid="delete-submission">
+                                Smazat přihlášku
                             </button>
                         </form>
                     }
@@ -626,6 +650,10 @@ document.addEventListener('change', e => {
     document.getElementById('character-name-section')?.classList.toggle('d-none', !isPlayer);
     document.getElementById('guardian-section')?.classList.toggle('d-none', !isPlayer);
     document.getElementById('adult-roles-section')?.classList.toggle('d-none', isPlayer);
+    document.getElementById('attendee-note-hint-player')?.classList.toggle('d-none', !isPlayer);
+    document.getElementById('attendee-note-hint-adult')?.classList.toggle('d-none', isPlayer);
+    const noteField = document.getElementById('attendee-note');
+    if (noteField) noteField.placeholder = noteField.dataset[isPlayer ? 'placeholderPlayer' : 'placeholderAdult'] || '';
 });
 </script>
 
@@ -756,6 +784,41 @@ document.addEventListener('change', e => {
         {
             await SubmissionService.UpdateContactAsync(SubmissionId, user.Id, contactInput);
             statusMessage = "Kontaktní údaje byly uložené.";
+            await LoadAsync();
+        }
+        catch (System.ComponentModel.DataAnnotations.ValidationException ex)
+        {
+            errorMessage = ex.Message;
+        }
+    }
+
+    private async Task SaveAttendeeAsync()
+    {
+        errorMessage = null;
+        statusMessage = null;
+
+        var user = await GetCurrentUserAsync();
+        if (user is null)
+        {
+            errorMessage = "Nepodařilo se načíst přihlášeného uživatele.";
+            return;
+        }
+
+        try
+        {
+            if (editingRegistrationId is not null)
+            {
+                await SubmissionService.UpdateAttendeeAsync(SubmissionId, editingRegistrationId.Value, user.Id, attendeeInput);
+                statusMessage = "Účastník byl upraven.";
+                editingRegistrationId = null;
+            }
+            else
+            {
+                await SubmissionService.AddAttendeeAsync(SubmissionId, user.Id, attendeeInput);
+                statusMessage = "Účastník byl přidán.";
+            }
+            attendeeInput = CreateDefaultAttendeeInput(null);
+            personSuggestion = null;
             await LoadAsync();
         }
         catch (System.ComponentModel.DataAnnotations.ValidationException ex)
