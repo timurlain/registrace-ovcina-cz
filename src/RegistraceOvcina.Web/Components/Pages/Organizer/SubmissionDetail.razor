@@ -167,6 +167,12 @@ else
                         <dt class="col-7 text-secondary">Očekávaná částka</dt>
                         <dd class="col-5 text-end fw-semibold">@detail.ExpectedTotalAmount.ToString("0.00") Kč</dd>
 
+                        @if (detail.VoluntaryDonation > 0)
+                        {
+                            <dt class="col-7 text-secondary fst-italic">z toho příspěvek</dt>
+                            <dd class="col-5 text-end fst-italic">@detail.VoluntaryDonation.ToString("0.00") Kč</dd>
+                        }
+
                         <dt class="col-7 text-secondary">Uhrazeno</dt>
                         <dd class="col-5 text-end fw-semibold">@detail.PaidAmount.ToString("0.00") Kč</dd>
 
@@ -181,6 +187,35 @@ else
                             <dd class="col-5 text-end">@detail.PaymentVariableSymbol</dd>
                         }
                     </dl>
+
+                    @if (detail.PriceBreakdown.Count > 0)
+                    {
+                        <hr class="my-3" />
+                        <h3 class="h6 mb-2">Rozpis platby</h3>
+                        <table class="table table-sm small mb-0">
+                            <tbody>
+                                @foreach (var line in detail.PriceBreakdown)
+                                {
+                                    <tr>
+                                        <td class="text-secondary">
+                                            @line.Label
+                                            @if (line.UnitPrice > 0)
+                                            {
+                                                <span class="text-muted">(@line.Count × @line.UnitPrice.ToString("0") Kč)</span>
+                                            }
+                                        </td>
+                                        <td class="text-end">@line.Total.ToString("0.00") Kč</td>
+                                    </tr>
+                                }
+                            </tbody>
+                            <tfoot>
+                                <tr class="fw-semibold">
+                                    <td>Celkem</td>
+                                    <td class="text-end">@detail.ExpectedTotalAmount.ToString("0.00") Kč</td>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    }
                 </div>
             </section>
 

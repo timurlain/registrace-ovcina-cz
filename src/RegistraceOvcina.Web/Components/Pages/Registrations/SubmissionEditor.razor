@@ -33,7 +33,7 @@ else
 
     @if (!string.IsNullOrWhiteSpace(statusMessage))
     {
-        <div class="toast-success" id="success-toast">@statusMessage</div>
+        <div class="toast-success" id="success-toast" role="status">@statusMessage</div>
     }
 
     @if (!string.IsNullOrWhiteSpace(errorMessage))
@@ -131,9 +131,30 @@ else
                                                 {
                                                     <div class="small">Postava: <strong>@attendee.CharacterName</strong></div>
                                                 }
-                                                @if (attendee.LodgingPreference is { } lp)
+                                                @{
+                                                    var attendeeFoodOrders = submission.ExistingFoodOrders
+                                                        .Where(x => x.RegistrationId == attendee.RegistrationId).ToList();
+                                                }
+                                                @if (attendeeFoodOrders.Count > 0 || attendee.LodgingPreference is not null)
                                                 {
-                                                    <div class="small">Ubytování: @GetLodgingLabel(lp)</div>
+                                                    <div class="small">
+                                                        @if (attendeeFoodOrders.Count > 0)
+                                                        {
+                                                            <span>Strava: @string.Join(", ", attendeeFoodOrders.Select(fo => {
+                                                                var day = submission.MealDays.FirstOrDefault(d => d.DayUtc.Date == fo.MealDayUtc.Date);
+                                                                var option = day?.Options.FirstOrDefault(o => o.Id == fo.MealOptionId);
+                                                                return option?.Name ?? "?";
+                                                            }))</span>
+                                                        }
+                                                        @if (attendeeFoodOrders.Count > 0 && attendee.LodgingPreference is not null)
+                                                        {
+                                                            <span> · </span>
+                                                        }
+                                                        @if (attendee.LodgingPreference is { } lp)
+                                                        {
+                                                            <span>Ubytování: @GetLodgingLabel(lp)</span>
+                                                        }
+                                                    </div>
                                                 }
                                                 @if (!string.IsNullOrWhiteSpace(attendee.AttendeeNote))
                                                 {
@@ -341,20 +362,27 @@ else
                                                         <div class="fw-semibold small mb-1">@day.DayLabel</div>
                                                         @foreach (var option in day.Options)
                                                         {
+                                                            var capturedTicks = dayTicks;
+                                                            var capturedOptionId = option.Id;
                                                             var radioId = $"meal_{dayTicks}_{option.Id}";
                                                             <div class="form-check">
                                                                 <input class="form-check-input" type="radio"
-                                                                       name="@fieldName" value="@option.Id" id="@radioId"
-                                                                       checked="@(selectedId == option.Id)" />
+                                                                       name="@fieldName" id="@radioId"
+                                                                       checked="@(selectedId == option.Id)"
+                                                                       @onchange="() => attendeeInput.MealSelections[capturedTicks] = capturedOptionId" />
                                                                 <label class="form-check-label" for="@radioId">
                                                                     @option.Name (@option.Price.ToString("0") Kč)
                                                                 </label>
                                                             </div>
                                                         }
+                                                        @{
+                                                            var capturedTicksNone = dayTicks;
+                                                        }
                                                         <div class="form-check">
                                                             <input class="form-check-input" type="radio"
-                                                                   name="@fieldName" value="" id="@($"meal_{dayTicks}_none")"
-                                                                   checked="@(selectedId is null)" />
+                                                                   name="@fieldName" id="@($"meal_{dayTicks}_none")"
+                                                                   checked="@(selectedId is null)"
+                                                                   @onchange="() => attendeeInput.MealSelections[capturedTicksNone] = null" />
                                                             <label class="form-check-label" for="@($"meal_{dayTicks}_none")">
                                                                 Bez stravování
                                                             </label>
@@ -366,22 +394,24 @@ else
 
                                         <div class="@(submission.MealDays.Count > 0 && submission.CanEditMeals ? "col-md-6" : "col-12")">
                                             <label class="form-label">Ubytování</label>
-                                            <div class="form-check">
-                                                <input class="form-check-input" type="radio" name="LodgingPreference" id="lodge-indoor" value="Indoor" checked="@(attendeeInput.LodgingPreference == LodgingPreference.Indoor)" />
-                                                <label class="form-check-label" for="lodge-indoor">Chci spát uvnitř (budova)</label>
-                                            </div>
-                                            <div class="form-check">
-                                                <input class="form-check-input" type="radio" name="LodgingPreference" id="lodge-tent" value="OwnTent" checked="@(attendeeInput.LodgingPreference == LodgingPreference.OwnTent)" />
-                                                <label class="form-check-label" for="lodge-tent">Mám vlastní stan</label>
-                                            </div>
-                                            <div class="form-check">
-                                                <input class="form-check-input" type="radio" name="LodgingPreference" id="lodge-outdoor" value="CampOutdoor" checked="@(attendeeInput.LodgingPreference == LodgingPreference.CampOutdoor)" />
-                                                <label class="form-check-label" for="lodge-outdoor">Mohu spát venku / pod širákem</label>
-                                            </div>
-                                            <div class="form-check">
-                                                <input class="form-check-input" type="radio" name="LodgingPreference" id="lodge-none" value="NotStaying" checked="@(attendeeInput.LodgingPreference == LodgingPreference.NotStaying)" />
-                                                <label class="form-check-label" for="lodge-none">Neplánuji přenocovat</label>
-                                            </div>
+                                            <InputRadioGroup @bind-Value="attendeeInput.LodgingPreference">
+                                                <div class="form-check">
+                                                    <InputRadio class="form-check-input" id="lodge-indoor" Value="@((LodgingPreference?)LodgingPreference.Indoor)" />
+                                                    <label class="form-check-label" for="lodge-indoor">Chci spát uvnitř (budova)</label>
+                                                </div>
+                                                <div class="form-check">
+                                                    <InputRadio class="form-check-input" id="lodge-tent" Value="@((LodgingPreference?)LodgingPreference.OwnTent)" />
+                                                    <label class="form-check-label" for="lodge-tent">Mám vlastní stan</label>
+                                                </div>
+                                                <div class="form-check">
+                                                    <InputRadio class="form-check-input" id="lodge-outdoor" Value="@((LodgingPreference?)LodgingPreference.CampOutdoor)" />
+                                                    <label class="form-check-label" for="lodge-outdoor">Mohu spát venku / pod širákem</label>
+                                                </div>
+                                                <div class="form-check">
+                                                    <InputRadio class="form-check-input" id="lodge-none" Value="@((LodgingPreference?)LodgingPreference.NotStaying)" />
+                                                    <label class="form-check-label" for="lodge-none">Neplánuji přenocovat</label>
+                                                </div>
+                                            </InputRadioGroup>
                                         </div>
                                     </div>
                                 </div>
@@ -683,6 +713,10 @@ document.addEventListener('change', e => {
     const noteField = document.getElementById('attendee-note');
     if (noteField) noteField.placeholder = noteField.dataset[isPlayer ? 'placeholderPlayer' : 'placeholderAdult'] || '';
 });
+
+function scrollToValidationErrors() {
+    document.querySelector('.validation-errors')?.scrollIntoView({behavior:'smooth',block:'center'});
+}
 </script>
 
 @code {
@@ -802,6 +836,7 @@ document.addEventListener('change', e => {
         if (age >= 18)
         {
             attendeeInput.AttendeeType = AttendeeType.Adult;
+            attendeeInput.PlayerSubType = null;
         }
         else if (age > 0)
         {
@@ -818,7 +853,7 @@ document.addEventListener('change', e => {
 
     private async Task ScrollToErrors()
     {
-        await JS.InvokeVoidAsync("eval", "document.querySelector('.validation-errors')?.scrollIntoView({behavior:'smooth',block:'center'})");
+        await JS.InvokeVoidAsync("scrollToValidationErrors");
     }
 
     private async Task SaveContactAsync()

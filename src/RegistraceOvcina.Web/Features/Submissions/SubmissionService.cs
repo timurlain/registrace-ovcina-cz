@@ -162,7 +162,7 @@ public sealed class SubmissionService(
         var nowUtc = timeProvider.GetUtcNow().UtcDateTime;
 
         // Price breakdown only for drafts (current prices); submitted uses persisted total
-        var pricingResult = submission.Status == SubmissionStatus.Draft
+        var pricingResult = submission.Status != SubmissionStatus.Cancelled
             ? pricingService.CalculateBreakdown(submission.Game, submission.Registrations, submission.VoluntaryDonation)
             : null;
 
