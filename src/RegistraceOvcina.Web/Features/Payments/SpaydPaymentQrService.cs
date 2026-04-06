@@ -37,7 +37,16 @@ public sealed class SpaydPaymentQrService
 
         var qrGenerator = new QRCodeGenerator();
         using var qrData = qrGenerator.CreateQrCode(spaydPayload, QRCodeGenerator.ECCLevel.Q);
-        var svgMarkup = new SvgQRCode(qrData).GetGraphic(8);
+        var svgQr = new SvgQRCode(qrData);
+        var svgMarkup = svgQr.GetGraphic(8);
+
+        // QRCoder outputs SVG with fixed width/height but no viewBox.
+        // Add viewBox so the SVG can scale responsively with CSS.
+        var moduleCount = qrData.ModuleMatrix.Count;
+        var totalSize = moduleCount * 8;
+        svgMarkup = svgMarkup.Replace(
+            $"width=\"{totalSize}\" height=\"{totalSize}\"",
+            $"width=\"{totalSize}\" height=\"{totalSize}\" viewBox=\"0 0 {totalSize} {totalSize}\"");
 
         return new PaymentQrModel(
             spaydPayload,
