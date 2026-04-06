@@ -48,14 +48,14 @@ else
             </section>
         </div>
 
-        @if (replied)
+        @if (replied == 1)
         {
             <div class="col-12">
                 <div class="alert alert-success mb-0">Odpověď byla odeslána.</div>
             </div>
         }
 
-        @if (replyError)
+        @if (replyError == 1)
         {
             <div class="col-12">
                 <div class="alert alert-danger mb-0">Odpověď se nepodařilo odeslat.</div>
@@ -170,16 +170,16 @@ else
     public int messageId { get; set; }
 
     [SupplyParameterFromQuery(Name = "linked")]
-    private bool linked { get; set; }
+    private int? linked { get; set; }
 
     [SupplyParameterFromQuery(Name = "unlinked")]
-    private bool unlinked { get; set; }
+    private int? unlinked { get; set; }
 
     [SupplyParameterFromQuery(Name = "replied")]
-    private bool replied { get; set; }
+    private int? replied { get; set; }
 
     [SupplyParameterFromQuery(Name = "replyError")]
-    private bool replyError { get; set; }
+    private int? replyError { get; set; }
 
     private EmailMessage? message;
     private List<SubmissionLookupItem>? submissions;

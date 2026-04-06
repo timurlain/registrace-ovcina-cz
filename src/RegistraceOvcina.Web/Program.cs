@@ -946,6 +946,32 @@ public class Program
                 })
             .RequireAuthorization(AuthorizationPolicies.StaffOnly);
         app.MapPost(
+                "/organizace/posta/odeslat",
+                async ([FromForm] string toEmail, [FromForm] string subject, [FromForm] string body, HttpContext httpContext, UserManager<ApplicationUser> userManager, InboxService inboxService) =>
+                {
+                    var user = await userManager.GetUserAsync(httpContext.User);
+                    if (user is null)
+                    {
+                        return Results.LocalRedirect($"/Account/Login?ReturnUrl={Uri.EscapeDataString("/organizace/posta")}");
+                    }
+
+                    if (string.IsNullOrWhiteSpace(toEmail) || string.IsNullOrWhiteSpace(subject) || string.IsNullOrWhiteSpace(body))
+                    {
+                        return Results.LocalRedirect("/organizace/posta");
+                    }
+
+                    try
+                    {
+                        await inboxService.SendNewMessageAsync(toEmail.Trim(), subject.Trim(), body.Trim(), null, user.Id, httpContext.RequestAborted);
+                        return Results.LocalRedirect("/organizace/posta?sent=1");
+                    }
+                    catch (Exception ex) when (ex is InvalidOperationException or HttpRequestException or TaskCanceledException)
+                    {
+                        return Results.LocalRedirect("/organizace/posta?sendError=1");
+                    }
+                })
+            .RequireAuthorization(AuthorizationPolicies.StaffOnly);
+        app.MapPost(
                 "/organizace/osoby/{personId:int}/propojit-ucet",
                 async ([FromForm] string userId, int personId, HttpContext httpContext, UserManager<ApplicationUser> userManager, PeopleReviewService peopleReviewService) =>
                 {
