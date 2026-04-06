@@ -48,6 +48,9 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
             entity.Property(x => x.Phone).HasMaxLength(40);
             entity.Property(x => x.Notes).HasMaxLength(4000);
             entity.HasIndex(x => new { x.LastName, x.FirstName, x.BirthYear });
+            entity.HasIndex(x => x.Email)
+                .IsUnique()
+                .HasFilter("\"Email\" IS NOT NULL AND \"Email\" != ''");
         });
 
         builder.Entity<Game>(entity =>
