@@ -300,6 +300,15 @@ public sealed class SubmissionService(
             input.ContactEmail = null;
         }
 
+        // Determine if this email should be stored on Person.Email:
+        // - NOT for minors (children use parent's email as contact, not their own identity)
+        // - NOT if it matches the submission's PrimaryEmail (that's the registrant's email)
+        var isMinor = pricingService.RequiresGuardianData(input.BirthYear);
+        var contactEmail = string.IsNullOrWhiteSpace(input.ContactEmail) ? null : input.ContactEmail.Trim();
+        var isPrimaryEmail = contactEmail is not null
+            && string.Equals(contactEmail, submission.PrimaryEmail, StringComparison.OrdinalIgnoreCase);
+        var personEmail = (!isMinor && !isPrimaryEmail) ? contactEmail : null;
+
         Person person;
 
         if (input.UseExistingPersonId.HasValue)
@@ -307,25 +316,37 @@ public sealed class SubmissionService(
             // Flag set — reuse specified person, update birth year
             person = await db.People.FindAsync([input.UseExistingPersonId.Value], cancellationToken)
                 ?? throw new ValidationException("Zadaná osoba neexistuje.");
+
+            // Guard: prevent duplicate person in same submission
+            if (submission.Registrations.Any(r => r.PersonId == person.Id && r.Status == RegistrationStatus.Active))
+            {
+                throw new ValidationException("Tato osoba je již v přihlášce zaregistrovaná.");
+            }
+
             person.BirthYear = input.BirthYear;
             person.UpdatedAtUtc = nowUtc;
         }
-        else if (!string.IsNullOrWhiteSpace(input.ContactEmail))
+        else if (personEmail is not null)
         {
-            // Check for email collision
-            var normalizedEmail = input.ContactEmail.Trim().ToLowerInvariant();
+            // Check for email collision (only when we'd actually set Person.Email)
+            var normalizedEmail = personEmail.ToLowerInvariant();
             var existingPerson = await db.People
                 .FirstOrDefaultAsync(p => !p.IsDeleted && p.Email != null
                     && p.Email.ToLower() == normalizedEmail, cancellationToken);
 
             if (existingPerson is not null)
             {
+                // Guard: prevent duplicate person in same submission
+                if (submission.Registrations.Any(r => r.PersonId == existingPerson.Id && r.Status == RegistrationStatus.Active))
+                {
+                    throw new ValidationException("Tato osoba je již v přihlášce zaregistrovaná.");
+                }
+
                 var nameMatch = string.Equals(existingPerson.FirstName, input.FirstName.Trim(), StringComparison.OrdinalIgnoreCase)
                     && string.Equals(existingPerson.LastName, input.LastName.Trim(), StringComparison.OrdinalIgnoreCase);
 
                 if (nameMatch)
                 {
-                    // Same name — silently reuse, update birth year
                     person = existingPerson;
                     person.BirthYear = input.BirthYear;
                     person.UpdatedAtUtc = nowUtc;
@@ -333,18 +354,17 @@ public sealed class SubmissionService(
                 else
                 {
                     throw new EmailConflictException(
-                        existingPerson.Id, existingPerson.FirstName, existingPerson.LastName, input.ContactEmail.Trim());
+                        existingPerson.Id, existingPerson.FirstName, existingPerson.LastName, personEmail);
                 }
             }
             else
             {
-                // No collision — create new person
                 person = new Person
                 {
                     FirstName = input.FirstName.Trim(),
                     LastName = input.LastName.Trim(),
                     BirthYear = input.BirthYear,
-                    Email = input.ContactEmail.Trim(),
+                    Email = personEmail,
                     Phone = string.IsNullOrWhiteSpace(input.ContactPhone) ? null : input.ContactPhone.Trim(),
                     CreatedAtUtc = nowUtc,
                     UpdatedAtUtc = nowUtc
@@ -353,7 +373,6 @@ public sealed class SubmissionService(
         }
         else
         {
-            // No email — create new person
             person = new Person
             {
                 FirstName = input.FirstName.Trim(),
@@ -459,8 +478,14 @@ public sealed class SubmissionService(
             input.ContactEmail = null;
         }
 
-        // Check email collision when email changes
-        var newEmail = string.IsNullOrWhiteSpace(input.ContactEmail) ? null : input.ContactEmail.Trim();
+        // Determine Person.Email: not for minors, not if matches PrimaryEmail
+        var isMinor = pricingService.RequiresGuardianData(input.BirthYear);
+        var contactEmail = string.IsNullOrWhiteSpace(input.ContactEmail) ? null : input.ContactEmail.Trim();
+        var isPrimaryEmail = contactEmail is not null
+            && string.Equals(contactEmail, submission.PrimaryEmail, StringComparison.OrdinalIgnoreCase);
+        var newEmail = (!isMinor && !isPrimaryEmail) ? contactEmail : null;
+
+        // Check email collision when Person.Email would change
         if (newEmail is not null && !string.Equals(registration.Person.Email, newEmail, StringComparison.OrdinalIgnoreCase))
         {
             var normalizedEmail = newEmail.ToLowerInvariant();
@@ -470,12 +495,17 @@ public sealed class SubmissionService(
 
             if (existingPerson is not null)
             {
+                // Guard: prevent duplicate person in same submission
+                if (submission.Registrations.Any(r => r.PersonId == existingPerson.Id && r.Status == RegistrationStatus.Active && r.Id != registration.Id))
+                {
+                    throw new ValidationException("Tato osoba je již v přihlášce zaregistrovaná.");
+                }
+
                 var nameMatch = string.Equals(existingPerson.FirstName, input.FirstName.Trim(), StringComparison.OrdinalIgnoreCase)
                     && string.Equals(existingPerson.LastName, input.LastName.Trim(), StringComparison.OrdinalIgnoreCase);
 
                 if (nameMatch || input.UseExistingPersonId.HasValue)
                 {
-                    // Same name or user chose to reuse — clear email on old person, reassign to existing
                     registration.Person.Email = null;
                     registration.Person.UpdatedAtUtc = timeProvider.GetUtcNow().UtcDateTime;
 
@@ -483,7 +513,7 @@ public sealed class SubmissionService(
                     existingPerson.UpdatedAtUtc = timeProvider.GetUtcNow().UtcDateTime;
                     registration.PersonId = existingPerson.Id;
                     registration.Person = existingPerson;
-                    newEmail = existingPerson.Email; // keep existing email, skip overwrite below
+                    newEmail = existingPerson.Email;
                 }
                 else
                 {
