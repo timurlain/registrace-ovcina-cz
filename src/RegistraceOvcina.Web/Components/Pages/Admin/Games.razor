@@ -79,6 +79,14 @@
                             <input id="helper-price" name="@nameof(CreateGameInput.AdultHelperBasePrice)" type="number" step="0.01" value="@CreateGameInput.FormatDecimal(input.AdultHelperBasePrice)" class="form-control" />
                         </div>
                         <div class="col-md-6">
+                            <label class="form-label" for="lodging-indoor-price">Ubytování uvnitř (Kč/osoba)</label>
+                            <input id="lodging-indoor-price" name="@nameof(CreateGameInput.LodgingIndoorPrice)" type="number" step="0.01" value="@CreateGameInput.FormatDecimal(input.LodgingIndoorPrice)" class="form-control" />
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label" for="lodging-outdoor-price">Ubytování venku/stan (Kč/osoba)</label>
+                            <input id="lodging-outdoor-price" name="@nameof(CreateGameInput.LodgingOutdoorPrice)" type="number" step="0.01" value="@CreateGameInput.FormatDecimal(input.LodgingOutdoorPrice)" class="form-control" />
+                        </div>
+                        <div class="col-md-6">
                             <label class="form-label" for="target-players">Cílový počet hráčů</label>
                             <input id="target-players" name="@nameof(CreateGameInput.TargetPlayerCountTotal)" type="number" value="@input.TargetPlayerCountTotal" class="form-control" />
                         </div>

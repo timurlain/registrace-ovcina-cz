@@ -181,6 +181,8 @@ public sealed class SubmissionService(
                 && nowUtc <= submission.Game.MealOrderingClosesAtUtc,
             BankAccount = submission.Game.BankAccount,
             BankAccountName = submission.Game.BankAccountName,
+            LodgingIndoorPrice = submission.Game.LodgingIndoorPrice,
+            LodgingOutdoorPrice = submission.Game.LodgingOutdoorPrice,
             Status = submission.Status,
             SubmittedAtUtc = submission.SubmittedAtUtc,
             PrimaryContactName = submission.PrimaryContactName,
@@ -979,6 +981,8 @@ public sealed class SubmissionEditorViewModel
     public bool CanEditMeals { get; init; }
     public string BankAccount { get; init; } = "";
     public string BankAccountName { get; init; } = "";
+    public decimal LodgingIndoorPrice { get; init; }
+    public decimal LodgingOutdoorPrice { get; init; }
     public SubmissionStatus Status { get; init; }
     public DateTime? SubmittedAtUtc { get; init; }
     public string PrimaryContactName { get; init; } = "";
