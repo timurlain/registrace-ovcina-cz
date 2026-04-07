@@ -42,6 +42,24 @@ else
         <div class="alert alert-danger" role="alert">@errorMessage</div>
     }
 
+    @if (emailConflict is not null)
+    {
+        <div class="alert alert-warning" role="alert">
+            <p class="mb-2">
+                E-mail <strong>@emailConflict.ConflictEmail</strong> je přiřazený k osobě
+                <strong>@emailConflict.ExistingFirstName @emailConflict.ExistingLastName</strong>.
+            </p>
+            <div class="d-flex gap-2">
+                <button class="btn btn-sm btn-primary" @onclick="UseExistingPerson">
+                    Použít osobu @emailConflict.ExistingFirstName @emailConflict.ExistingLastName
+                </button>
+                <button class="btn btn-sm btn-outline-secondary" @onclick="ClearEmailAndRetry">
+                    Smazat e-mail
+                </button>
+            </div>
+        </div>
+    }
+
     <div class="row g-4">
         <div class="col-xl-8">
             @if (submission.Status == SubmissionStatus.Submitted)
@@ -753,6 +771,7 @@ function scrollToValidationErrors() {
     private string? statusMessage;
     private SubmissionEditorViewModel? submission;
     private PersonSuggestion? personSuggestion;
+    private EmailConflictException? emailConflict;
 
     protected override async Task OnParametersSetAsync()
     {
@@ -895,6 +914,7 @@ function scrollToValidationErrors() {
 
     private async Task SaveAttendeeAsync()
     {
+        emailConflict = null;
         errorMessage = null;
         statusMessage = null;
 
@@ -922,6 +942,11 @@ function scrollToValidationErrors() {
             personSuggestion = null;
             await LoadAsync();
             await JS.InvokeVoidAsync("eval", "window.scrollTo({top:0,behavior:'smooth'})");
+        }
+        catch (EmailConflictException ex)
+        {
+            emailConflict = ex;
+            errorMessage = null;
         }
         catch (System.ComponentModel.DataAnnotations.ValidationException ex)
         {
@@ -1005,6 +1030,22 @@ function scrollToValidationErrors() {
     private void DismissPersonSuggestion()
     {
         personSuggestion = null;
+    }
+
+    private async Task UseExistingPerson()
+    {
+        if (emailConflict is null) return;
+        attendeeInput.UseExistingPersonId = emailConflict.ExistingPersonId;
+        emailConflict = null;
+        await SaveAttendeeAsync();
+    }
+
+    private async Task ClearEmailAndRetry()
+    {
+        attendeeInput.ClearEmail = true;
+        attendeeInput.ContactEmail = "";
+        emailConflict = null;
+        await SaveAttendeeAsync();
     }
 
     private void StartEditing(AttendeeViewModel attendee)
