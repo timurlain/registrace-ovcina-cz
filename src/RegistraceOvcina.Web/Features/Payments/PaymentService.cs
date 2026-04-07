@@ -23,6 +23,7 @@ public sealed class PaymentService(
             .Include(x => x.Registrations).ThenInclude(r => r.Person)
             .Include(x => x.Registrations).ThenInclude(r => r.FoodOrders)
             .Include(x => x.Payments)
+            .AsSplitQuery()
             .Where(x => !x.IsDeleted && x.Status == SubmissionStatus.Submitted);
 
         if (gameId.HasValue)

@@ -22,6 +22,7 @@ public sealed class SubmissionService(
             .Include(x => x.Registrations).ThenInclude(r => r.Person)
             .Include(x => x.Registrations).ThenInclude(r => r.FoodOrders)
             .Include(x => x.Payments)
+            .AsSplitQuery()
             .Where(x => x.RegistrantUserId == userId)
             .OrderByDescending(x => x.LastEditedAtUtc)
             .ToListAsync(cancellationToken);

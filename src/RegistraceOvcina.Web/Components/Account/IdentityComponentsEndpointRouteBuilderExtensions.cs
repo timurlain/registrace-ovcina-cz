@@ -74,7 +74,17 @@ internal static class IdentityComponentsEndpointRouteBuilderExtensions
                     {
                         verifyUrl += $"&returnUrl={Uri.EscapeDataString(returnUrl)}";
                     }
-                    await emailService.SendMagicLinkAsync(loginToken.Email, verifyUrl);
+
+                    try
+                    {
+                        await emailService.SendMagicLinkAsync(loginToken.Email, verifyUrl);
+                    }
+                    catch (Exception ex)
+                    {
+                        var logger = context.RequestServices.GetRequiredService<ILoggerFactory>()
+                            .CreateLogger("MagicLink");
+                        logger.LogError(ex, "Failed to send magic link email to {Email}", loginToken.Email);
+                    }
                 }
             }
 

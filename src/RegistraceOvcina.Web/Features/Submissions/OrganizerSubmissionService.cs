@@ -29,6 +29,7 @@ public sealed class OrganizerSubmissionService(
             .Include(x => x.Registrations).ThenInclude(r => r.Person)
             .Include(x => x.Registrations).ThenInclude(r => r.FoodOrders)
             .Include(x => x.Payments)
+            .AsSplitQuery()
             .OrderByDescending(x => x.SubmittedAtUtc ?? x.LastEditedAtUtc)
             .ToListAsync(cancellationToken);
 

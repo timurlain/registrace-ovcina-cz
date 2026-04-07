@@ -181,6 +181,10 @@ jobs:
             secret_args+=("email-graph-client-secret=$Email__Graph__ClientSecret")
           fi
 
+          if [ -n "$AZURECOMMUNICATION__CONNECTIONSTRING" ]; then
+            secret_args+=("acs-connection-string=$AZURECOMMUNICATION__CONNECTIONSTRING")
+          fi
+
           az containerapp secret set -n "$AZURE_CONTAINER_APP_NAME" -g "$AZURE_RESOURCE_GROUP" \
             --secrets "${secret_args[@]}" \
             --output none
@@ -226,6 +230,13 @@ jobs:
             )
           fi
 
+          if [ -n "$AZURECOMMUNICATION__CONNECTIONSTRING" ]; then
+            env_args+=(
+              "AzureCommunication__ConnectionString=secretref:acs-connection-string"
+              "AzureCommunication__SenderAddress=$AZURECOMMUNICATION__SENDERADDRESS"
+            )
+          fi
+
           az containerapp update -n "$AZURE_CONTAINER_APP_NAME" -g "$AZURE_RESOURCE_GROUP" \
             --set-env-vars "${env_args[@]}" \
             --output none
@@ -242,6 +253,8 @@ jobs:
           EXTERNALAUTH__GOOGLE__CLIENTSECRET: ${{ secrets.EXTERNALAUTH__GOOGLE__CLIENTSECRET }}
           EXTERNALAUTH__SEZNAM__CLIENTID: ${{ secrets.EXTERNALAUTH__SEZNAM__CLIENTID }}
           EXTERNALAUTH__SEZNAM__CLIENTSECRET: ${{ secrets.EXTERNALAUTH__SEZNAM__CLIENTSECRET }}
+          AZURECOMMUNICATION__CONNECTIONSTRING: ${{ secrets.AZURECOMMUNICATION__CONNECTIONSTRING }}
+          AZURECOMMUNICATION__SENDERADDRESS: ${{ vars.AZURECOMMUNICATION__SENDERADDRESS }}
 
       - name: Verify latest revision is healthy
         shell: bash
