@@ -100,10 +100,13 @@ internal sealed partial class MailboxSyncService(
                 bodyText = bodyText[..20000];
             }
 
+            var isOutbound = !string.IsNullOrWhiteSpace(fromAddress)
+                && fromAddress.Equals(sharedMailbox, StringComparison.OrdinalIgnoreCase);
+
             var emailMessage = new EmailMessage
             {
                 MailboxItemId = msg.Id,
-                Direction = EmailDirection.Inbound,
+                Direction = isOutbound ? EmailDirection.Outbound : EmailDirection.Inbound,
                 From = fromAddress,
                 To = toAddresses,
                 Subject = msg.Subject ?? "",
@@ -111,11 +114,12 @@ internal sealed partial class MailboxSyncService(
                 ReceivedAtUtc = msg.ReceivedDateTime?.UtcDateTime,
             };
 
-            // Auto-link to person by sender email (in-memory lookup)
-            if (emailMessage.LinkedPersonId is null && !string.IsNullOrWhiteSpace(fromAddress))
+            // Auto-link to person: by sender for inbound, by recipient for outbound
+            var linkAddress = isOutbound ? toAddresses.Split(';', StringSplitOptions.TrimEntries).FirstOrDefault() : fromAddress;
+            if (emailMessage.LinkedPersonId is null && !string.IsNullOrWhiteSpace(linkAddress))
             {
-                var normalizedFrom = fromAddress.Trim().ToLowerInvariant();
-                if (emailToPersonId.TryGetValue(normalizedFrom, out var personId))
+                var normalizedLink = linkAddress.Trim().ToLowerInvariant();
+                if (emailToPersonId.TryGetValue(normalizedLink, out var personId))
                 {
                     emailMessage.LinkedPersonId = personId;
                 }
@@ -125,12 +129,23 @@ internal sealed partial class MailboxSyncService(
             newCount++;
         }
 
-        if (newCount > 0)
+        // Fix previously mistagged messages: any "Inbound" from the shared mailbox is actually Outbound
+        var mistagged = await dbContext.EmailMessages
+            .Where(e => e.Direction == EmailDirection.Inbound
+                && e.From.ToLower() == sharedMailbox.ToLower())
+            .ToListAsync(cancellationToken);
+
+        foreach (var msg2 in mistagged)
+        {
+            msg2.Direction = EmailDirection.Outbound;
+        }
+
+        if (newCount > 0 || mistagged.Count > 0)
         {
             await dbContext.SaveChangesAsync(cancellationToken);
         }
 
-        logger.LogInformation("Mailbox sync complete: {NewCount} new messages synced", newCount);
+        logger.LogInformation("Mailbox sync complete: {NewCount} new, {FixedCount} direction-fixed", newCount, mistagged.Count);
     }
 
     private static string StripHtml(string html)

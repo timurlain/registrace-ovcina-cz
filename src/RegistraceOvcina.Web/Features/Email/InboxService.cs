@@ -12,7 +12,7 @@ public sealed class InboxService(
     IHttpClientFactory? httpClientFactory = null,
     IGraphAccessTokenProvider? tokenProvider = null)
 {
-    public async Task<InboxPageResult> GetMessagesAsync(int page = 1, int pageSize = 25)
+    public async Task<InboxPageResult> GetMessagesAsync(int page = 1, int pageSize = 25, EmailDirection? directionFilter = null)
     {
         await using var db = await dbContextFactory.CreateDbContextAsync();
 
@@ -21,6 +21,11 @@ public sealed class InboxService(
             .Include(e => e.LinkedPerson)
             .OrderByDescending(e => e.ReceivedAtUtc ?? e.SentAtUtc)
             .AsNoTracking();
+
+        if (directionFilter.HasValue)
+        {
+            query = query.Where(e => e.Direction == directionFilter.Value);
+        }
 
         var totalCount = await query.CountAsync();
         var messages = await query

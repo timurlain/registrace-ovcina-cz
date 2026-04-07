@@ -7,7 +7,7 @@
 @inject InboxService InboxService
 @inject IOptions<MailboxEmailOptions> MailboxOptions
 
-<PageTitle>Příchozí pošta</PageTitle>
+<PageTitle>Pošta</PageTitle>
 
 @if (!MailboxOptions.Value.IsConfigured)
 {
@@ -36,8 +36,8 @@ else
                 <div class="card-body p-4">
                     <div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-end gap-3">
                         <div>
-                            <h1 class="h3 mb-2">Příchozí pošta</h1>
-                            <p class="text-secondary mb-0">Příchozí a odchozí zprávy ze sdílené poštovní schránky.</p>
+                            <h1 class="h3 mb-2">Pošta</h1>
+                            <p class="text-secondary mb-0">Zprávy ze sdílené poštovní schránky.</p>
                         </div>
                         <div class="d-flex gap-2">
                             @if (synced == 1)
@@ -97,6 +97,18 @@ else
         }
 
         <div class="col-12">
+            <ul class="nav nav-tabs mb-3">
+                <li class="nav-item">
+                    <a class="nav-link @(tab == "inbox" ? "active" : "")" href="/organizace/posta?tab=inbox">Příchozí</a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link @(tab == "sent" ? "active" : "")" href="/organizace/posta?tab=sent">Odesláno</a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link @(tab == "all" ? "active" : "")" href="/organizace/posta?tab=all">Vše</a>
+                </li>
+            </ul>
+
             <section class="card shadow-sm">
                 <div class="card-body p-4">
                     @if (result.Messages.Count == 0)
@@ -174,16 +186,16 @@ else
                             <nav aria-label="Stránkování">
                                 <ul class="pagination justify-content-center mb-0 mt-3">
                                     <li class="page-item @(result.HasPreviousPage ? "" : "disabled")">
-                                        <a class="page-link" href="/organizace/posta?page=@(page - 1)">Předchozí</a>
+                                        <a class="page-link" href="/organizace/posta?tab=@tab&page=@(page - 1)">Předchozí</a>
                                     </li>
                                     @for (var i = 1; i <= result.TotalPages; i++)
                                     {
                                         <li class="page-item @(i == page ? "active" : "")">
-                                            <a class="page-link" href="/organizace/posta?page=@i">@i</a>
+                                            <a class="page-link" href="/organizace/posta?tab=@tab&page=@i">@i</a>
                                         </li>
                                     }
                                     <li class="page-item @(result.HasNextPage ? "" : "disabled")">
-                                        <a class="page-link" href="/organizace/posta?page=@(page + 1)">Další</a>
+                                        <a class="page-link" href="/organizace/posta?tab=@tab&page=@(page + 1)">Další</a>
                                     </li>
                                 </ul>
                             </nav>
@@ -198,6 +210,9 @@ else
 @code {
     [SupplyParameterFromQuery(Name = "page")]
     private int page { get; set; } = 1;
+
+    [SupplyParameterFromQuery(Name = "tab")]
+    private string tab { get; set; } = "inbox";
 
     [SupplyParameterFromQuery(Name = "synced")]
     private int? synced { get; set; }
@@ -216,6 +231,13 @@ else
         showCompose = !showCompose;
     }
 
+    private EmailDirection? GetDirectionFilter() => tab switch
+    {
+        "sent" => EmailDirection.Outbound,
+        "all" => null,
+        _ => EmailDirection.Inbound
+    };
+
     protected override async Task OnParametersSetAsync()
     {
         if (!MailboxOptions.Value.IsConfigured)
@@ -224,6 +246,7 @@ else
         }
 
         if (page < 1) page = 1;
-        result = await InboxService.GetMessagesAsync(page);
+        if (string.IsNullOrWhiteSpace(tab)) tab = "inbox";
+        result = await InboxService.GetMessagesAsync(page, directionFilter: GetDirectionFilter());
     }
 }
