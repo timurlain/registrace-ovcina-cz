@@ -673,6 +673,18 @@ public sealed class SmokeTests : IClassFixture<AppFixture>
             State = WaitForSelectorState.Attached,
             Timeout = 5000
         });
+
+        // Dismiss announcement overlay if present
+        var overlay = page.Locator(".announcement-overlay");
+        if (await overlay.IsVisibleAsync())
+        {
+            await overlay.GetByText("Pokračovat").ClickAsync();
+            await overlay.WaitForAsync(new LocatorWaitForOptions
+            {
+                State = WaitForSelectorState.Hidden,
+                Timeout = 3000
+            });
+        }
     }
 
     private async Task AssertNoBlazorErrorsAsync(IPage page)
