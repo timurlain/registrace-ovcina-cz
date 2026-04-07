@@ -901,14 +901,14 @@ function scrollToValidationErrors() {
         catch (Microsoft.EntityFrameworkCore.DbUpdateException dbEx)
         {
             Logger.LogError(dbEx, "DB error saving contact for submission {SubmissionId}", SubmissionId);
-            errorMessage = dbEx.InnerException?.Message?.Contains("duplicate", StringComparison.OrdinalIgnoreCase) == true
+            errorMessage = dbEx.InnerException is Npgsql.PostgresException { SqlState: "23505" }
                 ? "Údaje se nepodařilo uložit — pravděpodobně duplicitní e-mail nebo telefon. Zkontrolujte prosím zadané údaje."
-                : $"Chyba při ukládání: {dbEx.InnerException?.Message ?? dbEx.Message}";
+                : "Údaje se nepodařilo uložit kvůli chybě databáze. Zkuste to prosím znovu později.";
         }
         catch (Exception ex)
         {
             Logger.LogError(ex, "Unexpected error saving contact for submission {SubmissionId}", SubmissionId);
-            errorMessage = $"Neočekávaná chyba: {ex.Message}";
+            errorMessage = "Došlo k neočekávané chybě při ukládání údajů. Zkuste to prosím znovu později.";
         }
     }
 
@@ -955,14 +955,14 @@ function scrollToValidationErrors() {
         catch (Microsoft.EntityFrameworkCore.DbUpdateException dbEx)
         {
             Logger.LogError(dbEx, "DB error saving attendee for submission {SubmissionId}", SubmissionId);
-            errorMessage = dbEx.InnerException?.Message?.Contains("duplicate", StringComparison.OrdinalIgnoreCase) == true
+            errorMessage = dbEx.InnerException is Npgsql.PostgresException { SqlState: "23505" }
                 ? "Účastníka se nepodařilo uložit — pravděpodobně duplicitní e-mail. Zkontrolujte prosím zadané údaje."
-                : $"Chyba při ukládání účastníka: {dbEx.InnerException?.Message ?? dbEx.Message}";
+                : "Účastníka se nepodařilo uložit. Zkuste to prosím znovu.";
         }
         catch (Exception ex)
         {
             Logger.LogError(ex, "Unexpected error saving attendee for submission {SubmissionId}", SubmissionId);
-            errorMessage = $"Neočekávaná chyba: {ex.Message}";
+            errorMessage = "Došlo k neočekávané chybě. Zkuste to prosím znovu.";
         }
     }
 

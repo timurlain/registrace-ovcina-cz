@@ -59,17 +59,23 @@ internal static class IdentityComponentsEndpointRouteBuilderExtensions
             [FromServices] AcsTransactionalEmailService emailService,
             HttpContext context) =>
         {
-            var loginToken = await magicLinkService.RequestMagicLinkAsync(email.Trim());
+            var trimmedEmail = email.Trim();
+            var isValidEmailInput = !string.IsNullOrWhiteSpace(trimmedEmail) && trimmedEmail.Length <= 256;
 
-            if (loginToken is not null)
+            if (isValidEmailInput)
             {
-                var baseUrl = $"{context.Request.Scheme}://{context.Request.Host}";
-                var verifyUrl = $"{baseUrl}/Account/VerifyMagicLink?token={loginToken.Token}";
-                if (!string.IsNullOrWhiteSpace(returnUrl))
+                var loginToken = await magicLinkService.RequestMagicLinkAsync(trimmedEmail);
+
+                if (loginToken is not null)
                 {
-                    verifyUrl += $"&returnUrl={Uri.EscapeDataString(returnUrl)}";
+                    var baseUrl = $"{context.Request.Scheme}://{context.Request.Host}";
+                    var verifyUrl = $"{baseUrl}/Account/VerifyMagicLink?token={loginToken.Token}";
+                    if (!string.IsNullOrWhiteSpace(returnUrl))
+                    {
+                        verifyUrl += $"&returnUrl={Uri.EscapeDataString(returnUrl)}";
+                    }
+                    await emailService.SendMagicLinkAsync(loginToken.Email, verifyUrl);
                 }
-                await emailService.SendMagicLinkAsync(loginToken.Email, verifyUrl);
             }
 
             // Always redirect to success (don't reveal whether email exists)
@@ -119,6 +125,11 @@ internal static class IdentityComponentsEndpointRouteBuilderExtensions
                 }
 
                 await userManager.AddToRoleAsync(user, RoleNames.Registrant);
+            }
+
+            if (!user.IsActive)
+            {
+                return Results.Redirect("/Account/Login?error=inactive");
             }
 
             user.LastLoginAtUtc = timeProvider.GetUtcNow().UtcDateTime;

@@ -54,7 +54,7 @@ public sealed class MagicLinkAuthService(
         var loginToken = await db.LoginTokens
             .FirstOrDefaultAsync(t => t.Token == token, ct);
 
-        if (loginToken is null || loginToken.IsUsed || loginToken.ExpiresAtUtc < DateTime.UtcNow)
+        if (loginToken is null || loginToken.IsUsed || loginToken.ExpiresAtUtc < timeProvider.GetUtcNow().UtcDateTime)
         {
             return null;
         }
