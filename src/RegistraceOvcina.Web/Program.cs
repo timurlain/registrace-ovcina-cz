@@ -110,6 +110,8 @@ public class Program
 
         builder.Services.ConfigureApplicationCookie(options =>
         {
+            options.ExpireTimeSpan = TimeSpan.FromDays(30);
+            options.SlidingExpiration = true;
             options.LoginPath = "/Account/Login";
             options.AccessDeniedPath = "/Account/AccessDenied";
         });
