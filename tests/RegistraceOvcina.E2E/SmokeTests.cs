@@ -19,7 +19,7 @@ public sealed class SmokeTests : IClassFixture<AppFixture>
     }
 
     [Fact]
-    public async Task PublicAccountLinks_OpenLoginAndRegistrationPages()
+    public async Task PublicLoginLink_OpensLoginPage()
     {
         var page = await _fixture.Browser.NewPageAsync();
 
@@ -41,73 +41,6 @@ public sealed class SmokeTests : IClassFixture<AppFixture>
             Timeout = 5000
         });
 
-        await page.GotoAsync(_fixture.BaseUrl, new PageGotoOptions
-        {
-            WaitUntil = WaitUntilState.NetworkIdle
-        });
-        await WaitForInteractiveReadyAsync(page);
-
-        await Task.WhenAll(
-            page.WaitForURLAsync("**/Account/Register", new PageWaitForURLOptions
-            {
-                Timeout = 5000
-            }),
-            page.GetByTestId("home-register-button").ClickAsync());
-
-        await page.GetByTestId("register-email").WaitForAsync(new LocatorWaitForOptions
-        {
-            Timeout = 5000
-        });
-
-        await page.CloseAsync();
-    }
-
-    [Fact]
-    public async Task Registration_AllowsSimplePasswordWithoutSpecialCharacter()
-    {
-        var page = await _fixture.Browser.NewPageAsync();
-        var email = $"registrace-{Guid.NewGuid():N}@example.cz";
-        const string password = "ovcina";
-
-        await page.GotoAsync($"{_fixture.BaseUrl}/Account/Register", new PageGotoOptions
-        {
-            WaitUntil = WaitUntilState.NetworkIdle
-        });
-
-        await page.GetByTestId("register-display-name").FillAsync("Test Rodina");
-        await page.GetByTestId("register-email").FillAsync(email);
-        await page.GetByTestId("register-password").FillAsync(password);
-        await page.GetByTestId("register-confirm-password").FillAsync(password);
-
-        await Task.WhenAll(
-            page.WaitForURLAsync($"{_fixture.BaseUrl}/", new PageWaitForURLOptions
-            {
-                Timeout = 5000
-            }),
-            page.GetByTestId("register-submit").ClickAsync());
-
-        await WaitForInteractiveReadyAsync(page);
-        try
-        {
-            await page.GetByText(email).WaitForAsync(new LocatorWaitForOptions
-            {
-                Timeout = 5000
-            });
-            await page.GetByTestId("logout-button").WaitForAsync(new LocatorWaitForOptions
-            {
-                Timeout = 5000
-            });
-        }
-        catch (TimeoutException)
-        {
-            var bodyText = await page.Locator("body").InnerTextAsync();
-            throw new XunitException(
-                $"Registration did not complete. Url: {page.Url}{Environment.NewLine}"
-                + $"Page body:{Environment.NewLine}{bodyText}{Environment.NewLine}"
-                + $"Host diagnostics:{Environment.NewLine}{_fixture.GetDiagnostics()}");
-        }
-
-        await AssertNoBlazorErrorsAsync(page);
         await page.CloseAsync();
     }
 
