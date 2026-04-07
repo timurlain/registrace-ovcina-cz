@@ -721,6 +721,12 @@ public class Program
                     {
                         return Results.LocalRedirect($"/prihlasky/{submissionId}?error={Uri.EscapeDataString(ex.Message)}");
                     }
+                    catch (Exception ex)
+                    {
+                        var logger = httpContext.RequestServices.GetRequiredService<ILoggerFactory>().CreateLogger("RegistrationEndpoints");
+                        logger.LogError(ex, "Unexpected error adding attendee to submission {SubmissionId}", submissionId);
+                        return Results.LocalRedirect($"/prihlasky/{submissionId}?error={Uri.EscapeDataString("Nastala neočekávaná chyba při přidávání účastníka. Zkuste to prosím znovu.")}");
+                    }
                 })
             .RequireAuthorization();
         app.MapPost(
