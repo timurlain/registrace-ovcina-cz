@@ -65,12 +65,49 @@ else
                     <tr data-testid="@($"payment-row-{item.SubmissionId}")">
                         <td>@(item.VariableSymbol ?? "—")</td>
                         <td>
-                            <div>@item.ContactName</div>
+                            <div><a href="/organizace/prihlasky/@item.SubmissionId" class="text-decoration-none">@item.ContactName</a></div>
                             <small class="text-secondary">@item.ContactEmail</small>
                         </td>
                         <td>@item.GameName</td>
                         <td class="text-end">
-                            @item.ExpectedTotal.ToString("0.00") Kč
+                            @if (item.PriceBreakdown is { Count: > 0 })
+                            {
+                                <span class="price-tooltip-wrap">
+                                    <span class="price-tooltip-trigger">@item.ExpectedTotal.ToString("0.00") Kč</span>
+                                    <span class="price-tooltip-content">
+                                        <table class="mb-0 w-100">
+                                            <tbody>
+                                                @foreach (var line in item.PriceBreakdown)
+                                                {
+                                                    <tr>
+                                                        <td class="text-start pe-3 text-nowrap">
+                                                            @line.Label
+                                                            @if (line.UnitPrice > 0)
+                                                            {
+                                                                <span class="text-muted">(@line.Count&times;@line.UnitPrice.ToString("0"))</span>
+                                                            }
+                                                        </td>
+                                                        <td class="text-end text-nowrap">@line.Total.ToString("0.00")&nbsp;Kč</td>
+                                                    </tr>
+                                                }
+                                            </tbody>
+                                            <tfoot>
+                                                <tr class="fw-semibold" style="border-top: 1px solid #dee2e6;">
+                                                    <td class="text-start pt-1">Celkem</td>
+                                                    <td class="text-end pt-1 text-nowrap">@item.ExpectedTotal.ToString("0.00")&nbsp;Kč</td>
+                                                </tr>
+                                            </tfoot>
+                                        </table>
+                                        <div class="text-center mt-2">
+                                            <a href="/organizace/prihlasky/@item.SubmissionId" class="small">Zobrazit přihlášku &rarr;</a>
+                                        </div>
+                                    </span>
+                                </span>
+                            }
+                            else
+                            {
+                                @item.ExpectedTotal.ToString("0.00") <text>Kč</text>
+                            }
                             @if (item.VoluntaryDonation > 0)
                             {
                                 <br /><span class="badge text-bg-light text-muted fw-normal">z toho příspěvek: @item.VoluntaryDonation.ToString("0.00") Kč</span>
@@ -136,6 +173,51 @@ else
 {
     <div class="alert alert-danger mt-3" role="alert">@errorMessage</div>
 }
+
+<style>
+    .price-tooltip-wrap {
+        position: relative;
+        display: inline-block;
+    }
+    .price-tooltip-trigger {
+        cursor: help;
+        border-bottom: 1px dotted #6c757d;
+    }
+    .price-tooltip-content {
+        display: none;
+        position: absolute;
+        right: 0;
+        bottom: calc(100% + 6px);
+        background: #fff;
+        border: 1px solid #dee2e6;
+        border-radius: 8px;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, .15);
+        padding: 10px 14px;
+        min-width: 300px;
+        z-index: 1050;
+        font-size: 0.82rem;
+        line-height: 1.5;
+    }
+    .price-tooltip-content::after {
+        content: '';
+        position: absolute;
+        top: 100%;
+        right: 20px;
+        border: 6px solid transparent;
+        border-top-color: #fff;
+    }
+    .price-tooltip-content::before {
+        content: '';
+        position: absolute;
+        top: 100%;
+        right: 19px;
+        border: 7px solid transparent;
+        border-top-color: #dee2e6;
+    }
+    .price-tooltip-wrap:hover .price-tooltip-content {
+        display: block;
+    }
+</style>
 
 @code {
     [SupplyParameterFromQuery(Name = "gameId")]

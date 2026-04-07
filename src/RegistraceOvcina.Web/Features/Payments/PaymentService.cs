@@ -19,6 +19,10 @@ public sealed class PaymentService(
 
         var query = db.RegistrationSubmissions
             .AsNoTracking()
+            .Include(x => x.Game)
+            .Include(x => x.Registrations).ThenInclude(r => r.Person)
+            .Include(x => x.Registrations).ThenInclude(r => r.FoodOrders)
+            .Include(x => x.Payments)
             .Where(x => !x.IsDeleted && x.Status == SubmissionStatus.Submitted);
 
         if (gameId.HasValue)
@@ -26,46 +30,42 @@ public sealed class PaymentService(
             query = query.Where(x => x.GameId == gameId.Value);
         }
 
-        var projected = query
+        var submissions = await query
             .OrderByDescending(x => x.SubmittedAtUtc)
-            .Select(x => new
+            .ToListAsync(cancellationToken);
+
+        var results = submissions
+            .Select(x =>
             {
-                x.Id,
-                GameName = x.Game.Name,
-                x.PrimaryContactName,
-                x.PrimaryEmail,
-                x.ExpectedTotalAmount,
-                PaidAmount = x.Payments.Sum(p => p.Amount),
-                x.PaymentVariableSymbol,
-                x.VoluntaryDonation
-            });
+                var paidAmount = x.Payments.Sum(p => p.Amount);
+                var breakdown = pricingService.CalculateBreakdown(x.Game, x.Registrations, x.VoluntaryDonation);
+                return new PaymentOverviewItem(
+                    x.Id,
+                    x.Game.Name,
+                    x.PrimaryContactName,
+                    x.PrimaryEmail,
+                    x.ExpectedTotalAmount,
+                    paidAmount,
+                    pricingService.CalculateBalanceStatus(x.ExpectedTotalAmount, paidAmount),
+                    x.PaymentVariableSymbol,
+                    x.VoluntaryDonation,
+                    breakdown.Lines);
+            })
+            .ToList();
 
         if (balanceFilter.HasValue)
         {
-            projected = balanceFilter.Value switch
+            results = balanceFilter.Value switch
             {
-                BalanceStatus.Unpaid => projected.Where(x => x.ExpectedTotalAmount > 0 && x.PaidAmount <= 0),
-                BalanceStatus.Underpaid => projected.Where(x => x.PaidAmount > 0 && x.PaidAmount < x.ExpectedTotalAmount),
-                BalanceStatus.Balanced => projected.Where(x => x.ExpectedTotalAmount <= 0 || x.PaidAmount == x.ExpectedTotalAmount),
-                BalanceStatus.Overpaid => projected.Where(x => x.PaidAmount > x.ExpectedTotalAmount),
-                _ => projected
+                BalanceStatus.Unpaid => results.Where(x => x.ExpectedTotal > 0 && x.PaidAmount <= 0).ToList(),
+                BalanceStatus.Underpaid => results.Where(x => x.PaidAmount > 0 && x.PaidAmount < x.ExpectedTotal).ToList(),
+                BalanceStatus.Balanced => results.Where(x => x.ExpectedTotal <= 0 || x.PaidAmount == x.ExpectedTotal).ToList(),
+                BalanceStatus.Overpaid => results.Where(x => x.PaidAmount > x.ExpectedTotal).ToList(),
+                _ => results
             };
         }
 
-        var submissions = await projected.ToListAsync(cancellationToken);
-
-        return submissions
-            .Select(x => new PaymentOverviewItem(
-                x.Id,
-                x.GameName,
-                x.PrimaryContactName,
-                x.PrimaryEmail,
-                x.ExpectedTotalAmount,
-                x.PaidAmount,
-                pricingService.CalculateBalanceStatus(x.ExpectedTotalAmount, x.PaidAmount),
-                x.PaymentVariableSymbol,
-                x.VoluntaryDonation))
-            .ToList();
+        return results;
     }
 
     public async Task RecordPaymentAsync(
@@ -157,7 +157,8 @@ public sealed record PaymentOverviewItem(
     decimal PaidAmount,
     BalanceStatus BalanceStatus,
     string? VariableSymbol,
-    decimal VoluntaryDonation = 0m);
+    decimal VoluntaryDonation = 0m,
+    IReadOnlyList<PriceBreakdownLine>? PriceBreakdown = null);
 
 public sealed record PaymentHistoryItem(
     int Id,
