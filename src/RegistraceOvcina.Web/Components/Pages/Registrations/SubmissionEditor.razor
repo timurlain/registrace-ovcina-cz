@@ -7,6 +7,7 @@
 @inject SpaydPaymentQrService PaymentQrService
 @inject UserManager<ApplicationUser> UserManager
 @inject IJSRuntime JS
+@inject ILogger<SubmissionEditor> Logger
 
 <PageTitle>Přihláška</PageTitle>
 
@@ -878,6 +879,18 @@ function scrollToValidationErrors() {
         {
             errorMessage = ex.Message;
         }
+        catch (Microsoft.EntityFrameworkCore.DbUpdateException dbEx)
+        {
+            Logger.LogError(dbEx, "DB error saving contact for submission {SubmissionId}", SubmissionId);
+            errorMessage = dbEx.InnerException?.Message?.Contains("duplicate", StringComparison.OrdinalIgnoreCase) == true
+                ? "Údaje se nepodařilo uložit — pravděpodobně duplicitní e-mail nebo telefon. Zkontrolujte prosím zadané údaje."
+                : $"Chyba při ukládání: {dbEx.InnerException?.Message ?? dbEx.Message}";
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Unexpected error saving contact for submission {SubmissionId}", SubmissionId);
+            errorMessage = $"Neočekávaná chyba: {ex.Message}";
+        }
     }
 
     private async Task SaveAttendeeAsync()
@@ -913,6 +926,18 @@ function scrollToValidationErrors() {
         catch (System.ComponentModel.DataAnnotations.ValidationException ex)
         {
             errorMessage = ex.Message;
+        }
+        catch (Microsoft.EntityFrameworkCore.DbUpdateException dbEx)
+        {
+            Logger.LogError(dbEx, "DB error saving attendee for submission {SubmissionId}", SubmissionId);
+            errorMessage = dbEx.InnerException?.Message?.Contains("duplicate", StringComparison.OrdinalIgnoreCase) == true
+                ? "Účastníka se nepodařilo uložit — pravděpodobně duplicitní e-mail. Zkontrolujte prosím zadané údaje."
+                : $"Chyba při ukládání účastníka: {dbEx.InnerException?.Message ?? dbEx.Message}";
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Unexpected error saving attendee for submission {SubmissionId}", SubmissionId);
+            errorMessage = $"Neočekávaná chyba: {ex.Message}";
         }
     }
 
