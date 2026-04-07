@@ -153,6 +153,81 @@ public sealed class PaymentAndPricingTests
     }
 
     [Fact]
+    public void CalculateExpectedTotal_IncludesLodgingPrices()
+    {
+        var game = new Game
+        {
+            PlayerBasePrice = 200m,
+            AdultHelperBasePrice = 0m,
+            LodgingIndoorPrice = 150m,
+            LodgingOutdoorPrice = 50m
+        };
+
+        var registrations = new[]
+        {
+            new Registration { AttendeeType = AttendeeType.Player, Status = RegistrationStatus.Active, LodgingPreference = LodgingPreference.Indoor, Person = new Person { FirstName = "Jan", LastName = "Novák" } },
+            new Registration { AttendeeType = AttendeeType.Player, Status = RegistrationStatus.Active, LodgingPreference = LodgingPreference.OwnTent, Person = new Person { FirstName = "Jana", LastName = "Nováková" } },
+            new Registration { AttendeeType = AttendeeType.Adult, Status = RegistrationStatus.Active, LodgingPreference = LodgingPreference.CampOutdoor, Person = new Person { FirstName = "Petr", LastName = "Novák" } },
+            new Registration { AttendeeType = AttendeeType.Adult, Status = RegistrationStatus.Active, LodgingPreference = LodgingPreference.NotStaying, Person = new Person { FirstName = "Eva", LastName = "Nováková" } },
+        };
+
+        var pricingService = new SubmissionPricingService(TimeProvider.System);
+        var total = pricingService.CalculateExpectedTotal(game, registrations);
+
+        // Players: 200 + 200 (same family, no tiered discount configured) = 400
+        // Adults: 0 + 0 = 0
+        // Lodging: 150 (Indoor) + 50 (OwnTent) + 50 (CampOutdoor) + 0 (NotStaying) = 250
+        // Total: 400 + 250 = 650
+        Assert.Equal(650m, total);
+    }
+
+    [Fact]
+    public void CalculateExpectedTotal_NoLodgingPricesConfigured_NoLodgingCharge()
+    {
+        var game = new Game
+        {
+            PlayerBasePrice = 200m,
+            AdultHelperBasePrice = 0m,
+            LodgingIndoorPrice = 0m,
+            LodgingOutdoorPrice = 0m
+        };
+
+        var registrations = new[]
+        {
+            new Registration { AttendeeType = AttendeeType.Player, Status = RegistrationStatus.Active, LodgingPreference = LodgingPreference.Indoor, Person = new Person { FirstName = "Jan", LastName = "Novák" } },
+        };
+
+        var pricingService = new SubmissionPricingService(TimeProvider.System);
+        var total = pricingService.CalculateExpectedTotal(game, registrations);
+
+        Assert.Equal(200m, total); // No lodging charge when prices are 0
+    }
+
+    [Fact]
+    public void CalculateBreakdown_IncludesLodgingLines()
+    {
+        var game = new Game
+        {
+            PlayerBasePrice = 200m,
+            AdultHelperBasePrice = 0m,
+            LodgingIndoorPrice = 150m,
+            LodgingOutdoorPrice = 50m
+        };
+
+        var registrations = new[]
+        {
+            new Registration { AttendeeType = AttendeeType.Player, Status = RegistrationStatus.Active, LodgingPreference = LodgingPreference.Indoor, Person = new Person { FirstName = "Jan", LastName = "Novák" } },
+            new Registration { AttendeeType = AttendeeType.Adult, Status = RegistrationStatus.Active, LodgingPreference = LodgingPreference.OwnTent, Person = new Person { FirstName = "Petr", LastName = "Novák" } },
+        };
+
+        var pricingService = new SubmissionPricingService(TimeProvider.System);
+        var result = pricingService.CalculateBreakdown(game, registrations);
+
+        Assert.Contains(result.Lines, l => l.Label.Contains("Ubytování") && l.Total == 150m);
+        Assert.Contains(result.Lines, l => l.Label.Contains("Ubytování") && l.Total == 50m);
+    }
+
+    [Fact]
     public void Build_CreatesSpaydPayloadAndVariableSymbol()
     {
         var service = new SpaydPaymentQrService();
