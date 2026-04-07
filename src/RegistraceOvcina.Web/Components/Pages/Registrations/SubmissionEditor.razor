@@ -420,7 +420,7 @@ else
                                                         Chci spát uvnitř (budova)
                                                         @if (submission.LodgingIndoorPrice > 0)
                                                         {
-                                                            <span class="text-secondary">(@submission.LodgingIndoorPrice.ToString("0") Kč)</span>
+                                                            <span class="text-secondary">(@submission.LodgingIndoorPrice.ToString("0.##") Kč)</span>
                                                         }
                                                     </label>
                                                 </div>
@@ -430,7 +430,7 @@ else
                                                         Mám vlastní stan
                                                         @if (submission.LodgingOutdoorPrice > 0)
                                                         {
-                                                            <span class="text-secondary">(@submission.LodgingOutdoorPrice.ToString("0") Kč)</span>
+                                                            <span class="text-secondary">(@submission.LodgingOutdoorPrice.ToString("0.##") Kč)</span>
                                                         }
                                                     </label>
                                                 </div>
@@ -440,7 +440,7 @@ else
                                                         Mohu spát venku / pod širákem
                                                         @if (submission.LodgingOutdoorPrice > 0)
                                                         {
-                                                            <span class="text-secondary">(@submission.LodgingOutdoorPrice.ToString("0") Kč)</span>
+                                                            <span class="text-secondary">(@submission.LodgingOutdoorPrice.ToString("0.##") Kč)</span>
                                                         }
                                                     </label>
                                                 </div>
