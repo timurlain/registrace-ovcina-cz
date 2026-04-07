@@ -661,7 +661,7 @@ else
                         <dd class="col-sm-6">@CzechTime.Format(submission.PaymentDueAtUtc)</dd>
                     </dl>
 
-                    @if (submission.Status == SubmissionStatus.Draft)
+                    @if (submission.Status != SubmissionStatus.Cancelled)
                     {
                         <div class="mb-3">
                             <label class="form-label" for="donation-summary">Dobrovolný příspěvek (Kč)</label>
@@ -673,7 +673,10 @@ else
                             </EditForm>
                             <div class="form-text">Volitelný příspěvek nad rámec registrace. Děkujeme!</div>
                         </div>
+                    }
 
+                    @if (submission.Status == SubmissionStatus.Draft)
+                    {
                         <div class="alert alert-light border">
                             Platební instrukce a QR se zobrazí až po odeslání finální přihlášky.
                         </div>

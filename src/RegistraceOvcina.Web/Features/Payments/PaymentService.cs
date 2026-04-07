@@ -39,14 +39,15 @@ public sealed class PaymentService(
             {
                 var paidAmount = x.Payments.Sum(p => p.Amount);
                 var breakdown = pricingService.CalculateBreakdown(x.Game, x.Registrations, x.VoluntaryDonation);
+                var computedTotal = breakdown.Total;
                 return new PaymentOverviewItem(
                     x.Id,
                     x.Game.Name,
                     x.PrimaryContactName,
                     x.PrimaryEmail,
-                    x.ExpectedTotalAmount,
+                    computedTotal,
                     paidAmount,
-                    pricingService.CalculateBalanceStatus(x.ExpectedTotalAmount, paidAmount),
+                    pricingService.CalculateBalanceStatus(computedTotal, paidAmount),
                     x.PaymentVariableSymbol,
                     x.VoluntaryDonation,
                     breakdown.Lines);
