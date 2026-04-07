@@ -26,6 +26,8 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
     public DbSet<Person> People => Set<Person>();
     public DbSet<Registration> Registrations => Set<Registration>();
     public DbSet<RegistrationSubmission> RegistrationSubmissions => Set<RegistrationSubmission>();
+    public DbSet<Announcement> Announcements => Set<Announcement>();
+    public DbSet<AnnouncementDismissal> AnnouncementDismissals => Set<AnnouncementDismissal>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -343,6 +345,27 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
                 .WithMany()
                 .HasForeignKey(x => x.UserId)
                 .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        builder.Entity<Announcement>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Title).HasMaxLength(200).IsRequired();
+            entity.Property(x => x.HtmlContent).IsRequired();
+            entity.HasMany(x => x.Dismissals)
+                .WithOne(x => x.Announcement)
+                .HasForeignKey(x => x.AnnouncementId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        builder.Entity<AnnouncementDismissal>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.HasIndex(x => new { x.AnnouncementId, x.UserId }).IsUnique();
+            entity.HasOne(x => x.User)
+                .WithMany()
+                .HasForeignKey(x => x.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
 
         builder.Entity<HistoricalImportRow>(entity =>
