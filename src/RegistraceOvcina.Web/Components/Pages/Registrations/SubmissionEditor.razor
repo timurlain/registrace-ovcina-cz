@@ -399,7 +399,7 @@ else
                                                         }
                                                         <div class="form-check">
                                                             <input class="form-check-input" type="radio"
-                                                                   name="@fieldName" id="@($"meal_{dayTicks}_none")"
+                                                                   name="@fieldName" value="0" id="@($"meal_{dayTicks}_none")"
                                                                    checked="@(selectedId is null)"
                                                                    @onchange="() => attendeeInput.MealSelections[capturedTicksNone] = null" />
                                                             <label class="form-check-label" for="@($"meal_{dayTicks}_none")">
