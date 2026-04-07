@@ -251,6 +251,13 @@ public sealed class SubmissionService(
         submission.VoluntaryDonation = Math.Max(0, input.VoluntaryDonation);
         submission.LastEditedAtUtc = timeProvider.GetUtcNow().UtcDateTime;
 
+        // Populate DisplayName on first contact save
+        var appUser = await db.Users.FindAsync([userId], cancellationToken);
+        if (appUser is not null && string.IsNullOrWhiteSpace(appUser.DisplayName))
+        {
+            appUser.DisplayName = input.PrimaryContactName.Trim();
+        }
+
         await db.SaveChangesAsync(cancellationToken);
     }
 
