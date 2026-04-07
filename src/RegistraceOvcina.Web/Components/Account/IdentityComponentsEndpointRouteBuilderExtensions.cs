@@ -59,12 +59,18 @@ internal static class IdentityComponentsEndpointRouteBuilderExtensions
             [FromServices] AcsTransactionalEmailService emailService,
             HttpContext context) =>
         {
+            var loggerFactory = context.RequestServices.GetRequiredService<ILoggerFactory>();
+            var log = loggerFactory.CreateLogger("MagicLink");
             var trimmedEmail = email.Trim();
             var isValidEmailInput = !string.IsNullOrWhiteSpace(trimmedEmail) && trimmedEmail.Length <= 256;
+
+            log.LogInformation("Magic link request: Email={Email}, IsValid={IsValid}", trimmedEmail, isValidEmailInput);
 
             if (isValidEmailInput)
             {
                 var loginToken = await magicLinkService.RequestMagicLinkAsync(trimmedEmail);
+                log.LogInformation("Token created: {HasToken}, TokenId={TokenId}",
+                    loginToken is not null, loginToken?.Id);
 
                 if (loginToken is not null)
                 {
@@ -75,16 +81,26 @@ internal static class IdentityComponentsEndpointRouteBuilderExtensions
                         verifyUrl += $"&returnUrl={Uri.EscapeDataString(returnUrl)}";
                     }
 
-                    try
+                    log.LogInformation("Dispatching fire-and-forget email send to {Email}", loginToken.Email);
+
+                    // Fire-and-forget: don't make the user wait for the email to send
+                    _ = Task.Run(async () =>
                     {
-                        await emailService.SendMagicLinkAsync(loginToken.Email, verifyUrl);
-                    }
-                    catch (Exception ex)
-                    {
-                        var logger = context.RequestServices.GetRequiredService<ILoggerFactory>()
-                            .CreateLogger("MagicLink");
-                        logger.LogError(ex, "Failed to send magic link email to {Email}", loginToken.Email);
-                    }
+                        try
+                        {
+                            log.LogInformation("Background send starting for {Email}", loginToken.Email);
+                            await emailService.SendMagicLinkAsync(loginToken.Email, verifyUrl);
+                            log.LogInformation("Background send completed for {Email}", loginToken.Email);
+                        }
+                        catch (Exception ex)
+                        {
+                            log.LogError(ex, "Background send FAILED for {Email}", loginToken.Email);
+                        }
+                    });
+                }
+                else
+                {
+                    log.LogWarning("No token returned for {Email} — rate limited or error", trimmedEmail);
                 }
             }
 

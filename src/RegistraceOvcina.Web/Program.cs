@@ -198,7 +198,7 @@ public class Program
         builder.Services.AddScoped<OrganizerSubmissionService>();
         builder.Services.AddScoped<PaymentService>();
         builder.Services.Configure<AcsEmailOptions>(builder.Configuration.GetSection(AcsEmailOptions.SectionName));
-        builder.Services.AddScoped<AcsTransactionalEmailService>();
+        builder.Services.AddSingleton<AcsTransactionalEmailService>();
         builder.Services.AddScoped<MagicLinkAuthService>();
         builder.Services.AddScoped<UserAdministrationService>();
         builder.Services.AddScoped<GameRoleService>();
