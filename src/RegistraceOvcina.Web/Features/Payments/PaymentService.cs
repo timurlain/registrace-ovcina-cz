@@ -23,6 +23,7 @@ public sealed class PaymentService(
             .Include(x => x.Registrations).ThenInclude(r => r.Person)
             .Include(x => x.Registrations).ThenInclude(r => r.FoodOrders)
             .Include(x => x.Payments)
+            .AsSplitQuery()
             .Where(x => !x.IsDeleted && x.Status == SubmissionStatus.Submitted);
 
         if (gameId.HasValue)
@@ -39,14 +40,15 @@ public sealed class PaymentService(
             {
                 var paidAmount = x.Payments.Sum(p => p.Amount);
                 var breakdown = pricingService.CalculateBreakdown(x.Game, x.Registrations, x.VoluntaryDonation);
+                var computedTotal = breakdown.Total;
                 return new PaymentOverviewItem(
                     x.Id,
                     x.Game.Name,
                     x.PrimaryContactName,
                     x.PrimaryEmail,
-                    x.ExpectedTotalAmount,
+                    computedTotal,
                     paidAmount,
-                    pricingService.CalculateBalanceStatus(x.ExpectedTotalAmount, paidAmount),
+                    pricingService.CalculateBalanceStatus(computedTotal, paidAmount),
                     x.PaymentVariableSymbol,
                     x.VoluntaryDonation,
                     breakdown.Lines);

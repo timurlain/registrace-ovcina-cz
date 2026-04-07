@@ -18,31 +18,30 @@ public sealed class SubmissionService(
 
         var submissions = await db.RegistrationSubmissions
             .AsNoTracking()
+            .Include(x => x.Game)
+            .Include(x => x.Registrations).ThenInclude(r => r.Person)
+            .Include(x => x.Registrations).ThenInclude(r => r.FoodOrders)
+            .Include(x => x.Payments)
+            .AsSplitQuery()
             .Where(x => x.RegistrantUserId == userId)
             .OrderByDescending(x => x.LastEditedAtUtc)
-            .Select(x => new
-            {
-                x.Id,
-                x.GameId,
-                GameName = x.Game.Name,
-                x.Status,
-                x.SubmittedAtUtc,
-                x.ExpectedTotalAmount,
-                PaidAmount = x.Payments.Sum(p => p.Amount),
-                AttendeeCount = x.Registrations.Count(r => r.Status == RegistrationStatus.Active)
-            })
             .ToListAsync(cancellationToken);
 
         return submissions
-            .Select(x => new SubmissionSummary(
-                x.Id,
-                x.GameId,
-                x.GameName,
-                x.Status,
-                x.SubmittedAtUtc,
-                x.ExpectedTotalAmount,
-                pricingService.CalculateBalanceStatus(x.ExpectedTotalAmount, x.PaidAmount),
-                x.AttendeeCount))
+            .Select(x =>
+            {
+                var paidAmount = x.Payments.Sum(p => p.Amount);
+                var computedTotal = pricingService.CalculateExpectedTotal(x.Game, x.Registrations, x.VoluntaryDonation);
+                return new SubmissionSummary(
+                    x.Id,
+                    x.GameId,
+                    x.Game.Name,
+                    x.Status,
+                    x.SubmittedAtUtc,
+                    computedTotal,
+                    pricingService.CalculateBalanceStatus(computedTotal, paidAmount),
+                    x.Registrations.Count(r => r.Status == RegistrationStatus.Active));
+            })
             .ToList();
     }
 
@@ -192,11 +191,9 @@ public sealed class SubmissionService(
             RegistrantNote = submission.RegistrantNote,
             CurrentTotalAmount = currentTotal,
             PaidAmount = paidAmount,
-            ExpectedTotalAmount = submission.Status == SubmissionStatus.Submitted ? submission.ExpectedTotalAmount : currentTotal,
+            ExpectedTotalAmount = currentTotal,
             PaymentVariableSymbol = submission.PaymentVariableSymbol,
-            BalanceStatus = pricingService.CalculateBalanceStatus(
-                submission.Status == SubmissionStatus.Submitted ? submission.ExpectedTotalAmount : currentTotal,
-                paidAmount),
+            BalanceStatus = pricingService.CalculateBalanceStatus(currentTotal, paidAmount),
             AvailableKingdoms = kingdoms,
             Attendees = submission.Registrations
                 .OrderBy(x => x.CreatedAtUtc)
@@ -259,6 +256,30 @@ public sealed class SubmissionService(
         {
             appUser.DisplayName = input.PrimaryContactName.Trim();
         }
+
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task UpdateDonationAsync(
+        int submissionId,
+        string userId,
+        decimal amount,
+        CancellationToken cancellationToken = default)
+    {
+        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+        var submission = await db.RegistrationSubmissions
+            .Include(x => x.Game)
+            .Include(x => x.Registrations).ThenInclude(r => r.Person)
+            .Include(x => x.Registrations).ThenInclude(r => r.FoodOrders)
+            .AsSplitQuery()
+            .FirstOrDefaultAsync(x => x.Id == submissionId && x.RegistrantUserId == userId, cancellationToken)
+            ?? throw new ValidationException("Přihláška nebyla nalezena.");
+        EnsureEditable(submission);
+
+        submission.VoluntaryDonation = Math.Max(0, amount);
+        submission.ExpectedTotalAmount = pricingService.CalculateExpectedTotal(
+            submission.Game, submission.Registrations, submission.VoluntaryDonation);
+        submission.LastEditedAtUtc = timeProvider.GetUtcNow().UtcDateTime;
 
         await db.SaveChangesAsync(cancellationToken);
     }
@@ -1070,6 +1091,12 @@ public sealed class ContactInput
 
     [Range(0, 100000, ErrorMessage = "Příspěvek musí být kladný nebo nulový.")]
     public decimal VoluntaryDonation { get; set; }
+}
+
+public sealed class DonationInput
+{
+    [Range(0, 100000, ErrorMessage = "Příspěvek musí být kladný nebo nulový.")]
+    public decimal Amount { get; set; }
 }
 
 public sealed class AttendeeInput : IValidatableObject

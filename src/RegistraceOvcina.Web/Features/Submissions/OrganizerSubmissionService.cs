@@ -25,33 +25,31 @@ public sealed class OrganizerSubmissionService(
         }
 
         var submissions = await query
+            .Include(x => x.Game)
+            .Include(x => x.Registrations).ThenInclude(r => r.Person)
+            .Include(x => x.Registrations).ThenInclude(r => r.FoodOrders)
+            .Include(x => x.Payments)
+            .AsSplitQuery()
             .OrderByDescending(x => x.SubmittedAtUtc ?? x.LastEditedAtUtc)
-            .Select(x => new
-            {
-                x.Id,
-                GameName = x.Game.Name,
-                x.PrimaryContactName,
-                x.PrimaryEmail,
-                x.Status,
-                AttendeeCount = x.Registrations.Count(r => r.Status == RegistrationStatus.Active),
-                x.ExpectedTotalAmount,
-                PaidAmount = x.Payments.Sum(p => p.Amount),
-                x.SubmittedAtUtc
-            })
             .ToListAsync(cancellationToken);
 
         return submissions
-            .Select(x => new OrganizerSubmissionSummary(
-                x.Id,
-                x.GameName,
-                x.PrimaryContactName,
-                x.PrimaryEmail,
-                x.Status,
-                x.AttendeeCount,
-                x.ExpectedTotalAmount,
-                x.PaidAmount,
-                pricingService.CalculateBalanceStatus(x.ExpectedTotalAmount, x.PaidAmount),
-                x.SubmittedAtUtc))
+            .Select(x =>
+            {
+                var paidAmount = x.Payments.Sum(p => p.Amount);
+                var computedTotal = pricingService.CalculateExpectedTotal(x.Game, x.Registrations, x.VoluntaryDonation);
+                return new OrganizerSubmissionSummary(
+                    x.Id,
+                    x.Game.Name,
+                    x.PrimaryContactName,
+                    x.PrimaryEmail,
+                    x.Status,
+                    x.Registrations.Count(r => r.Status == RegistrationStatus.Active),
+                    computedTotal,
+                    paidAmount,
+                    pricingService.CalculateBalanceStatus(computedTotal, paidAmount),
+                    x.SubmittedAtUtc);
+            })
             .ToList();
     }
 
@@ -100,12 +98,13 @@ public sealed class OrganizerSubmissionService(
             .ToListAsync(cancellationToken);
 
         var paidAmount = submission.Payments.Sum(p => p.Amount);
-        var balanceStatus = pricingService.CalculateBalanceStatus(submission.ExpectedTotalAmount, paidAmount);
 
         var timeline = BuildTimeline(submission, emails, auditLogs);
 
         var breakdown = pricingService.CalculateBreakdown(
             submission.Game, submission.Registrations, submission.VoluntaryDonation);
+        var computedTotal = breakdown.Total;
+        var balanceStatus = pricingService.CalculateBalanceStatus(computedTotal, paidAmount);
 
         return new OrganizerSubmissionDetail
         {
@@ -117,7 +116,7 @@ public sealed class OrganizerSubmissionService(
             PrimaryEmail = submission.PrimaryEmail,
             PrimaryPhone = submission.PrimaryPhone,
             RegistrantNote = submission.RegistrantNote,
-            ExpectedTotalAmount = submission.ExpectedTotalAmount,
+            ExpectedTotalAmount = computedTotal,
             PaidAmount = paidAmount,
             BalanceStatus = balanceStatus,
             PaymentVariableSymbol = submission.PaymentVariableSymbol,

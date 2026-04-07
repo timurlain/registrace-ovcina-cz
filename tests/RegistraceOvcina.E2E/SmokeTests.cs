@@ -973,6 +973,81 @@ public sealed class SmokeTests : IClassFixture<AppFixture>
         await page.CloseAsync();
     }
 
+    [Fact]
+    public async Task MagicLink_RequestAndVerify_LogsUserIn()
+    {
+        var testEmail = $"magiclink-{Guid.NewGuid():N}@ovcina.test";
+        var page = await _fixture.Browser.NewPageAsync();
+
+        // 1. Navigate to login page
+        await page.GotoAsync($"{_fixture.BaseUrl}/Account/Login", new PageGotoOptions
+        {
+            WaitUntil = WaitUntilState.NetworkIdle
+        });
+
+        await page.GetByTestId("login-email").WaitForAsync(new LocatorWaitForOptions
+        {
+            Timeout = 5000
+        });
+
+        // 2. Fill email and submit magic link request
+        await page.GetByTestId("login-email").FillAsync(testEmail);
+        await page.GetByTestId("login-submit").ClickAsync();
+
+        // 3. Assert redirect to linkSent page with success message
+        await page.WaitForURLAsync("**/Account/Login?linkSent=1**", new PageWaitForURLOptions
+        {
+            Timeout = 5000
+        });
+        await page.GetByText("Odkaz k přihlášení byl odeslán").WaitForAsync(new LocatorWaitForOptions
+        {
+            Timeout = 5000
+        });
+
+        // 4. Retrieve the token from DB (ACS is not configured in test, so email wasn't sent)
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>()
+            .UseNpgsql(_fixture.ConnectionString)
+            .Options;
+
+        await using var db = new ApplicationDbContext(options);
+        var loginToken = await db.Set<LoginToken>()
+            .Where(t => t.Email == testEmail && !t.IsUsed)
+            .OrderByDescending(t => t.CreatedAtUtc)
+            .FirstOrDefaultAsync();
+
+        Assert.NotNull(loginToken);
+
+        // 5. Verify the magic link — should create user and sign in
+        await page.GotoAsync($"{_fixture.BaseUrl}/Account/VerifyMagicLink?token={loginToken.Token}", new PageGotoOptions
+        {
+            WaitUntil = WaitUntilState.NetworkIdle
+        });
+
+        // 6. Assert user is logged in — should be redirected to home
+        await page.WaitForURLAsync($"{_fixture.BaseUrl}/", new PageWaitForURLOptions
+        {
+            Timeout = 5000
+        });
+
+        // Verify logged-in state: logout button or user email visible
+        try
+        {
+            await page.GetByTestId("logout-button").WaitForAsync(new LocatorWaitForOptions
+            {
+                Timeout = 5000
+            });
+        }
+        catch (TimeoutException)
+        {
+            var bodyText = await page.Locator("body").InnerTextAsync();
+            throw new XunitException(
+                $"Magic link login did not result in logged-in state. Page body:{Environment.NewLine}{bodyText}");
+        }
+
+        await AssertNoBlazorErrorsAsync(page);
+        await page.CloseAsync();
+    }
+
     private sealed record SeededFoodSummaryData(
         int GameId,
         string GameName,
