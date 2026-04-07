@@ -1,10 +1,8 @@
-@using Microsoft.AspNetCore.Identity
-@using RegistraceOvcina.Web.Data
+@using System.Security.Claims
 @using RegistraceOvcina.Web.Features.Announcements
 
 @inject AnnouncementService AnnouncementService
 @inject AuthenticationStateProvider AuthenticationStateProvider
-@inject UserManager<ApplicationUser> UserManager
 
 @if (announcement is not null)
 {
@@ -26,26 +24,22 @@
 
 @code {
     private Announcement? announcement;
+    private string? userId;
 
     protected override async Task OnInitializedAsync()
     {
         var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
-        var user = await UserManager.GetUserAsync(authState.User);
-        if (user is not null)
+        userId = authState.User.FindFirstValue(ClaimTypes.NameIdentifier);
+        if (userId is not null)
         {
-            announcement = await AnnouncementService.GetUnseenAnnouncementAsync(user.Id);
+            announcement = await AnnouncementService.GetUnseenAnnouncementAsync(userId);
         }
     }
 
     private async Task DismissAsync()
     {
-        if (announcement is null) return;
-        var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
-        var user = await UserManager.GetUserAsync(authState.User);
-        if (user is not null)
-        {
-            await AnnouncementService.DismissAsync(announcement.Id, user.Id);
-        }
+        if (announcement is null || userId is null) return;
+        await AnnouncementService.DismissAsync(announcement.Id, userId);
         announcement = null;
     }
 }
