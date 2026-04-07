@@ -22,6 +22,7 @@ using RegistraceOvcina.Web.Features.People;
 using RegistraceOvcina.Web.Features.Submissions;
 using RegistraceOvcina.Web.Features.Integration;
 using RegistraceOvcina.Web.Features.Roles;
+using RegistraceOvcina.Web.Features.Auth;
 using RegistraceOvcina.Web.Features.Users;
 using RegistraceOvcina.Web.Security;
 
@@ -109,6 +110,8 @@ public class Program
 
         builder.Services.ConfigureApplicationCookie(options =>
         {
+            options.ExpireTimeSpan = TimeSpan.FromDays(30);
+            options.SlidingExpiration = true;
             options.LoginPath = "/Account/Login";
             options.AccessDeniedPath = "/Account/AccessDenied";
         });
@@ -156,11 +159,6 @@ public class Program
 
         builder.Services.AddIdentityCore<ApplicationUser>(options =>
             {
-                options.Password.RequiredLength = 6;
-                options.Password.RequireDigit = false;
-                options.Password.RequireLowercase = false;
-                options.Password.RequireUppercase = false;
-                options.Password.RequireNonAlphanumeric = false;
                 options.SignIn.RequireConfirmedAccount = false;
                 options.Stores.SchemaVersion = IdentitySchemaVersions.Version3;
                 options.User.RequireUniqueEmail = true;
@@ -182,7 +180,7 @@ public class Program
         }
         else
         {
-            builder.Services.AddSingleton<IEmailSender<ApplicationUser>, IdentityNoOpEmailSender>();
+            builder.Services.AddSingleton<IEmailSender<ApplicationUser>, NoOpIdentityEmailSender>();
         }
 
         builder.Services.AddSingleton<SpaydPaymentQrService>();
@@ -198,6 +196,9 @@ public class Program
         builder.Services.AddScoped<SubmissionService>();
         builder.Services.AddScoped<OrganizerSubmissionService>();
         builder.Services.AddScoped<PaymentService>();
+        builder.Services.Configure<AcsEmailOptions>(builder.Configuration.GetSection(AcsEmailOptions.SectionName));
+        builder.Services.AddScoped<AcsTransactionalEmailService>();
+        builder.Services.AddScoped<MagicLinkAuthService>();
         builder.Services.AddScoped<UserAdministrationService>();
         builder.Services.AddScoped<GameRoleService>();
         builder.Services.Configure<IntegrationApiOptions>(

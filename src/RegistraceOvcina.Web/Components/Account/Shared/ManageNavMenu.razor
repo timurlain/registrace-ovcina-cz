@@ -10,18 +10,12 @@
     <li class="nav-item">
         <NavLink class="nav-link" href="/Account/Manage/Email" data-enhance-nav="false" onclick="window.location.href=this.href; return false;">Email</NavLink>
     </li>
-    <li class="nav-item">
-        <NavLink class="nav-link" href="/Account/Manage/ChangePassword" data-enhance-nav="false" onclick="window.location.href=this.href; return false;">Password</NavLink>
-    </li>
     @if (hasExternalLogins)
     {
         <li class="nav-item">
             <NavLink class="nav-link" href="/Account/Manage/ExternalLogins" data-enhance-nav="false" onclick="window.location.href=this.href; return false;">External logins</NavLink>
         </li>
     }
-    <li class="nav-item">
-        <NavLink class="nav-link" href="/Account/Manage/TwoFactorAuthentication" data-enhance-nav="false" onclick="window.location.href=this.href; return false;">Two-factor authentication</NavLink>
-    </li>
     <li class="nav-item">
         <NavLink class="nav-link" href="/Account/Manage/Passkeys" data-enhance-nav="false" onclick="window.location.href=this.href; return false;">Passkeys</NavLink>
     </li>

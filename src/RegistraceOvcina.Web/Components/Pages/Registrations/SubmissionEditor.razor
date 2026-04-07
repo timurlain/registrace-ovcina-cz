@@ -7,6 +7,7 @@
 @inject SpaydPaymentQrService PaymentQrService
 @inject UserManager<ApplicationUser> UserManager
 @inject IJSRuntime JS
+@inject ILogger<SubmissionEditor> Logger
 
 <PageTitle>Přihláška</PageTitle>
 
@@ -39,6 +40,24 @@ else
     @if (!string.IsNullOrWhiteSpace(errorMessage))
     {
         <div class="alert alert-danger" role="alert">@errorMessage</div>
+    }
+
+    @if (emailConflict is not null)
+    {
+        <div class="alert alert-warning" role="alert">
+            <p class="mb-2">
+                E-mail <strong>@emailConflict.ConflictEmail</strong> je přiřazený k osobě
+                <strong>@emailConflict.ExistingFirstName @emailConflict.ExistingLastName</strong>.
+            </p>
+            <div class="d-flex gap-2">
+                <button class="btn btn-sm btn-primary" @onclick="UseExistingPerson">
+                    Použít osobu @emailConflict.ExistingFirstName @emailConflict.ExistingLastName
+                </button>
+                <button class="btn btn-sm btn-outline-secondary" @onclick="ClearEmailAndRetry">
+                    Smazat e-mail
+                </button>
+            </div>
+        </div>
     }
 
     <div class="row g-4">
@@ -752,6 +771,7 @@ function scrollToValidationErrors() {
     private string? statusMessage;
     private SubmissionEditorViewModel? submission;
     private PersonSuggestion? personSuggestion;
+    private EmailConflictException? emailConflict;
 
     protected override async Task OnParametersSetAsync()
     {
@@ -878,10 +898,23 @@ function scrollToValidationErrors() {
         {
             errorMessage = ex.Message;
         }
+        catch (Microsoft.EntityFrameworkCore.DbUpdateException dbEx)
+        {
+            Logger.LogError(dbEx, "DB error saving contact for submission {SubmissionId}", SubmissionId);
+            errorMessage = dbEx.InnerException is Npgsql.PostgresException { SqlState: "23505" }
+                ? "Údaje se nepodařilo uložit — pravděpodobně duplicitní e-mail nebo telefon. Zkontrolujte prosím zadané údaje."
+                : "Údaje se nepodařilo uložit kvůli chybě databáze. Zkuste to prosím znovu později.";
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Unexpected error saving contact for submission {SubmissionId}", SubmissionId);
+            errorMessage = "Došlo k neočekávané chybě při ukládání údajů. Zkuste to prosím znovu později.";
+        }
     }
 
     private async Task SaveAttendeeAsync()
     {
+        emailConflict = null;
         errorMessage = null;
         statusMessage = null;
 
@@ -910,9 +943,26 @@ function scrollToValidationErrors() {
             await LoadAsync();
             await JS.InvokeVoidAsync("eval", "window.scrollTo({top:0,behavior:'smooth'})");
         }
+        catch (EmailConflictException ex)
+        {
+            emailConflict = ex;
+            errorMessage = null;
+        }
         catch (System.ComponentModel.DataAnnotations.ValidationException ex)
         {
             errorMessage = ex.Message;
+        }
+        catch (Microsoft.EntityFrameworkCore.DbUpdateException dbEx)
+        {
+            Logger.LogError(dbEx, "DB error saving attendee for submission {SubmissionId}", SubmissionId);
+            errorMessage = dbEx.InnerException is Npgsql.PostgresException { SqlState: "23505" }
+                ? "Účastníka se nepodařilo uložit — pravděpodobně duplicitní e-mail. Zkontrolujte prosím zadané údaje."
+                : "Účastníka se nepodařilo uložit. Zkuste to prosím znovu.";
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Unexpected error saving attendee for submission {SubmissionId}", SubmissionId);
+            errorMessage = "Došlo k neočekávané chybě. Zkuste to prosím znovu.";
         }
     }
 
@@ -980,6 +1030,22 @@ function scrollToValidationErrors() {
     private void DismissPersonSuggestion()
     {
         personSuggestion = null;
+    }
+
+    private async Task UseExistingPerson()
+    {
+        if (emailConflict is null) return;
+        attendeeInput.UseExistingPersonId = emailConflict.ExistingPersonId;
+        emailConflict = null;
+        await SaveAttendeeAsync();
+    }
+
+    private async Task ClearEmailAndRetry()
+    {
+        attendeeInput.ClearEmail = true;
+        attendeeInput.ContactEmail = "";
+        emailConflict = null;
+        await SaveAttendeeAsync();
     }
 
     private void StartEditing(AttendeeViewModel attendee)

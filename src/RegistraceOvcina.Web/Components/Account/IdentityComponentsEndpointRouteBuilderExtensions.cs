@@ -10,6 +10,8 @@ using Microsoft.Extensions.Primitives;
 using RegistraceOvcina.Web.Components.Account.Pages;
 using RegistraceOvcina.Web.Components.Account.Pages.Manage;
 using RegistraceOvcina.Web.Data;
+using RegistraceOvcina.Web.Features.Auth;
+using RegistraceOvcina.Web.Security;
 
 namespace Microsoft.AspNetCore.Routing;
 
@@ -49,6 +51,94 @@ internal static class IdentityComponentsEndpointRouteBuilderExtensions
             await signInManager.SignOutAsync();
             return TypedResults.LocalRedirect($"~/{returnUrl}");
         });
+
+        accountGroup.MapPost("/RequestMagicLink", async (
+            [FromForm] string email,
+            [FromForm] string? returnUrl,
+            [FromServices] MagicLinkAuthService magicLinkService,
+            [FromServices] AcsTransactionalEmailService emailService,
+            HttpContext context) =>
+        {
+            var trimmedEmail = email.Trim();
+            var isValidEmailInput = !string.IsNullOrWhiteSpace(trimmedEmail) && trimmedEmail.Length <= 256;
+
+            if (isValidEmailInput)
+            {
+                var loginToken = await magicLinkService.RequestMagicLinkAsync(trimmedEmail);
+
+                if (loginToken is not null)
+                {
+                    var baseUrl = $"{context.Request.Scheme}://{context.Request.Host}";
+                    var verifyUrl = $"{baseUrl}/Account/VerifyMagicLink?token={loginToken.Token}";
+                    if (!string.IsNullOrWhiteSpace(returnUrl))
+                    {
+                        verifyUrl += $"&returnUrl={Uri.EscapeDataString(returnUrl)}";
+                    }
+                    await emailService.SendMagicLinkAsync(loginToken.Email, verifyUrl);
+                }
+            }
+
+            // Always redirect to success (don't reveal whether email exists)
+            var redirectUrl = $"/Account/Login?linkSent=1";
+            if (!string.IsNullOrWhiteSpace(returnUrl))
+            {
+                redirectUrl += $"&returnUrl={Uri.EscapeDataString(returnUrl)}";
+            }
+            return Results.Redirect(redirectUrl);
+        }).AllowAnonymous();
+
+        accountGroup.MapGet("/VerifyMagicLink", async (
+            [FromQuery] string token,
+            [FromQuery] string? returnUrl,
+            [FromServices] MagicLinkAuthService magicLinkService,
+            [FromServices] UserManager<ApplicationUser> userManager,
+            [FromServices] SignInManager<ApplicationUser> signInManager,
+            [FromServices] TimeProvider timeProvider) =>
+        {
+            var loginToken = await magicLinkService.VerifyTokenAsync(token);
+            if (loginToken is null)
+            {
+                return Results.Redirect("/Account/Login?error=invalid-token");
+            }
+
+            // Find or create user
+            var user = loginToken.UserId is not null
+                ? await userManager.FindByIdAsync(loginToken.UserId)
+                : await userManager.FindByEmailAsync(loginToken.Email);
+
+            if (user is null)
+            {
+                // Auto-create account on first magic link verification
+                user = new ApplicationUser
+                {
+                    UserName = loginToken.Email,
+                    Email = loginToken.Email,
+                    EmailConfirmed = true,
+                    IsActive = true,
+                    CreatedAtUtc = timeProvider.GetUtcNow().UtcDateTime
+                };
+
+                var createResult = await userManager.CreateAsync(user);
+                if (!createResult.Succeeded)
+                {
+                    return Results.Redirect("/Account/Login?error=create-failed");
+                }
+
+                await userManager.AddToRoleAsync(user, RoleNames.Registrant);
+            }
+
+            if (!user.IsActive)
+            {
+                return Results.Redirect("/Account/Login?error=inactive");
+            }
+
+            user.LastLoginAtUtc = timeProvider.GetUtcNow().UtcDateTime;
+            await userManager.UpdateAsync(user);
+
+            await signInManager.SignInAsync(user, isPersistent: true);
+
+            return Results.LocalRedirect(returnUrl ?? "~/");
+        }).AllowAnonymous();
 
         accountGroup.MapPost("/PasskeyCreationOptions", async (
             HttpContext context,

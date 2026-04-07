@@ -19,6 +19,7 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
     public DbSet<HistoricalImportBatch> HistoricalImportBatches => Set<HistoricalImportBatch>();
     public DbSet<HistoricalImportRow> HistoricalImportRows => Set<HistoricalImportRow>();
     public DbSet<Kingdom> Kingdoms => Set<Kingdom>();
+    public DbSet<LoginToken> LoginTokens => Set<LoginToken>();
     public DbSet<MealOption> MealOptions => Set<MealOption>();
     public DbSet<OrganizerNote> OrganizerNotes => Set<OrganizerNote>();
     public DbSet<Payment> Payments => Set<Payment>();
@@ -326,6 +327,19 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
             entity.HasMany(x => x.Rows)
                 .WithOne(x => x.LastBatch)
                 .HasForeignKey(x => x.LastBatchId)
+                .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        builder.Entity<LoginToken>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Email).HasMaxLength(256).IsRequired();
+            entity.Property(x => x.Token).HasMaxLength(64).IsRequired();
+            entity.HasIndex(x => x.Token).IsUnique();
+            entity.HasIndex(x => new { x.Email, x.CreatedAtUtc });
+            entity.HasOne(x => x.User)
+                .WithMany()
+                .HasForeignKey(x => x.UserId)
                 .OnDelete(DeleteBehavior.SetNull);
         });
 

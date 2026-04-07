@@ -251,6 +251,13 @@ public sealed class SubmissionService(
         submission.VoluntaryDonation = Math.Max(0, input.VoluntaryDonation);
         submission.LastEditedAtUtc = timeProvider.GetUtcNow().UtcDateTime;
 
+        // Populate DisplayName on first contact save
+        var appUser = await db.Users.FindAsync([userId], cancellationToken);
+        if (appUser is not null && string.IsNullOrWhiteSpace(appUser.DisplayName))
+        {
+            appUser.DisplayName = input.PrimaryContactName.Trim();
+        }
+
         await db.SaveChangesAsync(cancellationToken);
     }
 
@@ -284,16 +291,78 @@ public sealed class SubmissionService(
         }
 
         var nowUtc = timeProvider.GetUtcNow().UtcDateTime;
-        var person = new Person
+
+        // Handle ClearEmail flag
+        if (input.ClearEmail)
         {
-            FirstName = input.FirstName.Trim(),
-            LastName = input.LastName.Trim(),
-            BirthYear = input.BirthYear,
-            Email = string.IsNullOrWhiteSpace(input.ContactEmail) ? null : input.ContactEmail.Trim(),
-            Phone = string.IsNullOrWhiteSpace(input.ContactPhone) ? null : input.ContactPhone.Trim(),
-            CreatedAtUtc = nowUtc,
-            UpdatedAtUtc = nowUtc
-        };
+            input.ContactEmail = null;
+        }
+
+        Person person;
+
+        if (input.UseExistingPersonId.HasValue)
+        {
+            // Flag set — reuse specified person, update birth year
+            person = await db.People.FindAsync([input.UseExistingPersonId.Value], cancellationToken)
+                ?? throw new ValidationException("Zadaná osoba neexistuje.");
+            person.BirthYear = input.BirthYear;
+            person.UpdatedAtUtc = nowUtc;
+        }
+        else if (!string.IsNullOrWhiteSpace(input.ContactEmail))
+        {
+            // Check for email collision
+            var normalizedEmail = input.ContactEmail.Trim().ToLowerInvariant();
+            var existingPerson = await db.People
+                .FirstOrDefaultAsync(p => !p.IsDeleted && p.Email != null
+                    && p.Email.ToLower() == normalizedEmail, cancellationToken);
+
+            if (existingPerson is not null)
+            {
+                var nameMatch = string.Equals(existingPerson.FirstName, input.FirstName.Trim(), StringComparison.OrdinalIgnoreCase)
+                    && string.Equals(existingPerson.LastName, input.LastName.Trim(), StringComparison.OrdinalIgnoreCase);
+
+                if (nameMatch)
+                {
+                    // Same name — silently reuse, update birth year
+                    person = existingPerson;
+                    person.BirthYear = input.BirthYear;
+                    person.UpdatedAtUtc = nowUtc;
+                }
+                else
+                {
+                    throw new EmailConflictException(
+                        existingPerson.Id, existingPerson.FirstName, existingPerson.LastName, input.ContactEmail.Trim());
+                }
+            }
+            else
+            {
+                // No collision — create new person
+                person = new Person
+                {
+                    FirstName = input.FirstName.Trim(),
+                    LastName = input.LastName.Trim(),
+                    BirthYear = input.BirthYear,
+                    Email = input.ContactEmail.Trim(),
+                    Phone = string.IsNullOrWhiteSpace(input.ContactPhone) ? null : input.ContactPhone.Trim(),
+                    CreatedAtUtc = nowUtc,
+                    UpdatedAtUtc = nowUtc
+                };
+            }
+        }
+        else
+        {
+            // No email — create new person
+            person = new Person
+            {
+                FirstName = input.FirstName.Trim(),
+                LastName = input.LastName.Trim(),
+                BirthYear = input.BirthYear,
+                Email = null,
+                Phone = string.IsNullOrWhiteSpace(input.ContactPhone) ? null : input.ContactPhone.Trim(),
+                CreatedAtUtc = nowUtc,
+                UpdatedAtUtc = nowUtc
+            };
+        }
 
         var registration = new Registration
         {
@@ -382,11 +451,39 @@ public sealed class SubmissionService(
 
         var nowUtc = timeProvider.GetUtcNow().UtcDateTime;
 
+        // Handle ClearEmail flag
+        if (input.ClearEmail)
+        {
+            input.ContactEmail = null;
+        }
+
+        // Check email collision when email changes
+        var newEmail = string.IsNullOrWhiteSpace(input.ContactEmail) ? null : input.ContactEmail.Trim();
+        if (newEmail is not null && !string.Equals(registration.Person.Email, newEmail, StringComparison.OrdinalIgnoreCase))
+        {
+            var normalizedEmail = newEmail.ToLowerInvariant();
+            var existingPerson = await db.People
+                .FirstOrDefaultAsync(p => !p.IsDeleted && p.Id != registration.PersonId
+                    && p.Email != null && p.Email.ToLower() == normalizedEmail, cancellationToken);
+
+            if (existingPerson is not null)
+            {
+                var nameMatch = string.Equals(existingPerson.FirstName, input.FirstName.Trim(), StringComparison.OrdinalIgnoreCase)
+                    && string.Equals(existingPerson.LastName, input.LastName.Trim(), StringComparison.OrdinalIgnoreCase);
+
+                if (!nameMatch && !input.UseExistingPersonId.HasValue)
+                {
+                    throw new EmailConflictException(
+                        existingPerson.Id, existingPerson.FirstName, existingPerson.LastName, newEmail);
+                }
+            }
+        }
+
         // Update Person
         registration.Person.FirstName = input.FirstName.Trim();
         registration.Person.LastName = input.LastName.Trim();
         registration.Person.BirthYear = input.BirthYear;
-        registration.Person.Email = string.IsNullOrWhiteSpace(input.ContactEmail) ? null : input.ContactEmail.Trim();
+        registration.Person.Email = newEmail;
         registration.Person.Phone = string.IsNullOrWhiteSpace(input.ContactPhone) ? null : input.ContactPhone.Trim();
         registration.Person.UpdatedAtUtc = nowUtc;
 
@@ -968,6 +1065,9 @@ public sealed class AttendeeInput : IValidatableObject
     public string? GuardianRelationship { get; set; }
 
     public bool GuardianAuthorizationConfirmed { get; set; }
+
+    public int? UseExistingPersonId { get; set; }
+    public bool ClearEmail { get; set; }
 
     /// <summary>
     /// Per-day meal selections: key = day ticks (UTC), value = MealOption ID.
