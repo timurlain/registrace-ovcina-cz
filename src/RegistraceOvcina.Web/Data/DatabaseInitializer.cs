@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using RegistraceOvcina.Web.Features.Announcements;
 using RegistraceOvcina.Web.Security;
 
 namespace RegistraceOvcina.Web.Data;
@@ -42,6 +43,7 @@ public static class DatabaseInitializer
         }
 
         await SeedKingdomsAsync(db);
+        await SeedAnnouncementsAsync(db);
 
         // Roles must always exist — external login creates users with Registrant role
         var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole>>();
@@ -116,6 +118,147 @@ public static class DatabaseInitializer
                 });
             }
         }
+
+        await db.SaveChangesAsync();
+    }
+
+    private static async Task SeedAnnouncementsAsync(ApplicationDbContext db)
+    {
+        if (await db.Announcements.AnyAsync())
+        {
+            return;
+        }
+
+        db.Announcements.Add(new Announcement
+        {
+            Title = "30. Ovčina — Balinova pozvánka",
+            HtmlContent = """
+                <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 600px; margin: 0 auto; color: #2C1810; line-height: 1.6;">
+
+                  <h2 style="color: #3C2415; border-bottom: 3px solid #B26223; padding-bottom: 8px;">
+                    🐑 30. Ovčina — Balinova pozvánka
+                  </h2>
+
+                  <p>Milí kamarádi,</p>
+
+                  <p>Spouštíme registraci na letošní Ovčinu! Ovčina proběhne <strong>první víkend v květnu</strong>.</p>
+
+                  <p>
+                    <a href="https://registrace.ovcina.cz" style="display: inline-block; background: #B22222; color: #fff; padding: 12px 24px; border-radius: 6px; text-decoration: none; font-weight: 600; font-size: 16px;">
+                      Registrovat se na registrace.ovcina.cz
+                    </a>
+                  </p>
+
+                  <p>Dejte nám prosím <strong>co nejdříve</strong> vědět, zda dorazíte a zda si objednáváte jídlo či přespání. Ihned po registraci se vám vygeneruje QR kód, který prosím obratem uhraďte.</p>
+
+                  <h3 style="color: #8B4513; margin-top: 24px;">Program</h3>
+                  <p>Struktura hry zůstává podobná:</p>
+                  <ul>
+                    <li>Příjezd nejpozději v <strong>pátek 1. května v 8:00</strong></li>
+                    <li>Pátek celý den a sobota do cca 18:00 — hra</li>
+                    <li>Po hře hostina</li>
+                    <li>Kdo chce pomoct s úklidem, může zůstat do neděle</li>
+                  </ul>
+
+                  <h3 style="color: #8B4513; margin-top: 24px;">Jídlo</h3>
+
+                  <table style="border-collapse: collapse; width: 100%; margin-bottom: 16px;">
+                    <tr style="background: #3C2415; color: #FFF8F0;">
+                      <th style="padding: 8px; text-align: left;" colspan="2">Sobota</th>
+                    </tr>
+                    <tr style="background: #F5EDE3;">
+                      <td style="padding: 6px 8px; font-weight: 600;">Svačina</td>
+                      <td style="padding: 6px 8px;">Bageta se šunkou a sýrem</td>
+                    </tr>
+                    <tr>
+                      <td style="padding: 6px 8px; font-weight: 600;">Oběd</td>
+                      <td style="padding: 6px 8px;">Řízky, chleba, zelenina</td>
+                    </tr>
+                    <tr style="background: #F5EDE3;">
+                      <td style="padding: 6px 8px; font-weight: 600;">Svačina</td>
+                      <td style="padding: 6px 8px;">Tatranka nebo perník, jablko</td>
+                    </tr>
+                    <tr>
+                      <td style="padding: 6px 8px; color: #8B4513;" colspan="2"><em>Večeři si řeší každý sám — bude se opékat, špekáčky můžete dát do lednice.</em></td>
+                    </tr>
+                  </table>
+
+                  <table style="border-collapse: collapse; width: 100%; margin-bottom: 16px;">
+                    <tr style="background: #3C2415; color: #FFF8F0;">
+                      <th style="padding: 8px; text-align: left;" colspan="2">Neděle</th>
+                    </tr>
+                    <tr>
+                      <td style="padding: 6px 8px; color: #8B4513;" colspan="2"><em>Snídani si řeší každý sám</em></td>
+                    </tr>
+                    <tr style="background: #F5EDE3;">
+                      <td style="padding: 6px 8px; font-weight: 600;">Svačina</td>
+                      <td style="padding: 6px 8px;">Tatranka nebo perník, jablko</td>
+                    </tr>
+                    <tr>
+                      <td style="padding: 6px 8px; font-weight: 600;">Oběd</td>
+                      <td style="padding: 6px 8px;">Vepřová kýta s chlebem</td>
+                    </tr>
+                  </table>
+
+                  <div style="background: #FFF8F0; border: 1px solid #D4C4B0; border-left: 4px solid #B26223; padding: 12px 16px; border-radius: 6px; margin: 16px 0;">
+                    <strong>🥤 Nezapomeňte!</strong> Letos dětem přibalte hrníčky / termosky na vodu a čaj — budou k dispozici v průběhu hry. Chceme minimalizovat jednorázové kelímky.
+                  </div>
+
+                  <h3 style="color: #8B4513; margin-top: 24px;">Ceny</h3>
+
+                  <table style="border-collapse: collapse; width: 100%; margin-bottom: 16px;">
+                    <tr style="background: #3C2415; color: #FFF8F0;">
+                      <th style="padding: 8px; text-align: left;">Položka</th>
+                      <th style="padding: 8px; text-align: right;">Cena</th>
+                    </tr>
+                    <tr style="background: #F5EDE3;">
+                      <td style="padding: 6px 8px;">Hra — dítě</td>
+                      <td style="padding: 6px 8px; text-align: right; font-weight: 600;">200 Kč</td>
+                    </tr>
+                    <tr>
+                      <td style="padding: 6px 8px;">Hra — příšery (dospělí)</td>
+                      <td style="padding: 6px 8px; text-align: right; font-weight: 600; color: #2E7D32;">zdarma</td>
+                    </tr>
+                    <tr style="background: #F5EDE3;">
+                      <td style="padding: 6px 8px;">Jídlo — dítě (oba dny)</td>
+                      <td style="padding: 6px 8px; text-align: right; font-weight: 600;">340 Kč <span style="color: #8B4513; font-weight: normal;">(170/den)</span></td>
+                    </tr>
+                    <tr>
+                      <td style="padding: 6px 8px;">Jídlo — dospělý (oba dny)</td>
+                      <td style="padding: 6px 8px; text-align: right; font-weight: 600;">460 Kč <span style="color: #8B4513; font-weight: normal;">(230/den)</span></td>
+                    </tr>
+                    <tr style="background: #F5EDE3;">
+                      <td style="padding: 6px 8px;">Přespání — pod střechou</td>
+                      <td style="padding: 6px 8px; text-align: right; font-weight: 600;">150 Kč <span style="color: #8B4513; font-weight: normal;">/os./noc</span></td>
+                    </tr>
+                    <tr>
+                      <td style="padding: 6px 8px;">Přespání — stan / širák</td>
+                      <td style="padding: 6px 8px; text-align: right; font-weight: 600;">50 Kč <span style="color: #8B4513; font-weight: normal;">/os. za oba dny</span></td>
+                    </tr>
+                  </table>
+
+                  <p style="text-align: center; margin-top: 24px;">
+                    <a href="https://registrace.ovcina.cz" style="display: inline-block; background: #B22222; color: #fff; padding: 14px 32px; border-radius: 6px; text-decoration: none; font-weight: 700; font-size: 18px;">
+                      Zaregistrovat se
+                    </a>
+                  </p>
+
+                  <h3 style="color: #8B4513; margin-top: 24px;">WhatsApp</h3>
+                  <p>Pro aktuální informace se přidejte do <a href="https://chat.whatsapp.com/H6RAc1NbyBvBLC06ImAhpk" style="color: #B22222;">WhatsApp skupiny (komunity)</a>. Notifikace je možno ztišit a nakouknut jen když máte prostor.</p>
+
+                  <hr style="border: none; border-top: 2px solid #D4C4B0; margin: 24px 0;" />
+
+                  <p style="color: #8B4513; font-size: 14px;">
+                    S pozdravem,<br />
+                    <strong>Organizátoři Ovčiny</strong><br />
+                    ovcina@ovcina.cz
+                  </p>
+
+                </div>
+                """,
+            IsActive = true,
+            CreatedAtUtc = DateTime.UtcNow
+        });
 
         await db.SaveChangesAsync();
     }
