@@ -22,6 +22,7 @@ using RegistraceOvcina.Web.Features.People;
 using RegistraceOvcina.Web.Features.Submissions;
 using RegistraceOvcina.Web.Features.Integration;
 using RegistraceOvcina.Web.Features.Roles;
+using RegistraceOvcina.Web.Features.Auth;
 using RegistraceOvcina.Web.Features.Users;
 using RegistraceOvcina.Web.Security;
 
@@ -198,6 +199,8 @@ public class Program
         builder.Services.AddScoped<SubmissionService>();
         builder.Services.AddScoped<OrganizerSubmissionService>();
         builder.Services.AddScoped<PaymentService>();
+        builder.Services.Configure<AcsEmailOptions>(builder.Configuration.GetSection(AcsEmailOptions.SectionName));
+        builder.Services.AddScoped<AcsTransactionalEmailService>();
         builder.Services.AddScoped<UserAdministrationService>();
         builder.Services.AddScoped<GameRoleService>();
         builder.Services.Configure<IntegrationApiOptions>(
