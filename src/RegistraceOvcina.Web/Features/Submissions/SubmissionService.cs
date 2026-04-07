@@ -161,8 +161,8 @@ public sealed class SubmissionService(
 
         var nowUtc = timeProvider.GetUtcNow().UtcDateTime;
 
-        // Price breakdown only for drafts (current prices); submitted uses persisted total
-        var pricingResult = submission.Status == SubmissionStatus.Draft
+        // Price breakdown for all non-cancelled submissions (draft + submitted)
+        var pricingResult = submission.Status != SubmissionStatus.Cancelled
             ? pricingService.CalculateBreakdown(submission.Game, submission.Registrations, submission.VoluntaryDonation)
             : null;
 
@@ -625,6 +625,39 @@ public sealed class SubmissionService(
             LastAttendeeType: lastRegistration?.AttendeeType ?? AttendeeType.Player,
             LastPlayerSubType: lastRegistration?.PlayerSubType,
             LastAdultRoles: lastRegistration?.AdultRoles ?? AdultRoleFlags.None);
+    }
+
+    public async Task DeleteSubmissionAsync(
+        int submissionId,
+        string userId,
+        bool isStaff,
+        CancellationToken ct = default)
+    {
+        await using var db = await dbContextFactory.CreateDbContextAsync(ct);
+        var submission = await db.RegistrationSubmissions
+            .FirstOrDefaultAsync(x => x.Id == submissionId, ct)
+            ?? throw new ValidationException("Přihláška nebyla nalezena.");
+
+        if (!isStaff && submission.RegistrantUserId != userId)
+        {
+            throw new ValidationException("Nemáte oprávnění smazat tuto přihlášku.");
+        }
+
+        var nowUtc = timeProvider.GetUtcNow().UtcDateTime;
+        submission.IsDeleted = true;
+        submission.LastEditedAtUtc = nowUtc;
+
+        db.AuditLogs.Add(new AuditLog
+        {
+            EntityType = nameof(RegistrationSubmission),
+            EntityId = submission.Id.ToString(),
+            Action = "SubmissionDeleted",
+            ActorUserId = userId,
+            CreatedAtUtc = nowUtc,
+            DetailsJson = JsonSerializer.Serialize(new { submission.GameId, IsStaff = isStaff })
+        });
+
+        await db.SaveChangesAsync(ct);
     }
 
     private static void EnsureEditable(RegistrationSubmission submission)

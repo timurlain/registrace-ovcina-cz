@@ -21,6 +21,7 @@ using RegistraceOvcina.Web.Features.Kingdoms;
 using RegistraceOvcina.Web.Features.People;
 using RegistraceOvcina.Web.Features.Submissions;
 using RegistraceOvcina.Web.Features.Integration;
+using RegistraceOvcina.Web.Features.Roles;
 using RegistraceOvcina.Web.Features.Users;
 using RegistraceOvcina.Web.Security;
 
@@ -77,23 +78,32 @@ public class Program
             });
         }
 
-        // Seznam (OpenID Connect)
+        // Seznam (OAuth2 — not standard OIDC, uses custom endpoints)
         var seznamConfig = builder.Configuration.GetSection("ExternalAuth:Seznam");
         if (!string.IsNullOrEmpty(seznamConfig["ClientId"]) && !string.IsNullOrEmpty(seznamConfig["ClientSecret"]))
         {
-            authBuilder.AddOpenIdConnect("Seznam", "Seznam", options =>
+            authBuilder.AddOAuth("Seznam", "Seznam", options =>
             {
-                options.Authority = "https://login.szn.cz";
                 options.ClientId = seznamConfig["ClientId"]!;
                 options.ClientSecret = seznamConfig["ClientSecret"]!;
-                options.ResponseType = "code";
+                options.AuthorizationEndpoint = "https://login.szn.cz/api/v1/oauth/auth";
+                options.TokenEndpoint = "https://login.szn.cz/api/v1/oauth/token";
+                options.UserInformationEndpoint = "https://login.szn.cz/api/v1/user";
                 options.CallbackPath = "/signin-seznam";
-                options.Scope.Clear();
-                options.Scope.Add("openid");
-                options.Scope.Add("email");
-                options.Scope.Add("profile");
+                options.Scope.Add("identity");
                 options.SaveTokens = false;
-                options.GetClaimsFromUserInfoEndpoint = true;
+                options.ClaimActions.MapJsonKey(System.Security.Claims.ClaimTypes.NameIdentifier, "oauth_user_id");
+                options.ClaimActions.MapJsonKey(System.Security.Claims.ClaimTypes.Email, "email");
+                options.ClaimActions.MapJsonKey(System.Security.Claims.ClaimTypes.Name, "firstname");
+                options.Events.OnCreatingTicket = async context =>
+                {
+                    using var request = new HttpRequestMessage(HttpMethod.Get, context.Options.UserInformationEndpoint);
+                    request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", context.AccessToken);
+                    using var response = await context.Backchannel.SendAsync(request);
+                    response.EnsureSuccessStatusCode();
+                    var user = await response.Content.ReadFromJsonAsync<System.Text.Json.JsonElement>();
+                    context.RunClaimActions(user);
+                };
             });
         }
 
@@ -189,6 +199,7 @@ public class Program
         builder.Services.AddScoped<OrganizerSubmissionService>();
         builder.Services.AddScoped<PaymentService>();
         builder.Services.AddScoped<UserAdministrationService>();
+        builder.Services.AddScoped<GameRoleService>();
         builder.Services.Configure<IntegrationApiOptions>(
             builder.Configuration.GetSection(IntegrationApiOptions.SectionName));
 
@@ -270,6 +281,21 @@ public class Program
         await DatabaseInitializer.InitializeAsync(app);
 
         app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
+
+        // Redirect to kingdom assignment for the latest published game
+        app.MapGet("/organizace/rozdeleni", async (IDbContextFactory<ApplicationDbContext> dbFactory) =>
+        {
+            await using var db = await dbFactory.CreateDbContextAsync();
+            var latestGameId = await db.Games
+                .Where(x => x.IsPublished)
+                .OrderByDescending(x => x.StartsAtUtc)
+                .Select(x => (int?)x.Id)
+                .FirstOrDefaultAsync();
+
+            return latestGameId.HasValue
+                ? Results.LocalRedirect($"/organizace/hry/{latestGameId.Value}/kralovstvi")
+                : Results.LocalRedirect("/organizace/prihlasky");
+        }).RequireAuthorization(AuthorizationPolicies.StaffOnly);
         app.MapIntegrationApi();
         if (app.Environment.IsEnvironment("Testing"))
         {
@@ -805,6 +831,48 @@ public class Program
                 })
             .RequireAuthorization();
         app.MapPost(
+                "/prihlasky/{submissionId:int}/smazat",
+                async (HttpContext httpContext, int submissionId, UserManager<ApplicationUser> userManager, SubmissionService submissionService) =>
+                {
+                    var user = await userManager.GetUserAsync(httpContext.User);
+                    if (user is null)
+                    {
+                        return Results.LocalRedirect($"/Account/Login?ReturnUrl={Uri.EscapeDataString("/moje-prihlasky")}");
+                    }
+
+                    try
+                    {
+                        await submissionService.DeleteSubmissionAsync(submissionId, user.Id, isStaff: false);
+                        return Results.LocalRedirect("/moje-prihlasky?deleted=1");
+                    }
+                    catch (ValidationException ex)
+                    {
+                        return Results.LocalRedirect($"/prihlasky/{submissionId}?error={Uri.EscapeDataString(ex.Message)}");
+                    }
+                })
+            .RequireAuthorization();
+        app.MapPost(
+                "/organizace/prihlasky/{submissionId:int}/smazat",
+                async (HttpContext httpContext, int submissionId, UserManager<ApplicationUser> userManager, SubmissionService submissionService) =>
+                {
+                    var user = await userManager.GetUserAsync(httpContext.User);
+                    if (user is null)
+                    {
+                        return Results.LocalRedirect($"/Account/Login?ReturnUrl={Uri.EscapeDataString("/organizace/prihlasky")}");
+                    }
+
+                    try
+                    {
+                        await submissionService.DeleteSubmissionAsync(submissionId, user.Id, isStaff: true);
+                        return Results.LocalRedirect("/organizace/prihlasky?deleted=1");
+                    }
+                    catch (ValidationException ex)
+                    {
+                        return Results.LocalRedirect($"/organizace/prihlasky?error={Uri.EscapeDataString(ex.Message)}");
+                    }
+                })
+            .RequireAuthorization(AuthorizationPolicies.StaffOnly);
+        app.MapPost(
                 "/organizace/posta/sync",
                 async (HttpContext httpContext, MailboxSyncService? syncService) =>
                 {
@@ -857,6 +925,91 @@ public class Program
 
                     await inboxService.UnlinkAsync(messageId, user.Id);
                     return Results.LocalRedirect($"/organizace/posta/{messageId}?unlinked=1");
+                })
+            .RequireAuthorization(AuthorizationPolicies.StaffOnly);
+        app.MapPost(
+                "/organizace/posta/{messageId:int}/odpovedet",
+                async ([FromForm] string replyBody, int messageId, HttpContext httpContext, UserManager<ApplicationUser> userManager, InboxService inboxService) =>
+                {
+                    var user = await userManager.GetUserAsync(httpContext.User);
+                    if (user is null)
+                    {
+                        return Results.LocalRedirect($"/Account/Login?ReturnUrl={Uri.EscapeDataString($"/organizace/posta/{messageId}")}");
+                    }
+
+                    if (string.IsNullOrWhiteSpace(replyBody))
+                    {
+                        return Results.LocalRedirect($"/organizace/posta/{messageId}");
+                    }
+
+                    try
+                    {
+                        await inboxService.SendReplyAsync(messageId, replyBody.Trim(), user.Id, httpContext.RequestAborted);
+                        return Results.LocalRedirect($"/organizace/posta/{messageId}?replied=1");
+                    }
+                    catch (Exception ex) when (ex is InvalidOperationException or HttpRequestException or TaskCanceledException)
+                    {
+                        return Results.LocalRedirect($"/organizace/posta/{messageId}?replyError=1");
+                    }
+                })
+            .RequireAuthorization(AuthorizationPolicies.StaffOnly);
+        app.MapPost(
+                "/organizace/posta/odeslat",
+                async ([FromForm] string toEmail, [FromForm] string subject, [FromForm] string body, HttpContext httpContext, UserManager<ApplicationUser> userManager, InboxService inboxService) =>
+                {
+                    var user = await userManager.GetUserAsync(httpContext.User);
+                    if (user is null)
+                    {
+                        return Results.LocalRedirect($"/Account/Login?ReturnUrl={Uri.EscapeDataString("/organizace/posta")}");
+                    }
+
+                    if (string.IsNullOrWhiteSpace(toEmail) || string.IsNullOrWhiteSpace(subject) || string.IsNullOrWhiteSpace(body))
+                    {
+                        return Results.LocalRedirect("/organizace/posta");
+                    }
+
+                    try
+                    {
+                        await inboxService.SendNewMessageAsync(toEmail.Trim(), subject.Trim(), body.Trim(), null, user.Id, httpContext.RequestAborted);
+                        return Results.LocalRedirect("/organizace/posta?sent=1");
+                    }
+                    catch (Exception ex) when (ex is InvalidOperationException or HttpRequestException or TaskCanceledException)
+                    {
+                        return Results.LocalRedirect("/organizace/posta?sendError=1");
+                    }
+                })
+            .RequireAuthorization(AuthorizationPolicies.StaffOnly);
+        app.MapPost(
+                "/organizace/posta/hromadne",
+                async ([FromForm] string subject, [FromForm] string body, [FromForm] int? gameId, HttpContext httpContext, UserManager<ApplicationUser> userManager, InboxService inboxService) =>
+                {
+                    var user = await userManager.GetUserAsync(httpContext.User);
+                    if (user is null)
+                    {
+                        return Results.LocalRedirect($"/Account/Login?ReturnUrl={Uri.EscapeDataString("/organizace/posta")}");
+                    }
+
+                    if (string.IsNullOrWhiteSpace(subject) || string.IsNullOrWhiteSpace(body))
+                    {
+                        return Results.LocalRedirect("/organizace/posta?sendError=1");
+                    }
+
+                    var recipients = await inboxService.GetBulkRecipientsAsync(gameId, httpContext.RequestAborted);
+                    if (recipients.Count == 0)
+                    {
+                        return Results.LocalRedirect("/organizace/posta?sendError=1");
+                    }
+
+                    try
+                    {
+                        var (sent, failed) = await inboxService.SendBulkEmailAsync(
+                            recipients, subject.Trim(), body.Trim(), user.Id, httpContext.RequestAborted);
+                        return Results.LocalRedirect($"/organizace/posta?bulkSent={sent}&bulkFailed={failed}");
+                    }
+                    catch (Exception ex) when (ex is InvalidOperationException or HttpRequestException or TaskCanceledException)
+                    {
+                        return Results.LocalRedirect("/organizace/posta?sendError=1");
+                    }
                 })
             .RequireAuthorization(AuthorizationPolicies.StaffOnly);
         app.MapPost(

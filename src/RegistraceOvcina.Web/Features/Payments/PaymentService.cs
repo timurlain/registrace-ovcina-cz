@@ -36,7 +36,8 @@ public sealed class PaymentService(
                 x.PrimaryEmail,
                 x.ExpectedTotalAmount,
                 PaidAmount = x.Payments.Sum(p => p.Amount),
-                x.PaymentVariableSymbol
+                x.PaymentVariableSymbol,
+                x.VoluntaryDonation
             });
 
         if (balanceFilter.HasValue)
@@ -62,7 +63,8 @@ public sealed class PaymentService(
                 x.ExpectedTotalAmount,
                 x.PaidAmount,
                 pricingService.CalculateBalanceStatus(x.ExpectedTotalAmount, x.PaidAmount),
-                x.PaymentVariableSymbol))
+                x.PaymentVariableSymbol,
+                x.VoluntaryDonation))
             .ToList();
     }
 
@@ -154,7 +156,8 @@ public sealed record PaymentOverviewItem(
     decimal ExpectedTotal,
     decimal PaidAmount,
     BalanceStatus BalanceStatus,
-    string? VariableSymbol);
+    string? VariableSymbol,
+    decimal VoluntaryDonation = 0m);
 
 public sealed record PaymentHistoryItem(
     int Id,

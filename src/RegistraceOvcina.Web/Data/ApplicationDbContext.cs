@@ -13,6 +13,7 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
     public DbSet<EmailMessage> EmailMessages => Set<EmailMessage>();
     public DbSet<FoodOrder> FoodOrders => Set<FoodOrder>();
     public DbSet<Game> Games => Set<Game>();
+    public DbSet<GameRole> GameRoles => Set<GameRole>();
     public DbSet<GameInvitation> GameInvitations => Set<GameInvitation>();
     public DbSet<GameKingdomTarget> GameKingdomTargets => Set<GameKingdomTarget>();
     public DbSet<HistoricalImportBatch> HistoricalImportBatches => Set<HistoricalImportBatch>();
@@ -47,6 +48,9 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
             entity.Property(x => x.Phone).HasMaxLength(40);
             entity.Property(x => x.Notes).HasMaxLength(4000);
             entity.HasIndex(x => new { x.LastName, x.FirstName, x.BirthYear });
+            entity.HasIndex(x => x.Email)
+                .IsUnique()
+                .HasFilter("\"Email\" IS NOT NULL AND \"Email\" != ''");
         });
 
         builder.Entity<Game>(entity =>
@@ -257,6 +261,21 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
                 .WithMany()
                 .HasForeignKey(x => x.LinkedPersonId)
                 .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        builder.Entity<GameRole>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.RoleName).HasMaxLength(50).IsRequired();
+            entity.HasIndex(x => new { x.UserId, x.GameId, x.RoleName }).IsUnique();
+            entity.HasOne(x => x.User)
+                .WithMany()
+                .HasForeignKey(x => x.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(x => x.Game)
+                .WithMany()
+                .HasForeignKey(x => x.GameId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
 
         builder.Entity<AuditLog>(entity =>

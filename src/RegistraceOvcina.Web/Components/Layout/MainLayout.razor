@@ -13,7 +13,7 @@
         <div class="container py-3 d-flex flex-column flex-lg-row align-items-lg-center justify-content-between gap-3">
             <div class="d-flex flex-column">
                 <a class="brand-link" href="/">Ovčina registrace</a>
-                <span class="text-secondary">Přihlášky skupin a rodin, platby a minulé účasti, vše v jednom místě.</span>
+                <span class="text-secondary header-subtitle">Přihlášky skupin a rodin, platby a minulé účasti, vše v jednom místě.</span>
             </div>
 
             <div class="d-flex flex-column flex-lg-row align-items-lg-center gap-3">
@@ -28,15 +28,18 @@
                         <Authorized>
                             <a class="nav-link" href="/organizace/prihlasky">Přihlášky</a>
                             <a class="nav-link" href="/organizace/platby">Platby</a>
-                            <a class="nav-link" href="/organizace/osoby">Osoby</a>
-                            <a class="nav-link" href="/organizace/strava">Přehled stravy</a>
+                            <a class="nav-link" href="/organizace/rozdeleni">Království</a>
+                            <a class="nav-link" href="/organizace/role">Role</a>
+                            <a class="nav-link" href="/organizace/strava">Strava</a>
                             <a class="nav-link" href="/organizace/posta">Pošta</a>
+                            <span class="nav-divider"></span>
+                            <a class="nav-link" href="/organizace/osoby">Osoby</a>
                         </Authorized>
                     </AuthorizeView>
                     <AuthorizeView Roles="@RoleNames.Admin">
                         <Authorized>
-                            <a class="nav-link" href="/admin/hry">Správa her</a>
-                            <a class="nav-link" href="/admin/kralovstvi">Království</a>
+                            <a class="nav-link" href="/admin/hry">Hry</a>
+                            <a class="nav-link" href="/admin/kralovstvi">Správa království</a>
                             <a class="nav-link" href="/admin/organizatori">Organizátoři</a>
                         </Authorized>
                     </AuthorizeView>

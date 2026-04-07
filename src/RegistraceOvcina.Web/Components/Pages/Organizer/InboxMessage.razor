@@ -48,16 +48,48 @@ else
             </section>
         </div>
 
+        @if (replied == 1)
+        {
+            <div class="col-12">
+                <div class="alert alert-success mb-0">Odpověď byla odeslána.</div>
+            </div>
+        }
+
+        @if (replyError == 1)
+        {
+            <div class="col-12">
+                <div class="alert alert-danger mb-0">Odpověď se nepodařilo odeslat.</div>
+            </div>
+        }
+
+        @if (InboxService.CanReply)
+        {
+            <div class="col-12">
+                <section class="card shadow-sm">
+                    <div class="card-body p-4">
+                        <h2 class="h5 mb-3">Odpovědět</h2>
+                        <form method="post" action="/organizace/posta/@messageId/odpovedet">
+                            <AntiforgeryToken />
+                            <div class="mb-3">
+                                <textarea name="ReplyBody" class="form-control" rows="5" placeholder="Napište odpověď..." data-testid="reply-body"></textarea>
+                            </div>
+                            <button type="submit" class="btn btn-primary" data-testid="reply-submit">Odeslat odpověď</button>
+                        </form>
+                    </div>
+                </section>
+            </div>
+        }
+
         <div class="col-12">
             <section class="card shadow-sm">
                 <div class="card-body p-4">
                     <h2 class="h5 mb-3">Propojení</h2>
 
-                    @if (linked)
+                    @if (linked == 1)
                     {
                         <div class="alert alert-success">Propojení uloženo.</div>
                     }
-                    @if (unlinked)
+                    @if (unlinked == 1)
                     {
                         <div class="alert alert-info">Propojení odstraněno.</div>
                     }
@@ -138,10 +170,16 @@ else
     public int messageId { get; set; }
 
     [SupplyParameterFromQuery(Name = "linked")]
-    private bool linked { get; set; }
+    private int? linked { get; set; }
 
     [SupplyParameterFromQuery(Name = "unlinked")]
-    private bool unlinked { get; set; }
+    private int? unlinked { get; set; }
+
+    [SupplyParameterFromQuery(Name = "replied")]
+    private int? replied { get; set; }
+
+    [SupplyParameterFromQuery(Name = "replyError")]
+    private int? replyError { get; set; }
 
     private EmailMessage? message;
     private List<SubmissionLookupItem>? submissions;

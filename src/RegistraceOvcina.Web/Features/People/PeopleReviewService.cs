@@ -155,7 +155,8 @@ public sealed class PeopleReviewService(
                 string.IsNullOrWhiteSpace(x.Subject) ? "(bez předmětu)" : x.Subject,
                 x.From,
                 x.ReceivedAtUtc,
-                x.SentAtUtc))
+                x.SentAtUtc,
+                x.Direction))
             .ToListAsync(cancellationToken);
 
         var notes = await db.OrganizerNotes
@@ -441,6 +442,8 @@ public sealed class PeopleReviewService(
         canonical.UpdatedAtUtc = timeProvider.GetUtcNow().UtcDateTime;
 
         duplicate.IsDeleted = true;
+        duplicate.Email = null;   // Free unique email constraint for reuse
+        duplicate.Phone = null;
         duplicate.UpdatedAtUtc = timeProvider.GetUtcNow().UtcDateTime;
 
         db.AuditLogs.Add(new AuditLog
@@ -689,7 +692,8 @@ public sealed record LinkedEmailMessageItem(
     string Subject,
     string From,
     DateTime? ReceivedAtUtc,
-    DateTime? SentAtUtc);
+    DateTime? SentAtUtc,
+    EmailDirection Direction);
 
 public sealed record PersonOrganizerNoteItem(
     int Id,

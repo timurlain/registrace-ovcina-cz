@@ -104,6 +104,9 @@ public sealed class OrganizerSubmissionService(
 
         var timeline = BuildTimeline(submission, emails, auditLogs);
 
+        var breakdown = pricingService.CalculateBreakdown(
+            submission.Game, submission.Registrations, submission.VoluntaryDonation);
+
         return new OrganizerSubmissionDetail
         {
             Id = submission.Id,
@@ -173,7 +176,9 @@ public sealed class OrganizerSubmissionService(
                     e.Subject,
                     e.ReceivedAtUtc ?? e.SentAtUtc))
                 .ToList(),
-            Timeline = timeline
+            Timeline = timeline,
+            PriceBreakdown = breakdown.Lines,
+            VoluntaryDonation = submission.VoluntaryDonation
         };
     }
 
@@ -372,6 +377,8 @@ public sealed class OrganizerSubmissionDetail
     public IReadOnlyList<OrganizerNoteDetail> Notes { get; init; } = [];
     public IReadOnlyList<OrganizerEmailDetail> Emails { get; init; } = [];
     public IReadOnlyList<TimelineEvent> Timeline { get; init; } = [];
+    public IReadOnlyList<PriceBreakdownLine> PriceBreakdown { get; init; } = [];
+    public decimal VoluntaryDonation { get; init; }
 }
 
 public sealed class OrganizerAttendeeDetail

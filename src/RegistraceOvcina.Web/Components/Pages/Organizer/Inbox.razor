@@ -1,6 +1,7 @@
 @page "/organizace/posta"
 @attribute [Authorize(Policy = AuthorizationPolicies.StaffOnly)]
 
+@using RegistraceOvcina.Web.Data
 @using RegistraceOvcina.Web.Features.Email
 
 @inject InboxService InboxService
@@ -36,12 +37,20 @@ else
                     <div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-end gap-3">
                         <div>
                             <h1 class="h3 mb-2">Příchozí pošta</h1>
-                            <p class="text-secondary mb-0">Zprávy ze sdílené poštovní schránky.</p>
+                            <p class="text-secondary mb-0">Příchozí a odchozí zprávy ze sdílené poštovní schránky.</p>
                         </div>
                         <div class="d-flex gap-2">
                             @if (synced == 1)
                             {
                                 <span class="badge bg-success align-self-center">Synchronizováno</span>
+                            }
+                            @if (sent == 1)
+                            {
+                                <span class="badge bg-success align-self-center">Zpráva byla odeslána.</span>
+                            }
+                            @if (sendError == 1)
+                            {
+                                <span class="badge bg-danger align-self-center">Odeslání se nezdařilo.</span>
                             }
                             <form method="post" action="/organizace/posta/sync">
                                 <AntiforgeryToken />
@@ -52,6 +61,40 @@ else
                 </div>
             </section>
         </div>
+
+        @if (InboxService.CanReply)
+        {
+            <div class="col-12">
+                <button type="button" class="btn btn-primary mb-3" @onclick="ToggleCompose">
+                    @(showCompose ? "Skrýt" : "Nová zpráva")
+                </button>
+
+                @if (showCompose)
+                {
+                    <div class="card shadow-sm mb-4">
+                        <div class="card-body p-4">
+                            <h3 class="h5 mb-3">Nová zpráva</h3>
+                            <form method="post" action="/organizace/posta/odeslat">
+                                <AntiforgeryToken />
+                                <div class="mb-3">
+                                    <label class="form-label">Příjemce (e-mail)</label>
+                                    <input name="ToEmail" type="email" class="form-control" placeholder="jan@example.cz" required />
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label">Předmět</label>
+                                    <input name="Subject" class="form-control" placeholder="Ovčina — ..." required />
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label">Text zprávy</label>
+                                    <textarea name="Body" class="form-control" rows="5" placeholder="Dobrý den,..." required></textarea>
+                                </div>
+                                <button type="submit" class="btn btn-primary">Odeslat</button>
+                            </form>
+                        </div>
+                    </div>
+                }
+            </div>
+        }
 
         <div class="col-12">
             <section class="card shadow-sm">
@@ -67,6 +110,7 @@ else
                                 <thead>
                                     <tr>
                                         <th>Datum</th>
+                                        <th>Směr</th>
                                         <th>Od</th>
                                         <th>Předmět</th>
                                         <th>Propojeno s</th>
@@ -78,7 +122,19 @@ else
                                     {
                                         <tr data-testid="@($"inbox-row-{msg.Id}")">
                                             <td class="text-nowrap small">
-                                                @(msg.ReceivedAtUtc?.ToLocalTime().ToString("d.M.yyyy H:mm") ?? "—")
+                                                @(msg.ReceivedAtUtc?.ToLocalTime().ToString("d.M.yyyy H:mm")
+                                                    ?? msg.SentAtUtc?.ToLocalTime().ToString("d.M.yyyy H:mm")
+                                                    ?? "—")
+                                            </td>
+                                            <td>
+                                                @if (msg.Direction == EmailDirection.Inbound)
+                                                {
+                                                    <span class="badge bg-secondary-subtle text-secondary-emphasis">Příchozí</span>
+                                                }
+                                                else
+                                                {
+                                                    <span class="badge bg-success-subtle text-success-emphasis">Odesláno</span>
+                                                }
                                             </td>
                                             <td>@msg.From</td>
                                             <td>
@@ -146,7 +202,19 @@ else
     [SupplyParameterFromQuery(Name = "synced")]
     private int? synced { get; set; }
 
+    [SupplyParameterFromQuery(Name = "sent")]
+    private int? sent { get; set; }
+
+    [SupplyParameterFromQuery(Name = "sendError")]
+    private int? sendError { get; set; }
+
     private InboxPageResult? result;
+    private bool showCompose;
+
+    private void ToggleCompose()
+    {
+        showCompose = !showCompose;
+    }
 
     protected override async Task OnParametersSetAsync()
     {
