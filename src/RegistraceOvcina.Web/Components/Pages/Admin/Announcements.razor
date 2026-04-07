@@ -1,0 +1,167 @@
+@page "/admin/oznameni"
+@attribute [Authorize(Policy = AuthorizationPolicies.AdminOnly)]
+
+@using RegistraceOvcina.Web.Data
+@using RegistraceOvcina.Web.Features.Announcements
+@using RegistraceOvcina.Web.Security
+
+@inject AnnouncementService AnnouncementService
+
+<PageTitle>Oznámení</PageTitle>
+
+<div class="row g-4">
+    <div class="col-12">
+        <section class="card shadow-sm">
+            <div class="card-body p-4">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <h1 class="h3 mb-0">Oznámení</h1>
+                    <button class="btn btn-primary" @onclick="ShowCreateForm">Nové oznámení</button>
+                </div>
+
+                @if (showForm)
+                {
+                    <div class="card mb-4">
+                        <div class="card-body">
+                            <h3 class="h5 mb-3">@(editingId.HasValue ? "Upravit oznámení" : "Nové oznámení")</h3>
+                            <div class="mb-3">
+                                <label class="form-label">Název</label>
+                                <input @bind="formTitle" class="form-control" />
+                            </div>
+                            <div class="mb-3">
+                                <label class="form-label">Obsah (HTML)</label>
+                                <textarea @bind="formHtml" class="form-control" rows="15"></textarea>
+                            </div>
+                            @if (editingId.HasValue)
+                            {
+                                <div class="form-check mb-3">
+                                    <input class="form-check-input" type="checkbox" @bind="formIsActive" id="form-active" />
+                                    <label class="form-check-label" for="form-active">Aktivní</label>
+                                </div>
+                            }
+                            <div class="d-flex gap-2">
+                                <button class="btn btn-primary" @onclick="SaveAsync">Uložit</button>
+                                <button class="btn btn-outline-secondary" @onclick="CancelForm">Zrušit</button>
+                            </div>
+                        </div>
+                    </div>
+                }
+
+                @if (announcements is null)
+                {
+                    <p class="text-secondary">Načítám...</p>
+                }
+                else if (announcements.Count == 0)
+                {
+                    <p class="text-secondary">Žádná oznámení.</p>
+                }
+                else
+                {
+                    <div class="table-responsive">
+                        <table class="table align-middle">
+                            <thead>
+                                <tr>
+                                    <th>Název</th>
+                                    <th>Vytvořeno</th>
+                                    <th>Stav</th>
+                                    <th>Akce</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var a in announcements)
+                                {
+                                    <tr>
+                                        <td>@a.Title</td>
+                                        <td class="text-nowrap small">@a.CreatedAtUtc.ToLocalTime().ToString("d.M.yyyy H:mm")</td>
+                                        <td>
+                                            @if (a.IsActive)
+                                            {
+                                                <span class="badge bg-success">Aktivní</span>
+                                            }
+                                            else
+                                            {
+                                                <span class="badge bg-secondary">Neaktivní</span>
+                                            }
+                                        </td>
+                                        <td>
+                                            <div class="d-flex gap-1">
+                                                <button class="btn btn-sm btn-outline-primary" @onclick="() => Edit(a)">Upravit</button>
+                                                <button class="btn btn-sm btn-outline-danger" @onclick="() => DeleteAsync(a.Id)">Smazat</button>
+                                            </div>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </div>
+        </section>
+    </div>
+</div>
+
+@code {
+    private List<Announcement>? announcements;
+    private bool showForm;
+    private int? editingId;
+    private string formTitle = "";
+    private string formHtml = "";
+    private bool formIsActive = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        announcements = await AnnouncementService.GetAllAsync();
+    }
+
+    private void ShowCreateForm()
+    {
+        editingId = null;
+        formTitle = "";
+        formHtml = "";
+        formIsActive = true;
+        showForm = true;
+    }
+
+    private void Edit(Announcement a)
+    {
+        editingId = a.Id;
+        formTitle = a.Title;
+        formHtml = a.HtmlContent;
+        formIsActive = a.IsActive;
+        showForm = true;
+    }
+
+    private void CancelForm()
+    {
+        showForm = false;
+        editingId = null;
+    }
+
+    private async Task SaveAsync()
+    {
+        if (string.IsNullOrWhiteSpace(formTitle) || string.IsNullOrWhiteSpace(formHtml)) return;
+
+        if (editingId.HasValue)
+        {
+            await AnnouncementService.UpdateAsync(editingId.Value, formTitle, formHtml, formIsActive);
+        }
+        else
+        {
+            await AnnouncementService.CreateAsync(formTitle, formHtml);
+        }
+
+        showForm = false;
+        editingId = null;
+        await LoadAsync();
+    }
+
+    private async Task DeleteAsync(int id)
+    {
+        await AnnouncementService.DeleteAsync(id);
+        await LoadAsync();
+    }
+}

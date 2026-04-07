@@ -390,3 +390,23 @@ public sealed class LoginToken
     public DateTime CreatedAtUtc { get; set; }
     public ApplicationUser? User { get; set; }
 }
+
+public sealed class Announcement
+{
+    public int Id { get; set; }
+    public string Title { get; set; } = "";
+    public string HtmlContent { get; set; } = "";
+    public bool IsActive { get; set; } = true;
+    public DateTime CreatedAtUtc { get; set; }
+    public List<AnnouncementDismissal> Dismissals { get; set; } = [];
+}
+
+public sealed class AnnouncementDismissal
+{
+    public int Id { get; set; }
+    public int AnnouncementId { get; set; }
+    public string UserId { get; set; } = "";
+    public DateTime DismissedAtUtc { get; set; }
+    public Announcement Announcement { get; set; } = default!;
+    public ApplicationUser User { get; set; } = default!;
+}
