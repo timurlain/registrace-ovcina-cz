@@ -1,6 +1,7 @@
 using System.ComponentModel.DataAnnotations;
 using System.Globalization;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Identity;
@@ -145,6 +146,9 @@ public class Program
             options => options.UseNpgsql(connectionString)
                               .ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning)),
             ServiceLifetime.Scoped);
+
+        builder.Services.AddDataProtection()
+            .PersistKeysToDbContext<ApplicationDbContext>();
         builder.Services.AddDatabaseDeveloperPageExceptionFilter();
         builder.Services.Configure<MailboxEmailOptions>(
             builder.Configuration.GetSection(MailboxEmailOptions.SectionName));
