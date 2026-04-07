@@ -43,6 +43,12 @@ public sealed class CreateGameInput : IValidatableObject
     [Range(0, 50000, ErrorMessage = "Cena pomocníka musí být kladná nebo nulová.")]
     public decimal AdultHelperBasePrice { get; set; }
 
+    [Range(0, 50000, ErrorMessage = "Cena ubytování uvnitř musí být kladná nebo nulová.")]
+    public decimal LodgingIndoorPrice { get; set; }
+
+    [Range(0, 50000, ErrorMessage = "Cena ubytování venku musí být kladná nebo nulová.")]
+    public decimal LodgingOutdoorPrice { get; set; }
+
     [Required(ErrorMessage = "Vyplňte bankovní účet.")]
     public string BankAccount { get; set; } = "";
 
@@ -160,6 +166,8 @@ public sealed class CreateGameInput : IValidatableObject
         SecondChildPrice,
         ThirdPlusChildPrice,
         AdultHelperBasePrice,
+        LodgingIndoorPrice,
+        LodgingOutdoorPrice,
         BankAccount,
         BankAccountName,
         TargetPlayerCountTotal,
@@ -183,6 +191,8 @@ public sealed class CreateGameInput : IValidatableObject
             SecondChildPrice = game.SecondChildPrice,
             ThirdPlusChildPrice = game.ThirdPlusChildPrice,
             AdultHelperBasePrice = game.AdultHelperBasePrice,
+            LodgingIndoorPrice = game.LodgingIndoorPrice,
+            LodgingOutdoorPrice = game.LodgingOutdoorPrice,
             BankAccount = game.BankAccount,
             BankAccountName = game.BankAccountName,
             TargetPlayerCountTotal = game.TargetPlayerCountTotal,
@@ -205,6 +215,8 @@ public sealed class CreateGameInput : IValidatableObject
             SecondChildPrice = 900m,
             ThirdPlusChildPrice = 600m,
             AdultHelperBasePrice = 0m,
+            LodgingIndoorPrice = 0m,
+            LodgingOutdoorPrice = 0m,
             BankAccount = "CZ6508000000192000145399",
             BankAccountName = "Ovčina z.s.",
             TargetPlayerCountTotal = 80,

@@ -66,6 +66,8 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
             entity.Property(x => x.SecondChildPrice).HasPrecision(18, 2);
             entity.Property(x => x.ThirdPlusChildPrice).HasPrecision(18, 2);
             entity.Property(x => x.AdultHelperBasePrice).HasPrecision(18, 2);
+            entity.Property(x => x.LodgingIndoorPrice).HasPrecision(18, 2);
+            entity.Property(x => x.LodgingOutdoorPrice).HasPrecision(18, 2);
             entity.HasMany(x => x.Submissions)
                 .WithOne(x => x.Game)
                 .HasForeignKey(x => x.GameId)

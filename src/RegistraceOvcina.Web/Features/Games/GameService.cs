@@ -107,6 +107,8 @@ public sealed class GameService(IDbContextFactory<ApplicationDbContext> dbContex
             SecondChildPrice = command.SecondChildPrice,
             ThirdPlusChildPrice = command.ThirdPlusChildPrice,
             AdultHelperBasePrice = command.AdultHelperBasePrice,
+            LodgingIndoorPrice = command.LodgingIndoorPrice,
+            LodgingOutdoorPrice = command.LodgingOutdoorPrice,
             BankAccount = command.BankAccount.Trim(),
             BankAccountName = command.BankAccountName.Trim(),
             VariableSymbolStrategy = VariableSymbolStrategy.PerSubmissionId,
@@ -168,6 +170,8 @@ public sealed class GameService(IDbContextFactory<ApplicationDbContext> dbContex
         game.SecondChildPrice = command.SecondChildPrice;
         game.ThirdPlusChildPrice = command.ThirdPlusChildPrice;
         game.AdultHelperBasePrice = command.AdultHelperBasePrice;
+        game.LodgingIndoorPrice = command.LodgingIndoorPrice;
+        game.LodgingOutdoorPrice = command.LodgingOutdoorPrice;
         game.BankAccount = command.BankAccount.Trim();
         game.BankAccountName = command.BankAccountName.Trim();
         game.TargetPlayerCountTotal = command.TargetPlayerCountTotal;
@@ -226,6 +230,8 @@ public sealed record CreateGameCommand(
     decimal SecondChildPrice,
     decimal ThirdPlusChildPrice,
     decimal AdultHelperBasePrice,
+    decimal LodgingIndoorPrice,
+    decimal LodgingOutdoorPrice,
     string BankAccount,
     string BankAccountName,
     int TargetPlayerCountTotal,

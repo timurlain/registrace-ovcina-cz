@@ -32,6 +32,12 @@ public sealed class SubmissionPricingService(TimeProvider timeProvider)
         // Food orders
         total += activeRegs.SelectMany(x => x.FoodOrders).Sum(x => x.Price);
 
+        // Lodging
+        foreach (var reg in activeRegs)
+        {
+            total += GetLodgingPrice(game, reg.LodgingPreference);
+        }
+
         // Voluntary donation
         total += Math.Max(0, voluntaryDonation);
 
@@ -51,6 +57,13 @@ public sealed class SubmissionPricingService(TimeProvider timeProvider)
             _ => game.ThirdPlusChildPrice > 0 ? game.ThirdPlusChildPrice : game.PlayerBasePrice
         };
     }
+
+    internal static decimal GetLodgingPrice(Game game, LodgingPreference? preference) => preference switch
+    {
+        LodgingPreference.Indoor => game.LodgingIndoorPrice,
+        LodgingPreference.OwnTent or LodgingPreference.CampOutdoor => game.LodgingOutdoorPrice,
+        _ => 0m
+    };
 
     /// <summary>
     /// Normalizes a Czech surname to a family key by stripping common feminine suffixes.
@@ -143,6 +156,19 @@ public sealed class SubmissionPricingService(TimeProvider timeProvider)
         var foodTotal = foodOrders.Sum(x => x.Price);
         if (foodTotal > 0)
             lines.Add(new("Stravování", foodOrders.Count, 0, foodTotal));
+
+        // Lodging
+        var indoorCount = activeRegs.Count(x => x.LodgingPreference == LodgingPreference.Indoor);
+        var outdoorCount = activeRegs.Count(x => x.LodgingPreference is LodgingPreference.OwnTent or LodgingPreference.CampOutdoor);
+
+        if (indoorCount > 0 && game.LodgingIndoorPrice > 0)
+        {
+            lines.Add(new PriceBreakdownLine("Ubytování uvnitř", indoorCount, game.LodgingIndoorPrice, indoorCount * game.LodgingIndoorPrice));
+        }
+        if (outdoorCount > 0 && game.LodgingOutdoorPrice > 0)
+        {
+            lines.Add(new PriceBreakdownLine("Ubytování venku/stan", outdoorCount, game.LodgingOutdoorPrice, outdoorCount * game.LodgingOutdoorPrice));
+        }
 
         if (voluntaryDonation > 0)
             lines.Add(new("Dobrovolný příspěvek", 1, voluntaryDonation, voluntaryDonation));

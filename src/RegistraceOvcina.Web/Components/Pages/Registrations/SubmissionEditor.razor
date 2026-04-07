@@ -416,15 +416,33 @@ else
                                             <InputRadioGroup @bind-Value="attendeeInput.LodgingPreference">
                                                 <div class="form-check">
                                                     <InputRadio class="form-check-input" id="lodge-indoor" Value="@((LodgingPreference?)LodgingPreference.Indoor)" />
-                                                    <label class="form-check-label" for="lodge-indoor">Chci spát uvnitř (budova)</label>
+                                                    <label class="form-check-label" for="lodge-indoor">
+                                                        Chci spát uvnitř (budova)
+                                                        @if (submission.LodgingIndoorPrice > 0)
+                                                        {
+                                                            <span class="text-secondary">(@submission.LodgingIndoorPrice.ToString("0.##") Kč)</span>
+                                                        }
+                                                    </label>
                                                 </div>
                                                 <div class="form-check">
                                                     <InputRadio class="form-check-input" id="lodge-tent" Value="@((LodgingPreference?)LodgingPreference.OwnTent)" />
-                                                    <label class="form-check-label" for="lodge-tent">Mám vlastní stan</label>
+                                                    <label class="form-check-label" for="lodge-tent">
+                                                        Mám vlastní stan
+                                                        @if (submission.LodgingOutdoorPrice > 0)
+                                                        {
+                                                            <span class="text-secondary">(@submission.LodgingOutdoorPrice.ToString("0.##") Kč)</span>
+                                                        }
+                                                    </label>
                                                 </div>
                                                 <div class="form-check">
                                                     <InputRadio class="form-check-input" id="lodge-outdoor" Value="@((LodgingPreference?)LodgingPreference.CampOutdoor)" />
-                                                    <label class="form-check-label" for="lodge-outdoor">Mohu spát venku / pod širákem</label>
+                                                    <label class="form-check-label" for="lodge-outdoor">
+                                                        Mohu spát venku / pod širákem
+                                                        @if (submission.LodgingOutdoorPrice > 0)
+                                                        {
+                                                            <span class="text-secondary">(@submission.LodgingOutdoorPrice.ToString("0.##") Kč)</span>
+                                                        }
+                                                    </label>
                                                 </div>
                                                 <div class="form-check">
                                                     <InputRadio class="form-check-input" id="lodge-none" Value="@((LodgingPreference?)LodgingPreference.NotStaying)" />

@@ -126,6 +126,8 @@ public sealed class Game
     public decimal SecondChildPrice { get; set; }
     public decimal ThirdPlusChildPrice { get; set; }
     public decimal AdultHelperBasePrice { get; set; }
+    public decimal LodgingIndoorPrice { get; set; }
+    public decimal LodgingOutdoorPrice { get; set; }
     public string BankAccount { get; set; } = "";
     public string BankAccountName { get; set; } = "";
     public VariableSymbolStrategy VariableSymbolStrategy { get; set; }
