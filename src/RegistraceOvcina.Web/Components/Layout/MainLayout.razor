@@ -58,20 +58,12 @@
                         </div>
                     </Authorized>
                     <NotAuthorized>
-                        <div class="d-flex gap-2">
-                            <button type="button"
-                                    class="btn btn-outline-primary btn-sm"
-                                    data-testid="header-login-button"
-                                    @onclick="NavigateToLogin">
-                                Přihlášení
-                            </button>
-                            <button type="button"
-                                    class="btn btn-primary btn-sm"
-                                    data-testid="header-register-button"
-                                    @onclick="NavigateToRegister">
-                                Vytvořit účet
-                            </button>
-                        </div>
+                        <button type="button"
+                                class="btn btn-primary btn-sm"
+                                data-testid="header-login-button"
+                                @onclick="NavigateToLogin">
+                            Přihlásit se
+                        </button>
                     </NotAuthorized>
                 </AuthorizeView>
             </div>
@@ -121,8 +113,6 @@
     }
 
     private void NavigateToLogin() => NavigationManager.NavigateTo("/Account/Login", forceLoad: true);
-
-    private void NavigateToRegister() => NavigationManager.NavigateTo("/Account/Register", forceLoad: true);
 
     private static string GetUserLabel(ClaimsPrincipal user) =>
         user.Identity?.Name
