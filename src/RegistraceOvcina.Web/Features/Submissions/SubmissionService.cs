@@ -473,7 +473,19 @@ public sealed class SubmissionService(
                 var nameMatch = string.Equals(existingPerson.FirstName, input.FirstName.Trim(), StringComparison.OrdinalIgnoreCase)
                     && string.Equals(existingPerson.LastName, input.LastName.Trim(), StringComparison.OrdinalIgnoreCase);
 
-                if (!nameMatch && !input.UseExistingPersonId.HasValue)
+                if (nameMatch || input.UseExistingPersonId.HasValue)
+                {
+                    // Same name or user chose to reuse — clear email on old person, reassign to existing
+                    registration.Person.Email = null;
+                    registration.Person.UpdatedAtUtc = timeProvider.GetUtcNow().UtcDateTime;
+
+                    existingPerson.BirthYear = input.BirthYear;
+                    existingPerson.UpdatedAtUtc = timeProvider.GetUtcNow().UtcDateTime;
+                    registration.PersonId = existingPerson.Id;
+                    registration.Person = existingPerson;
+                    newEmail = existingPerson.Email; // keep existing email, skip overwrite below
+                }
+                else
                 {
                     throw new EmailConflictException(
                         existingPerson.Id, existingPerson.FirstName, existingPerson.LastName, newEmail);
