@@ -900,15 +900,17 @@ function scrollToValidationErrors() {
         }
         catch (Microsoft.EntityFrameworkCore.DbUpdateException dbEx)
         {
-            Logger.LogError(dbEx, "DB error saving contact for submission {SubmissionId}", SubmissionId);
+            var code = GenerateErrorCode();
+            Logger.LogError(dbEx, "[{ErrorCode}] DB error saving contact for submission {SubmissionId}", code, SubmissionId);
             errorMessage = dbEx.InnerException is Npgsql.PostgresException { SqlState: "23505" }
                 ? "Údaje se nepodařilo uložit — pravděpodobně duplicitní e-mail nebo telefon. Zkontrolujte prosím zadané údaje."
-                : "Údaje se nepodařilo uložit kvůli chybě databáze. Zkuste to prosím znovu později.";
+                : $"Údaje se nepodařilo uložit kvůli chybě databáze. Kód chyby: {code}";
         }
         catch (Exception ex)
         {
-            Logger.LogError(ex, "Unexpected error saving contact for submission {SubmissionId}", SubmissionId);
-            errorMessage = "Došlo k neočekávané chybě při ukládání údajů. Zkuste to prosím znovu později.";
+            var code = GenerateErrorCode();
+            Logger.LogError(ex, "[{ErrorCode}] Unexpected error saving contact for submission {SubmissionId}", code, SubmissionId);
+            errorMessage = $"Došlo k neočekávané chybě při ukládání údajů. Kód chyby: {code}";
         }
     }
 
@@ -954,17 +956,22 @@ function scrollToValidationErrors() {
         }
         catch (Microsoft.EntityFrameworkCore.DbUpdateException dbEx)
         {
-            Logger.LogError(dbEx, "DB error saving attendee for submission {SubmissionId}", SubmissionId);
+            var code = GenerateErrorCode();
+            Logger.LogError(dbEx, "[{ErrorCode}] DB error saving attendee for submission {SubmissionId}", code, SubmissionId);
             errorMessage = dbEx.InnerException is Npgsql.PostgresException { SqlState: "23505" }
                 ? "Účastníka se nepodařilo uložit — pravděpodobně duplicitní e-mail. Zkontrolujte prosím zadané údaje."
-                : "Účastníka se nepodařilo uložit. Zkuste to prosím znovu.";
+                : $"Účastníka se nepodařilo uložit. Kód chyby: {code}";
         }
         catch (Exception ex)
         {
-            Logger.LogError(ex, "Unexpected error saving attendee for submission {SubmissionId}", SubmissionId);
-            errorMessage = "Došlo k neočekávané chybě. Zkuste to prosím znovu.";
+            var code = GenerateErrorCode();
+            Logger.LogError(ex, "[{ErrorCode}] Unexpected error saving attendee for submission {SubmissionId}", code, SubmissionId);
+            errorMessage = $"Došlo k neočekávané chybě. Kód chyby: {code}";
         }
     }
+
+    private static string GenerateErrorCode() =>
+        $"ERR-{DateTime.UtcNow:MMdd}-{Guid.NewGuid().ToString("N")[..4]}";
 
     private async Task<ApplicationUser?> GetCurrentUserAsync()
     {
