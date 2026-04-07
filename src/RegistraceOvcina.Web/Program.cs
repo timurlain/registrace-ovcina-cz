@@ -1,6 +1,7 @@
 using System.ComponentModel.DataAnnotations;
 using System.Globalization;
 using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Components.Authorization;
 using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Identity;
@@ -145,6 +146,9 @@ public class Program
             options => options.UseNpgsql(connectionString)
                               .ConfigureWarnings(w => w.Ignore(RelationalEventId.PendingModelChangesWarning)),
             ServiceLifetime.Scoped);
+
+        builder.Services.AddDataProtection()
+            .PersistKeysToDbContext<ApplicationDbContext>();
         builder.Services.AddDatabaseDeveloperPageExceptionFilter();
         builder.Services.Configure<MailboxEmailOptions>(
             builder.Configuration.GetSection(MailboxEmailOptions.SectionName));
@@ -198,7 +202,7 @@ public class Program
         builder.Services.AddScoped<OrganizerSubmissionService>();
         builder.Services.AddScoped<PaymentService>();
         builder.Services.Configure<AcsEmailOptions>(builder.Configuration.GetSection(AcsEmailOptions.SectionName));
-        builder.Services.AddSingleton<AcsTransactionalEmailService>();
+        builder.Services.AddScoped<AcsTransactionalEmailService>();
         builder.Services.AddScoped<MagicLinkAuthService>();
         builder.Services.AddScoped<UserAdministrationService>();
         builder.Services.AddScoped<GameRoleService>();

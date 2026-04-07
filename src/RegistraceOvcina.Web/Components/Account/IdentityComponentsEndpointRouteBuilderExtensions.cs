@@ -66,6 +66,8 @@ internal static class IdentityComponentsEndpointRouteBuilderExtensions
 
             log.LogInformation("Magic link request: Email={Email}, IsValid={IsValid}", trimmedEmail, isValidEmailInput);
 
+            var sendFailed = false;
+
             if (isValidEmailInput)
             {
                 var loginToken = await magicLinkService.RequestMagicLinkAsync(trimmedEmail);
@@ -81,22 +83,15 @@ internal static class IdentityComponentsEndpointRouteBuilderExtensions
                         verifyUrl += $"&returnUrl={Uri.EscapeDataString(returnUrl)}";
                     }
 
-                    log.LogInformation("Dispatching fire-and-forget email send to {Email}", loginToken.Email);
-
-                    // Fire-and-forget: don't make the user wait for the email to send
-                    _ = Task.Run(async () =>
+                    try
                     {
-                        try
-                        {
-                            log.LogInformation("Background send starting for {Email}", loginToken.Email);
-                            await emailService.SendMagicLinkAsync(loginToken.Email, verifyUrl);
-                            log.LogInformation("Background send completed for {Email}", loginToken.Email);
-                        }
-                        catch (Exception ex)
-                        {
-                            log.LogError(ex, "Background send FAILED for {Email}", loginToken.Email);
-                        }
-                    });
+                        await emailService.SendMagicLinkAsync(loginToken.Email, verifyUrl);
+                    }
+                    catch (Exception ex)
+                    {
+                        log.LogError(ex, "Failed to send magic link email to {Email}", loginToken.Email);
+                        sendFailed = true;
+                    }
                 }
                 else
                 {
@@ -104,8 +99,9 @@ internal static class IdentityComponentsEndpointRouteBuilderExtensions
                 }
             }
 
-            // Always redirect to success (don't reveal whether email exists)
-            var redirectUrl = $"/Account/Login?linkSent=1";
+            var redirectUrl = sendFailed
+                ? "/Account/Login?error=send-failed"
+                : "/Account/Login?linkSent=1";
             if (!string.IsNullOrWhiteSpace(returnUrl))
             {
                 redirectUrl += $"&returnUrl={Uri.EscapeDataString(returnUrl)}";
