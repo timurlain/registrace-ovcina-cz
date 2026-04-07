@@ -8,11 +8,16 @@ public sealed partial class AcsTransactionalEmailService(
     IOptions<AcsEmailOptions> options,
     ILogger<AcsTransactionalEmailService> logger)
 {
+    private readonly object _clientLock = new();
     private EmailClient? _client;
 
     private EmailClient GetOrCreateClient(string connectionString)
     {
-        return _client ??= new EmailClient(connectionString);
+        if (_client is not null) return _client;
+        lock (_clientLock)
+        {
+            return _client ??= new EmailClient(connectionString);
+        }
     }
 
     public async Task SendMagicLinkAsync(string recipientEmail, string magicLinkUrl, CancellationToken ct = default)
@@ -53,11 +58,11 @@ public sealed partial class AcsTransactionalEmailService(
                     """
             });
 
-        var result = await client.SendAsync(WaitUntil.Started, emailMessage, ct);
+        var operation = await client.SendAsync(WaitUntil.Started, emailMessage, ct);
         logger.LogInformation(
-            "ACS send result for {Email}: Status={Status}, OperationId={OperationId}",
+            "ACS send accepted for {Email}: OperationId={OperationId}, HasCompleted={HasCompleted}",
             recipientEmail,
-            result.Value.Status,
-            result.Id);
+            operation.Id,
+            operation.HasCompleted);
     }
 }
