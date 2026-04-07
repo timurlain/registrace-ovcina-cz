@@ -8,28 +8,9 @@ public sealed partial class AcsTransactionalEmailService(
     IOptions<AcsEmailOptions> options,
     ILogger<AcsTransactionalEmailService> logger)
 {
-    private readonly object _clientLock = new();
-    private EmailClient? _client;
-
-    private EmailClient GetOrCreateClient(string connectionString)
-    {
-        if (_client is not null) return _client;
-        lock (_clientLock)
-        {
-            return _client ??= new EmailClient(connectionString);
-        }
-    }
-
     public async Task SendMagicLinkAsync(string recipientEmail, string magicLinkUrl, CancellationToken ct = default)
     {
         var config = options.Value;
-        logger.LogInformation(
-            "ACS config check: IsConfigured={IsConfigured}, HasConnectionString={HasCs}, HasSender={HasSender}, Sender={Sender}",
-            config.IsConfigured,
-            !string.IsNullOrWhiteSpace(config.ConnectionString),
-            !string.IsNullOrWhiteSpace(config.SenderAddress),
-            config.SenderAddress ?? "(null)");
-
         if (!config.IsConfigured)
         {
             logger.LogWarning("ACS not configured — magic link NOT sent to {Email}", recipientEmail);
@@ -38,7 +19,7 @@ public sealed partial class AcsTransactionalEmailService(
 
         logger.LogInformation("Sending magic link to {Email} via ACS", recipientEmail);
 
-        var client = GetOrCreateClient(config.ConnectionString!);
+        var client = new EmailClient(config.ConnectionString);
 
         var emailMessage = new EmailMessage(
             senderAddress: config.SenderAddress,
@@ -58,11 +39,7 @@ public sealed partial class AcsTransactionalEmailService(
                     """
             });
 
-        var operation = await client.SendAsync(WaitUntil.Started, emailMessage, ct);
-        logger.LogInformation(
-            "ACS send accepted for {Email}: OperationId={OperationId}, HasCompleted={HasCompleted}",
-            recipientEmail,
-            operation.Id,
-            operation.HasCompleted);
+        await client.SendAsync(WaitUntil.Started, emailMessage, ct);
+        logger.LogInformation("ACS send accepted for {Email}", recipientEmail);
     }
 }
