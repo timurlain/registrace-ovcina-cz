@@ -665,9 +665,9 @@ else
                     {
                         <div class="mb-3">
                             <label class="form-label" for="donation-summary">Dobrovolný příspěvek (Kč)</label>
-                            <EditForm Model="contactInput" OnValidSubmit="SaveContactAsync" FormName="donation">
+                            <EditForm Model="donationInput" OnValidSubmit="SaveDonationAsync" FormName="donation">
                                 <div class="input-group">
-                                    <InputNumber id="donation-summary" @bind-Value="contactInput.VoluntaryDonation" class="form-control" placeholder="0" data-testid="voluntary-donation" />
+                                    <InputNumber id="donation-summary" @bind-Value="donationInput.Amount" class="form-control" placeholder="0" data-testid="voluntary-donation" />
                                     <button type="submit" class="btn btn-outline-primary">Uložit</button>
                                 </div>
                             </EditForm>
@@ -785,6 +785,7 @@ function scrollToValidationErrors() {
     private string? queryError { get; set; }
 
     private ContactInput contactInput = new();
+    private DonationInput donationInput = new();
     private AttendeeInput attendeeInput = CreateDefaultAttendeeInput();
     private int? editingRegistrationId;
     private string? errorMessage;
@@ -852,6 +853,7 @@ function scrollToValidationErrors() {
             RegistrantNote = submission.RegistrantNote,
             VoluntaryDonation = submission.VoluntaryDonation
         };
+        donationInput = new DonationInput { Amount = submission.VoluntaryDonation };
         attendeeInput = CreateDefaultAttendeeInput(attendeeInput);
 
         paymentQr = submission.Status == SubmissionStatus.Submitted
@@ -932,6 +934,32 @@ function scrollToValidationErrors() {
             var code = GenerateErrorCode();
             Logger.LogError(ex, "[{ErrorCode}] Unexpected error saving contact for submission {SubmissionId}", code, SubmissionId);
             errorMessage = $"Došlo k neočekávané chybě při ukládání údajů. Zkuste to prosím znovu později. Kód chyby: {code}";
+        }
+    }
+
+    private async Task SaveDonationAsync()
+    {
+        errorMessage = null;
+        statusMessage = null;
+
+        var user = await GetCurrentUserAsync();
+        if (user is null)
+        {
+            errorMessage = "Nepodařilo se načíst přihlášeného uživatele.";
+            return;
+        }
+
+        try
+        {
+            await SubmissionService.UpdateDonationAsync(SubmissionId, user.Id, donationInput.Amount);
+            statusMessage = "Příspěvek byl uložený.";
+            await LoadAsync();
+        }
+        catch (Exception ex)
+        {
+            var code = GenerateErrorCode();
+            Logger.LogError(ex, "[{ErrorCode}] Error saving donation for submission {SubmissionId}", code, SubmissionId);
+            errorMessage = $"Nepodařilo se uložit příspěvek. Kód chyby: {code}";
         }
     }
 

@@ -260,6 +260,30 @@ public sealed class SubmissionService(
         await db.SaveChangesAsync(cancellationToken);
     }
 
+    public async Task UpdateDonationAsync(
+        int submissionId,
+        string userId,
+        decimal amount,
+        CancellationToken cancellationToken = default)
+    {
+        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+        var submission = await db.RegistrationSubmissions
+            .Include(x => x.Game)
+            .Include(x => x.Registrations).ThenInclude(r => r.Person)
+            .Include(x => x.Registrations).ThenInclude(r => r.FoodOrders)
+            .AsSplitQuery()
+            .FirstOrDefaultAsync(x => x.Id == submissionId && x.RegistrantUserId == userId, cancellationToken)
+            ?? throw new ValidationException("Přihláška nebyla nalezena.");
+        EnsureEditable(submission);
+
+        submission.VoluntaryDonation = Math.Max(0, amount);
+        submission.ExpectedTotalAmount = pricingService.CalculateExpectedTotal(
+            submission.Game, submission.Registrations, submission.VoluntaryDonation);
+        submission.LastEditedAtUtc = timeProvider.GetUtcNow().UtcDateTime;
+
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
     public async Task AddAttendeeAsync(
         int submissionId,
         string userId,
@@ -1067,6 +1091,12 @@ public sealed class ContactInput
 
     [Range(0, 100000, ErrorMessage = "Příspěvek musí být kladný nebo nulový.")]
     public decimal VoluntaryDonation { get; set; }
+}
+
+public sealed class DonationInput
+{
+    [Range(0, 100000, ErrorMessage = "Příspěvek musí být kladný nebo nulový.")]
+    public decimal Amount { get; set; }
 }
 
 public sealed class AttendeeInput : IValidatableObject
