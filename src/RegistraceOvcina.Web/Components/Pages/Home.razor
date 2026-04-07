@@ -25,13 +25,7 @@
                                         class="btn btn-primary btn-lg"
                                         data-testid="home-login-button"
                                         @onclick="NavigateToLogin">
-                                    Přihlásit se a začít
-                                </button>
-                                <button type="button"
-                                        class="btn btn-outline-light btn-lg"
-                                        data-testid="home-register-button"
-                                        @onclick="NavigateToRegister">
-                                    Vytvořit nový účet
+                                    Přihlásit se
                                 </button>
                             </NotAuthorized>
                         </AuthorizeView>
@@ -114,8 +108,6 @@
     }
 
     private void NavigateToLogin() => NavigationManager.NavigateTo("/Account/Login", forceLoad: true);
-
-    private void NavigateToRegister() => NavigationManager.NavigateTo("/Account/Register", forceLoad: true);
 
     private static string GetGameDateRange(GameSummary game) =>
         $"{CzechTime.Format(game.StartsAtUtc)} - {CzechTime.Format(game.EndsAtUtc)}";
