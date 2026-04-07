@@ -22,6 +22,7 @@ using RegistraceOvcina.Web.Features.People;
 using RegistraceOvcina.Web.Features.Submissions;
 using RegistraceOvcina.Web.Features.Integration;
 using RegistraceOvcina.Web.Features.Roles;
+using RegistraceOvcina.Web.Features.Announcements;
 using RegistraceOvcina.Web.Features.Auth;
 using RegistraceOvcina.Web.Features.Users;
 using RegistraceOvcina.Web.Security;
@@ -201,6 +202,7 @@ public class Program
         builder.Services.AddScoped<MagicLinkAuthService>();
         builder.Services.AddScoped<UserAdministrationService>();
         builder.Services.AddScoped<GameRoleService>();
+        builder.Services.AddScoped<AnnouncementService>();
         builder.Services.Configure<IntegrationApiOptions>(
             builder.Configuration.GetSection(IntegrationApiOptions.SectionName));
 
