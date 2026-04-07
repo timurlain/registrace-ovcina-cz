@@ -2,7 +2,7 @@
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
-    <Version>0.7.0</Version>
+    <Version>0.7.1</Version>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UserSecretsId>aspnet-RegistraceOvcina_Web-a86d1b4a-2dd0-47b4-baa0-79e72288dbbd</UserSecretsId>
