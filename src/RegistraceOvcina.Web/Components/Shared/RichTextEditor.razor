@@ -41,8 +41,11 @@
 
     @if (showSource)
     {
-        <textarea class="form-control font-monospace" rows="15" style="min-height: @(MinHeight)px; border-top-left-radius: 0; border-top-right-radius: 0;"
-                  @bind="sourceHtml" @bind:event="oninput"></textarea>
+        <textarea class="form-control font-monospace border-top-0 rounded-top-0"
+                  rows="15"
+                  style="min-height: @(MinHeight)px;"
+                  @bind="sourceHtml"
+                  @bind:event="oninput"></textarea>
     }
 </div>
 
