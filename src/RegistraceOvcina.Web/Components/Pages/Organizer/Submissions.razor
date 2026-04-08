@@ -2,6 +2,7 @@
 @attribute [Authorize(Policy = AuthorizationPolicies.StaffOnly)]
 
 @inject OrganizerSubmissionService OrganizerSubmissionService
+@inject NavigationManager NavigationManager
 
 <PageTitle>Přihlášky</PageTitle>
 
@@ -11,7 +12,7 @@
         <p class="text-secondary mb-0">Přehled všech přihlášek pro organizátory.</p>
     </div>
     <div>
-        <form method="get" class="d-flex align-items-center gap-2">
+        <form method="get" class="d-flex align-items-center gap-2 flex-wrap">
             <label class="form-label mb-0 text-nowrap" for="search">Hledat</label>
             <input id="search" name="q" type="text" value="@searchQuery" class="form-control form-control-sm" style="min-width: 150px;" placeholder="Jméno, email..." />
             <label class="form-label mb-0 text-nowrap" for="game-filter">Hra</label>
@@ -25,6 +26,18 @@
                     }
                 }
             </select>
+            <label class="form-label mb-0 text-nowrap" for="status-filter">Stav</label>
+            <select id="status-filter" name="status" class="form-select form-select-sm" style="min-width: 150px;" onchange="this.form.submit()">
+                <option value="">Všechny stavy</option>
+                <option value="Draft" selected="@(statusFilter == "Draft")">Rozpracovaná</option>
+                <option value="Submitted" selected="@(statusFilter == "Submitted")">Odeslaná</option>
+                <option value="Cancelled" selected="@(statusFilter == "Cancelled")">Zrušená</option>
+            </select>
+            @if (!string.IsNullOrEmpty(sortColumn))
+            {
+                <input type="hidden" name="sort" value="@sortColumn" />
+                <input type="hidden" name="dir" value="@sortDir" />
+            }
             <button type="submit" class="btn btn-sm btn-outline-primary">Filtrovat</button>
         </form>
     </div>
@@ -49,14 +62,14 @@ else
         <table class="table align-middle">
             <thead>
                 <tr>
-                    <th>Hra</th>
-                    <th>Kontakt</th>
-                    <th>E-mail</th>
-                    <th>Stav</th>
-                    <th class="text-end">Účastníků</th>
-                    <th class="text-end">Celkem</th>
-                    <th>Platba</th>
-                    <th>Odesláno</th>
+                    <th><a href="@SortHref("game")" class="text-decoration-none text-dark">Hra@(SortArrow("game"))</a></th>
+                    <th><a href="@SortHref("contact")" class="text-decoration-none text-dark">Kontakt@(SortArrow("contact"))</a></th>
+                    <th><a href="@SortHref("email")" class="text-decoration-none text-dark">E-mail@(SortArrow("email"))</a></th>
+                    <th><a href="@SortHref("status")" class="text-decoration-none text-dark">Stav@(SortArrow("status"))</a></th>
+                    <th class="text-end"><a href="@SortHref("attendees")" class="text-decoration-none text-dark">Účastníků@(SortArrow("attendees"))</a></th>
+                    <th class="text-end"><a href="@SortHref("total")" class="text-decoration-none text-dark">Celkem@(SortArrow("total"))</a></th>
+                    <th><a href="@SortHref("balance")" class="text-decoration-none text-dark">Platba@(SortArrow("balance"))</a></th>
+                    <th><a href="@SortHref("submitted")" class="text-decoration-none text-dark">Odesláno@(SortArrow("submitted"))</a></th>
                     <th></th>
                 </tr>
             </thead>
@@ -97,15 +110,36 @@ else
     [SupplyParameterFromQuery(Name = "deleted")]
     private int? deleted { get; set; }
 
+    [SupplyParameterFromQuery(Name = "status")]
+    private string? statusFilter { get; set; }
+
+    [SupplyParameterFromQuery(Name = "sort")]
+    private string? sortColumn { get; set; }
+
+    [SupplyParameterFromQuery(Name = "dir")]
+    private string? sortDir { get; set; }
+
     private IReadOnlyList<OrganizerSubmissionSummary>? submissions;
     private IReadOnlyList<GameFilterItem>? gameFilters;
 
     protected override async Task OnInitializedAsync()
     {
         gameFilters = await OrganizerSubmissionService.GetGameFilterListAsync();
+        await LoadAsync();
+    }
 
+    protected override async Task OnParametersSetAsync()
+    {
+        if (gameFilters is not null)
+        {
+            await LoadAsync();
+        }
+    }
+
+    private async Task LoadAsync()
+    {
         // Default to the most recent game when no filter is selected
-        if (!selectedGameId.HasValue && gameFilters.Count > 0)
+        if (!selectedGameId.HasValue && gameFilters!.Count > 0)
         {
             selectedGameId = gameFilters[0].Id;
         }
@@ -122,8 +156,58 @@ else
                 .ToList();
         }
 
-        submissions = allSubmissions;
+        // Apply status filter
+        if (!string.IsNullOrWhiteSpace(statusFilter)
+            && Enum.TryParse<SubmissionStatus>(statusFilter, ignoreCase: true, out var parsedStatus))
+        {
+            allSubmissions = allSubmissions.Where(s => s.Status == parsedStatus).ToList();
+        }
+
+        // Apply sorting (preserve service order when no sort requested)
+        submissions = ApplySort(allSubmissions);
     }
+
+    private IReadOnlyList<OrganizerSubmissionSummary> ApplySort(IReadOnlyList<OrganizerSubmissionSummary> items)
+    {
+        if (string.IsNullOrWhiteSpace(sortColumn)) return items;
+
+        var desc = string.Equals(sortDir, "desc", StringComparison.OrdinalIgnoreCase);
+
+        IEnumerable<OrganizerSubmissionSummary> sorted = sortColumn.ToLowerInvariant() switch
+        {
+            "game" => desc ? items.OrderByDescending(s => s.GameName) : items.OrderBy(s => s.GameName),
+            "contact" => desc ? items.OrderByDescending(s => s.PrimaryContactName) : items.OrderBy(s => s.PrimaryContactName),
+            "email" => desc ? items.OrderByDescending(s => s.PrimaryEmail) : items.OrderBy(s => s.PrimaryEmail),
+            "status" => desc ? items.OrderByDescending(s => s.Status) : items.OrderBy(s => s.Status),
+            "attendees" => desc ? items.OrderByDescending(s => s.AttendeeCount) : items.OrderBy(s => s.AttendeeCount),
+            "total" => desc ? items.OrderByDescending(s => s.ExpectedTotalAmount) : items.OrderBy(s => s.ExpectedTotalAmount),
+            "balance" => desc ? items.OrderByDescending(s => s.BalanceStatus) : items.OrderBy(s => s.BalanceStatus),
+            "submitted" => desc ? items.OrderByDescending(s => s.SubmittedAtUtc) : items.OrderBy(s => s.SubmittedAtUtc),
+            _ => items
+        };
+
+        return sorted.ToList();
+    }
+
+    private string SortHref(string column)
+    {
+        var isActive = string.Equals(sortColumn, column, StringComparison.OrdinalIgnoreCase);
+        var newDir = isActive && string.Equals(sortDir, "asc", StringComparison.OrdinalIgnoreCase) ? "desc" : "asc";
+
+        var parameters = new Dictionary<string, object?>();
+        if (selectedGameId.HasValue) parameters["gameId"] = selectedGameId;
+        if (!string.IsNullOrWhiteSpace(searchQuery)) parameters["q"] = searchQuery;
+        if (!string.IsNullOrWhiteSpace(statusFilter)) parameters["status"] = statusFilter;
+        parameters["sort"] = column;
+        parameters["dir"] = newDir;
+
+        return NavigationManager.GetUriWithQueryParameters("/organizace/prihlasky", parameters);
+    }
+
+    private string SortArrow(string column) =>
+        string.Equals(sortColumn, column, StringComparison.OrdinalIgnoreCase)
+            ? (string.Equals(sortDir, "desc", StringComparison.OrdinalIgnoreCase) ? " ▾" : " ▴")
+            : "";
 
     private static string GetSubmissionStatusLabel(SubmissionStatus status) => status switch
     {
