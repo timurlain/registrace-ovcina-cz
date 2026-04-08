@@ -123,11 +123,8 @@
                            class="form-control" />
                 </div>
                 <div class="mb-3">
-                    <label class="form-label">Text (HTML)</label>
-                    <textarea data-testid="email-body"
-                              @bind="emailBody"
-                              class="form-control"
-                              rows="8"></textarea>
+                    <label class="form-label">Text e-mailu</label>
+                    <RichTextEditor @ref="emailEditor" Value="@emailBody" />
                 </div>
                 <button data-testid="send-all"
                         class="btn btn-success"
@@ -184,12 +181,12 @@
     private string statusCss = "";
     private bool showConfirm;
     private bool isSending;
+    private RichTextEditor? emailEditor;
 
     private bool CanSend =>
         !isSending
         && contacts is { Count: > 0 }
-        && !string.IsNullOrWhiteSpace(emailSubject)
-        && !string.IsNullOrWhiteSpace(emailBody);
+        && !string.IsNullOrWhiteSpace(emailSubject);
 
     protected override async Task OnInitializedAsync()
     {
@@ -243,6 +240,7 @@
 
         try
         {
+            emailBody = emailEditor is not null ? await emailEditor.GetHtmlAsync() : emailBody;
             var sentCount = await ExternalContactService.SendToAllAsync(emailSubject, emailBody);
             var totalCount = contacts?.Count ?? 0;
 
@@ -253,6 +251,7 @@
 
             emailSubject = "";
             emailBody = "";
+            if (emailEditor is not null) await emailEditor.SetHtmlAsync("");
         }
         catch (Exception)
         {

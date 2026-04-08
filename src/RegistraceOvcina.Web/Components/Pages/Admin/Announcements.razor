@@ -28,8 +28,8 @@
                                 <input @bind="formTitle" class="form-control" />
                             </div>
                             <div class="mb-3">
-                                <label class="form-label">Obsah (HTML)</label>
-                                <textarea @bind="formHtml" class="form-control" rows="15"></textarea>
+                                <label class="form-label">Obsah</label>
+                                <RichTextEditor @ref="htmlEditor" Value="@formHtml" MinHeight="300" />
                             </div>
                             @if (editingId.HasValue)
                             {
@@ -106,6 +106,7 @@
     private string formTitle = "";
     private string formHtml = "";
     private bool formIsActive = true;
+    private RichTextEditor? htmlEditor;
 
     protected override async Task OnInitializedAsync()
     {
@@ -126,13 +127,14 @@
         showForm = true;
     }
 
-    private void Edit(Announcement a)
+    private async Task Edit(Announcement a)
     {
         editingId = a.Id;
         formTitle = a.Title;
         formHtml = a.HtmlContent;
         formIsActive = a.IsActive;
         showForm = true;
+        if (htmlEditor is not null) await htmlEditor.SetHtmlAsync(formHtml);
     }
 
     private void CancelForm()
@@ -143,6 +145,7 @@
 
     private async Task SaveAsync()
     {
+        if (htmlEditor is not null) formHtml = await htmlEditor.GetHtmlAsync();
         if (string.IsNullOrWhiteSpace(formTitle) || string.IsNullOrWhiteSpace(formHtml)) return;
 
         if (editingId.HasValue)
