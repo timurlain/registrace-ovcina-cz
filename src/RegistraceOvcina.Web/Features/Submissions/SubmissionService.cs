@@ -80,7 +80,7 @@ public sealed class SubmissionService(
         {
             GameId = gameId,
             RegistrantUserId = user.Id,
-            PrimaryContactName = string.IsNullOrWhiteSpace(user.DisplayName) ? user.Email ?? user.UserName ?? "" : user.DisplayName,
+            PrimaryContactName = string.IsNullOrWhiteSpace(user.DisplayName) ? "" : user.DisplayName,
             PrimaryEmail = user.Email ?? "",
             PrimaryPhone = user.PhoneNumber ?? "",
             Status = SubmissionStatus.Draft,
@@ -939,7 +939,7 @@ public sealed class SubmissionService(
         {
             GameId = targetGameId,
             RegistrantUserId = user.Id,
-            PrimaryContactName = string.IsNullOrWhiteSpace(user.DisplayName) ? user.Email ?? user.UserName ?? "" : user.DisplayName,
+            PrimaryContactName = string.IsNullOrWhiteSpace(user.DisplayName) ? "" : user.DisplayName,
             GroupName = source.GroupName,
             PrimaryEmail = user.Email ?? "",
             PrimaryPhone = user.PhoneNumber ?? "",
