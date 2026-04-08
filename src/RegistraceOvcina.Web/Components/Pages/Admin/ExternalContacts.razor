@@ -1,0 +1,277 @@
+@page "/admin/osloveni"
+@attribute [Authorize(Policy = AuthorizationPolicies.AdminOnly)]
+@rendermode InteractiveServer
+
+@using RegistraceOvcina.Web.Data
+@using RegistraceOvcina.Web.Features.ExternalContacts
+@using RegistraceOvcina.Web.Security
+
+@inject ExternalContactService ExternalContactService
+
+<PageTitle>Oslovení</PageTitle>
+
+<div class="row g-4">
+    @* ── Status alert ── *@
+    @if (!string.IsNullOrEmpty(statusMessage))
+    {
+        <div class="col-12">
+            <div class="alert @statusCss alert-dismissible fade show" role="alert">
+                @statusMessage
+                <button type="button" class="btn-close" @onclick="DismissStatus"></button>
+            </div>
+        </div>
+    }
+
+    @* ── Add contacts section ── *@
+    <div class="col-12">
+        <section class="card shadow-sm">
+            <div class="card-body p-4">
+                <h2 class="h5 mb-3">Přidat kontakty</h2>
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <label class="form-label">Jeden e-mail</label>
+                        <div class="input-group">
+                            <input data-testid="single-email"
+                                   @bind="singleEmail"
+                                   @bind:event="oninput"
+                                   class="form-control"
+                                   placeholder="email@example.com" />
+                            <button data-testid="add-single"
+                                    class="btn btn-primary"
+                                    @onclick="AddSingleAsync"
+                                    disabled="@string.IsNullOrWhiteSpace(singleEmail)">
+                                Přidat
+                            </button>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Hromadný import (jeden e-mail na řádek)</label>
+                        <textarea data-testid="bulk-emails"
+                                  @bind="bulkEmails"
+                                  class="form-control mb-2"
+                                  rows="4"
+                                  placeholder="jan@example.com&#10;petra@example.com"></textarea>
+                        <button data-testid="import-bulk"
+                                class="btn btn-outline-primary"
+                                @onclick="ImportBulkAsync"
+                                disabled="@string.IsNullOrWhiteSpace(bulkEmails)">
+                            Importovat
+                        </button>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </div>
+
+    @* ── Contact list ── *@
+    <div class="col-12">
+        <section class="card shadow-sm">
+            <div class="card-body p-4">
+                <h2 class="h5 mb-3">Kontakty (@(contacts?.Count ?? 0))</h2>
+
+                @if (contacts is null)
+                {
+                    <p class="text-secondary">Načítám...</p>
+                }
+                else if (contacts.Count == 0)
+                {
+                    <p class="text-secondary">Zatím žádné kontakty.</p>
+                }
+                else
+                {
+                    <div class="table-responsive">
+                        <table class="table align-middle">
+                            <thead>
+                                <tr>
+                                    <th>E-mail</th>
+                                    <th>Přidáno</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var c in contacts)
+                                {
+                                    <tr>
+                                        <td>@c.Email</td>
+                                        <td class="text-nowrap small">@c.CreatedAtUtc.ToLocalTime().ToString("d.M.yyyy")</td>
+                                        <td>
+                                            <button class="btn btn-sm btn-outline-danger"
+                                                    @onclick="() => DeleteAsync(c.Id)">
+                                                Smazat
+                                            </button>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </div>
+        </section>
+    </div>
+
+    @* ── Compose & send ── *@
+    <div class="col-12">
+        <section class="card shadow-sm">
+            <div class="card-body p-4">
+                <h2 class="h5 mb-3">Odeslat e-mail</h2>
+                <div class="mb-3">
+                    <label class="form-label">Předmět</label>
+                    <input data-testid="email-subject"
+                           @bind="emailSubject"
+                           @bind:event="oninput"
+                           class="form-control" />
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Text (HTML)</label>
+                    <textarea data-testid="email-body"
+                              @bind="emailBody"
+                              class="form-control"
+                              rows="8"></textarea>
+                </div>
+                <button data-testid="send-all"
+                        class="btn btn-success"
+                        @onclick="ConfirmSend"
+                        disabled="@(!CanSend)">
+                    @if (isSending)
+                    {
+                        <span class="spinner-border spinner-border-sm me-1" role="status"></span>
+                        @:Odesílám...
+                    }
+                    else
+                    {
+                        @:Odeslat všem (@(contacts?.Count ?? 0))
+                    }
+                </button>
+            </div>
+        </section>
+    </div>
+</div>
+
+@* ── Confirmation modal ── *@
+@if (showConfirm)
+{
+    <div class="modal fade show d-block" tabindex="-1" style="background-color: rgba(0,0,0,0.5);">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Potvrdit odeslání</h5>
+                    <button type="button" class="btn-close" @onclick="() => showConfirm = false"></button>
+                </div>
+                <div class="modal-body">
+                    <p>Opravdu odeslat e-mail @(contacts?.Count ?? 0) kontaktům?</p>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-outline-secondary" @onclick="() => showConfirm = false">Zrušit</button>
+                    <button data-testid="confirm-send"
+                            class="btn btn-success"
+                            @onclick="SendAllAsync">
+                        Odeslat
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    private List<ExternalContact>? contacts;
+    private string singleEmail = "";
+    private string bulkEmails = "";
+    private string emailSubject = "";
+    private string emailBody = "";
+    private string statusMessage = "";
+    private string statusCss = "";
+    private bool showConfirm;
+    private bool isSending;
+
+    private bool CanSend =>
+        !isSending
+        && contacts is { Count: > 0 }
+        && !string.IsNullOrWhiteSpace(emailSubject)
+        && !string.IsNullOrWhiteSpace(emailBody);
+
+    protected override async Task OnInitializedAsync()
+    {
+        contacts = await ExternalContactService.GetAllAsync();
+    }
+
+    private async Task AddSingleAsync()
+    {
+        if (string.IsNullOrWhiteSpace(singleEmail)) return;
+
+        var (added, skipped) = await ExternalContactService.ImportAsync([singleEmail]);
+        contacts = await ExternalContactService.GetAllAsync();
+        singleEmail = "";
+
+        if (added > 0)
+            SetStatus($"Kontakt přidán.", "alert-success");
+        else
+            SetStatus($"Kontakt již existuje.", "alert-warning");
+    }
+
+    private async Task ImportBulkAsync()
+    {
+        if (string.IsNullOrWhiteSpace(bulkEmails)) return;
+
+        var emails = bulkEmails
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        var (added, skipped) = await ExternalContactService.ImportAsync(emails);
+        contacts = await ExternalContactService.GetAllAsync();
+        bulkEmails = "";
+
+        SetStatus($"Importováno: {added} přidáno, {skipped} přeskočeno.", "alert-success");
+    }
+
+    private async Task DeleteAsync(int id)
+    {
+        await ExternalContactService.DeleteAsync(id);
+        contacts = await ExternalContactService.GetAllAsync();
+        SetStatus("Kontakt smazán.", "alert-success");
+    }
+
+    private void ConfirmSend()
+    {
+        showConfirm = true;
+    }
+
+    private async Task SendAllAsync()
+    {
+        showConfirm = false;
+        isSending = true;
+
+        try
+        {
+            var sentCount = await ExternalContactService.SendToAllAsync(emailSubject, emailBody);
+            var totalCount = contacts?.Count ?? 0;
+
+            if (sentCount == totalCount)
+                SetStatus($"E-mail úspěšně odeslán {sentCount} kontaktům.", "alert-success");
+            else
+                SetStatus($"Odesláno {sentCount} z {totalCount} e-mailů. Některé se nepodařilo odeslat.", "alert-warning");
+
+            emailSubject = "";
+            emailBody = "";
+        }
+        catch (Exception)
+        {
+            SetStatus("Při odesílání došlo k chybě.", "alert-danger");
+        }
+        finally
+        {
+            isSending = false;
+        }
+    }
+
+    private void SetStatus(string message, string css)
+    {
+        statusMessage = message;
+        statusCss = css;
+    }
+
+    private void DismissStatus()
+    {
+        statusMessage = "";
+    }
+}

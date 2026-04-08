@@ -31,6 +31,7 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
     public DbSet<RegistrationSubmission> RegistrationSubmissions => Set<RegistrationSubmission>();
     public DbSet<Announcement> Announcements => Set<Announcement>();
     public DbSet<AnnouncementDismissal> AnnouncementDismissals => Set<AnnouncementDismissal>();
+    public DbSet<ExternalContact> ExternalContacts => Set<ExternalContact>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -396,6 +397,13 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
                 .WithMany()
                 .HasForeignKey(x => x.LinkedCharacterId)
                 .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        builder.Entity<ExternalContact>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Email).HasMaxLength(320).IsRequired();
+            entity.HasIndex(x => x.Email).IsUnique();
         });
     }
 }

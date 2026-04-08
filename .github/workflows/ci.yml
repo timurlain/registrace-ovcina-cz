@@ -47,6 +47,12 @@ jobs:
       - name: Run unit tests
         run: dotnet test tests/RegistraceOvcina.Web.Tests/RegistraceOvcina.Web.Tests.csproj --configuration ${{ env.BUILD_CONFIGURATION }} --no-build --logger "trx;LogFileName=web-tests.trx"
 
+      - name: Install Playwright browsers
+        run: pwsh tests/RegistraceOvcina.E2E/bin/${{ env.BUILD_CONFIGURATION }}/net10.0/playwright.ps1 install --with-deps chromium
+
+      - name: Run E2E tests
+        run: dotnet test tests/RegistraceOvcina.E2E/RegistraceOvcina.E2E.csproj --configuration ${{ env.BUILD_CONFIGURATION }} --no-build --logger "trx;LogFileName=e2e-tests.trx"
+
       - name: Publish test results
         if: always()
         uses: actions/upload-artifact@v4

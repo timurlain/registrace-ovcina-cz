@@ -25,6 +25,7 @@ using RegistraceOvcina.Web.Features.Integration;
 using RegistraceOvcina.Web.Features.Roles;
 using RegistraceOvcina.Web.Features.Announcements;
 using RegistraceOvcina.Web.Features.Auth;
+using RegistraceOvcina.Web.Features.ExternalContacts;
 using RegistraceOvcina.Web.Features.Users;
 using RegistraceOvcina.Web.Security;
 
@@ -214,6 +215,7 @@ public class Program
         {
             builder.Services.AddScoped<MailboxSyncService>();
             builder.Services.AddScoped<InvitationService>();
+            builder.Services.AddScoped<ExternalContactService>();
         }
 
         var app = builder.Build();

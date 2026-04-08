@@ -410,3 +410,10 @@ public sealed class AnnouncementDismissal
     public Announcement Announcement { get; set; } = default!;
     public ApplicationUser User { get; set; } = default!;
 }
+
+public sealed class ExternalContact
+{
+    public int Id { get; set; }
+    public string Email { get; set; } = "";
+    public DateTime CreatedAtUtc { get; set; }
+}
