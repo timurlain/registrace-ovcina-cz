@@ -11,7 +11,7 @@
         </li>
     </ul>
 
-    <div style="display: @(showSource ? "none" : "block");">
+    <div style="@(showSource ? "position:absolute;left:-9999px;height:0;overflow:hidden;" : "")">
         <div id="@toolbarId">
             <span class="ql-formats">
                 <select class="ql-header">
@@ -85,9 +85,10 @@
     private async Task SwitchToEditor()
     {
         showSource = false;
+        StateHasChanged();
+        await Task.Delay(50);
         if (initialized)
         {
-            await Task.Yield();
             await JS.InvokeVoidAsync("quillInterop.setHtml", editorId, sourceHtml);
         }
     }
