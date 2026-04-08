@@ -2,6 +2,7 @@
 @attribute [Authorize(Policy = AuthorizationPolicies.StaffOnly)]
 
 @inject OrganizerSubmissionService OrganizerSubmissionService
+@inject NavigationManager NavigationManager
 
 <PageTitle>Přihlášky</PageTitle>
 
@@ -61,14 +62,14 @@ else
         <table class="table align-middle">
             <thead>
                 <tr>
-                    <th>@SortLink("game", "Hra")</th>
-                    <th>@SortLink("contact", "Kontakt")</th>
-                    <th>@SortLink("email", "E-mail")</th>
-                    <th>@SortLink("status", "Stav")</th>
-                    <th class="text-end">@SortLink("attendees", "Účastníků")</th>
-                    <th class="text-end">@SortLink("total", "Celkem")</th>
-                    <th>@SortLink("balance", "Platba")</th>
-                    <th>@SortLink("submitted", "Odesláno")</th>
+                    <th><a href="@SortHref("game")" class="text-decoration-none text-dark">Hra@(SortArrow("game"))</a></th>
+                    <th><a href="@SortHref("contact")" class="text-decoration-none text-dark">Kontakt@(SortArrow("contact"))</a></th>
+                    <th><a href="@SortHref("email")" class="text-decoration-none text-dark">E-mail@(SortArrow("email"))</a></th>
+                    <th><a href="@SortHref("status")" class="text-decoration-none text-dark">Stav@(SortArrow("status"))</a></th>
+                    <th class="text-end"><a href="@SortHref("attendees")" class="text-decoration-none text-dark">Účastníků@(SortArrow("attendees"))</a></th>
+                    <th class="text-end"><a href="@SortHref("total")" class="text-decoration-none text-dark">Celkem@(SortArrow("total"))</a></th>
+                    <th><a href="@SortHref("balance")" class="text-decoration-none text-dark">Platba@(SortArrow("balance"))</a></th>
+                    <th><a href="@SortHref("submitted")" class="text-decoration-none text-dark">Odesláno@(SortArrow("submitted"))</a></th>
                     <th></th>
                 </tr>
             </thead>
@@ -124,9 +125,21 @@ else
     protected override async Task OnInitializedAsync()
     {
         gameFilters = await OrganizerSubmissionService.GetGameFilterListAsync();
+        await LoadAsync();
+    }
 
+    protected override async Task OnParametersSetAsync()
+    {
+        if (gameFilters is not null)
+        {
+            await LoadAsync();
+        }
+    }
+
+    private async Task LoadAsync()
+    {
         // Default to the most recent game when no filter is selected
-        if (!selectedGameId.HasValue && gameFilters.Count > 0)
+        if (!selectedGameId.HasValue && gameFilters!.Count > 0)
         {
             selectedGameId = gameFilters[0].Id;
         }
@@ -144,20 +157,23 @@ else
         }
 
         // Apply status filter
-        if (!string.IsNullOrWhiteSpace(statusFilter) && Enum.TryParse<SubmissionStatus>(statusFilter, out var parsedStatus))
+        if (!string.IsNullOrWhiteSpace(statusFilter)
+            && Enum.TryParse<SubmissionStatus>(statusFilter, ignoreCase: true, out var parsedStatus))
         {
             allSubmissions = allSubmissions.Where(s => s.Status == parsedStatus).ToList();
         }
 
-        // Apply sorting
+        // Apply sorting (preserve service order when no sort requested)
         submissions = ApplySort(allSubmissions);
     }
 
     private IReadOnlyList<OrganizerSubmissionSummary> ApplySort(IReadOnlyList<OrganizerSubmissionSummary> items)
     {
+        if (string.IsNullOrWhiteSpace(sortColumn)) return items;
+
         var desc = string.Equals(sortDir, "desc", StringComparison.OrdinalIgnoreCase);
 
-        IEnumerable<OrganizerSubmissionSummary> sorted = sortColumn?.ToLowerInvariant() switch
+        IEnumerable<OrganizerSubmissionSummary> sorted = sortColumn.ToLowerInvariant() switch
         {
             "game" => desc ? items.OrderByDescending(s => s.GameName) : items.OrderBy(s => s.GameName),
             "contact" => desc ? items.OrderByDescending(s => s.PrimaryContactName) : items.OrderBy(s => s.PrimaryContactName),
@@ -167,28 +183,31 @@ else
             "total" => desc ? items.OrderByDescending(s => s.ExpectedTotalAmount) : items.OrderBy(s => s.ExpectedTotalAmount),
             "balance" => desc ? items.OrderByDescending(s => s.BalanceStatus) : items.OrderBy(s => s.BalanceStatus),
             "submitted" => desc ? items.OrderByDescending(s => s.SubmittedAtUtc) : items.OrderBy(s => s.SubmittedAtUtc),
-            _ => items.OrderByDescending(s => s.SubmittedAtUtc) // default sort
+            _ => items
         };
 
         return sorted.ToList();
     }
 
-    private MarkupString SortLink(string column, string label)
+    private string SortHref(string column)
     {
         var isActive = string.Equals(sortColumn, column, StringComparison.OrdinalIgnoreCase);
         var newDir = isActive && string.Equals(sortDir, "asc", StringComparison.OrdinalIgnoreCase) ? "desc" : "asc";
-        var arrow = isActive ? (string.Equals(sortDir, "desc", StringComparison.OrdinalIgnoreCase) ? " ▾" : " ▴") : "";
 
-        var qs = new List<string>();
-        if (selectedGameId.HasValue) qs.Add($"gameId={selectedGameId}");
-        if (!string.IsNullOrWhiteSpace(searchQuery)) qs.Add($"q={Uri.EscapeDataString(searchQuery)}");
-        if (!string.IsNullOrWhiteSpace(statusFilter)) qs.Add($"status={Uri.EscapeDataString(statusFilter)}");
-        qs.Add($"sort={column}");
-        qs.Add($"dir={newDir}");
+        var parameters = new Dictionary<string, object?>();
+        if (selectedGameId.HasValue) parameters["gameId"] = selectedGameId;
+        if (!string.IsNullOrWhiteSpace(searchQuery)) parameters["q"] = searchQuery;
+        if (!string.IsNullOrWhiteSpace(statusFilter)) parameters["status"] = statusFilter;
+        parameters["sort"] = column;
+        parameters["dir"] = newDir;
 
-        var href = $"/organizace/prihlasky?{string.Join("&amp;", qs)}";
-        return new MarkupString($"<a href=\"{href}\" class=\"text-decoration-none text-dark\">{label}{arrow}</a>");
+        return NavigationManager.GetUriWithQueryParameters("/organizace/prihlasky", parameters);
     }
+
+    private string SortArrow(string column) =>
+        string.Equals(sortColumn, column, StringComparison.OrdinalIgnoreCase)
+            ? (string.Equals(sortDir, "desc", StringComparison.OrdinalIgnoreCase) ? " ▾" : " ▴")
+            : "";
 
     private static string GetSubmissionStatusLabel(SubmissionStatus status) => status switch
     {
