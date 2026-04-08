@@ -2,37 +2,56 @@
 @implements IAsyncDisposable
 
 <div>
-    <div id="@toolbarId">
-        <span class="ql-formats">
-            <select class="ql-header">
-                <option value="2"></option>
-                <option value="3"></option>
-                <option selected></option>
-            </select>
-        </span>
-        <span class="ql-formats">
-            <button class="ql-bold"></button>
-            <button class="ql-italic"></button>
-            <button class="ql-underline"></button>
-        </span>
-        <span class="ql-formats">
-            <button class="ql-list" value="ordered"></button>
-            <button class="ql-list" value="bullet"></button>
-        </span>
-        <span class="ql-formats">
-            <button class="ql-link"></button>
-        </span>
-        <span class="ql-formats">
-            <button class="ql-clean"></button>
-        </span>
+    <ul class="nav nav-tabs mb-0">
+        <li class="nav-item">
+            <button class="nav-link @(showSource ? "" : "active")" type="button" @onclick="SwitchToEditor">Editor</button>
+        </li>
+        <li class="nav-item">
+            <button class="nav-link @(showSource ? "active" : "")" type="button" @onclick="SwitchToSource">HTML</button>
+        </li>
+    </ul>
+
+    <div style="display: @(showSource ? "none" : "block");">
+        <div id="@toolbarId">
+            <span class="ql-formats">
+                <select class="ql-header">
+                    <option value="2"></option>
+                    <option value="3"></option>
+                    <option selected></option>
+                </select>
+            </span>
+            <span class="ql-formats">
+                <button class="ql-bold"></button>
+                <button class="ql-italic"></button>
+                <button class="ql-underline"></button>
+            </span>
+            <span class="ql-formats">
+                <button class="ql-list" value="ordered"></button>
+                <button class="ql-list" value="bullet"></button>
+            </span>
+            <span class="ql-formats">
+                <button class="ql-link"></button>
+            </span>
+            <span class="ql-formats">
+                <button class="ql-clean"></button>
+            </span>
+        </div>
+        <div id="@editorId" style="min-height: @(MinHeight)px;"></div>
     </div>
-    <div id="@editorId" style="min-height: @(MinHeight)px;"></div>
+
+    @if (showSource)
+    {
+        <textarea class="form-control font-monospace" rows="15" style="min-height: @(MinHeight)px; border-top-left-radius: 0; border-top-right-radius: 0;"
+                  @bind="sourceHtml" @bind:event="oninput"></textarea>
+    }
 </div>
 
 @code {
     private string editorId = $"quill-editor-{Guid.NewGuid():N}"[..24];
     private string toolbarId = $"quill-toolbar-{Guid.NewGuid():N}"[..25];
     private bool initialized;
+    private bool showSource;
+    private string sourceHtml = "";
 
     [Parameter] public string? Value { get; set; }
     [Parameter] public EventCallback<string> ValueChanged { get; set; }
@@ -47,10 +66,45 @@
         }
     }
 
+    private async Task SwitchToSource()
+    {
+        if (initialized)
+        {
+            sourceHtml = await JS.InvokeAsync<string>("quillInterop.getHtml", editorId);
+        }
+        else
+        {
+            sourceHtml = Value ?? "";
+        }
+        showSource = true;
+    }
+
+    private async Task SwitchToEditor()
+    {
+        showSource = false;
+        if (initialized)
+        {
+            await Task.Yield();
+            await JS.InvokeVoidAsync("quillInterop.setHtml", editorId, sourceHtml);
+        }
+    }
+
     public async Task<string> GetHtmlAsync()
     {
-        if (!initialized) return Value ?? "";
-        var html = await JS.InvokeAsync<string>("quillInterop.getHtml", editorId);
+        string html;
+        if (showSource)
+        {
+            html = sourceHtml;
+        }
+        else if (initialized)
+        {
+            html = await JS.InvokeAsync<string>("quillInterop.getHtml", editorId);
+        }
+        else
+        {
+            html = Value ?? "";
+        }
+
         if (ValueChanged.HasDelegate)
         {
             await ValueChanged.InvokeAsync(html);
@@ -60,6 +114,7 @@
 
     public async Task SetHtmlAsync(string html)
     {
+        sourceHtml = html;
         if (initialized)
         {
             await JS.InvokeVoidAsync("quillInterop.setHtml", editorId, html);
