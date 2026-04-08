@@ -1,0 +1,70 @@
+@inject IJSRuntime JS
+@implements IAsyncDisposable
+
+<div>
+    <div id="@toolbarId">
+        <span class="ql-formats">
+            <select class="ql-header">
+                <option value="2"></option>
+                <option value="3"></option>
+                <option selected></option>
+            </select>
+        </span>
+        <span class="ql-formats">
+            <button class="ql-bold"></button>
+            <button class="ql-italic"></button>
+            <button class="ql-underline"></button>
+        </span>
+        <span class="ql-formats">
+            <button class="ql-list" value="ordered"></button>
+            <button class="ql-list" value="bullet"></button>
+        </span>
+        <span class="ql-formats">
+            <button class="ql-link"></button>
+        </span>
+        <span class="ql-formats">
+            <button class="ql-clean"></button>
+        </span>
+    </div>
+    <div id="@editorId" style="min-height: @(MinHeight)px;"></div>
+</div>
+
+@code {
+    private string editorId = $"quill-editor-{Guid.NewGuid():N}"[..24];
+    private string toolbarId = $"quill-toolbar-{Guid.NewGuid():N}"[..25];
+    private bool initialized;
+
+    [Parameter] public string? Value { get; set; }
+    [Parameter] public EventCallback<string> ValueChanged { get; set; }
+    [Parameter] public int MinHeight { get; set; } = 200;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await JS.InvokeVoidAsync("quillInterop.create", editorId, toolbarId, Value);
+            initialized = true;
+        }
+    }
+
+    public async Task<string> GetHtmlAsync()
+    {
+        if (!initialized) return Value ?? "";
+        var html = await JS.InvokeAsync<string>("quillInterop.getHtml", editorId);
+        if (ValueChanged.HasDelegate)
+        {
+            await ValueChanged.InvokeAsync(html);
+        }
+        return html;
+    }
+
+    public async Task SetHtmlAsync(string html)
+    {
+        if (initialized)
+        {
+            await JS.InvokeVoidAsync("quillInterop.setHtml", editorId, html);
+        }
+    }
+
+    public ValueTask DisposeAsync() => ValueTask.CompletedTask;
+}
