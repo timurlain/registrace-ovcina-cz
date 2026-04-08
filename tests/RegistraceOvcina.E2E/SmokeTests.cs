@@ -229,7 +229,8 @@ public sealed class SmokeTests : IClassFixture<AppFixture>
         await registrantPage.GetByTestId("attendee-birth-year").FillAsync("2014");
         await registrantPage.GetByTestId("type-player").CheckAsync();
         await WaitForInteractiveReadyAsync(registrantPage);
-        await registrantPage.Locator("#pst-independent").CheckAsync();
+        await registrantPage.Locator("#pst-independent").ClickAsync(new LocatorClickOptions { Force = true });
+        await registrantPage.Locator("#pst-independent").DispatchEventAsync("change", new { bubbles = true });
         await registrantPage.Locator("#attendee-phone").FillAsync("+420777999888");
         await registrantPage.Locator("#attendee-phone").BlurAsync();
         await registrantPage.Locator("#guardian-name").FillAsync("Tomáš Smok");
