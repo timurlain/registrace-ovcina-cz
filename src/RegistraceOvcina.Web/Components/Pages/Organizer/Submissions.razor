@@ -11,7 +11,7 @@
         <p class="text-secondary mb-0">Přehled všech přihlášek pro organizátory.</p>
     </div>
     <div>
-        <form method="get" class="d-flex align-items-center gap-2">
+        <form method="get" class="d-flex align-items-center gap-2 flex-wrap">
             <label class="form-label mb-0 text-nowrap" for="search">Hledat</label>
             <input id="search" name="q" type="text" value="@searchQuery" class="form-control form-control-sm" style="min-width: 150px;" placeholder="Jméno, email..." />
             <label class="form-label mb-0 text-nowrap" for="game-filter">Hra</label>
@@ -25,6 +25,18 @@
                     }
                 }
             </select>
+            <label class="form-label mb-0 text-nowrap" for="status-filter">Stav</label>
+            <select id="status-filter" name="status" class="form-select form-select-sm" style="min-width: 150px;" onchange="this.form.submit()">
+                <option value="">Všechny stavy</option>
+                <option value="Draft" selected="@(statusFilter == "Draft")">Rozpracovaná</option>
+                <option value="Submitted" selected="@(statusFilter == "Submitted")">Odeslaná</option>
+                <option value="Cancelled" selected="@(statusFilter == "Cancelled")">Zrušená</option>
+            </select>
+            @if (!string.IsNullOrEmpty(sortColumn))
+            {
+                <input type="hidden" name="sort" value="@sortColumn" />
+                <input type="hidden" name="dir" value="@sortDir" />
+            }
             <button type="submit" class="btn btn-sm btn-outline-primary">Filtrovat</button>
         </form>
     </div>
@@ -49,14 +61,14 @@ else
         <table class="table align-middle">
             <thead>
                 <tr>
-                    <th>Hra</th>
-                    <th>Kontakt</th>
-                    <th>E-mail</th>
-                    <th>Stav</th>
-                    <th class="text-end">Účastníků</th>
-                    <th class="text-end">Celkem</th>
-                    <th>Platba</th>
-                    <th>Odesláno</th>
+                    <th>@SortLink("game", "Hra")</th>
+                    <th>@SortLink("contact", "Kontakt")</th>
+                    <th>@SortLink("email", "E-mail")</th>
+                    <th>@SortLink("status", "Stav")</th>
+                    <th class="text-end">@SortLink("attendees", "Účastníků")</th>
+                    <th class="text-end">@SortLink("total", "Celkem")</th>
+                    <th>@SortLink("balance", "Platba")</th>
+                    <th>@SortLink("submitted", "Odesláno")</th>
                     <th></th>
                 </tr>
             </thead>
@@ -97,6 +109,15 @@ else
     [SupplyParameterFromQuery(Name = "deleted")]
     private int? deleted { get; set; }
 
+    [SupplyParameterFromQuery(Name = "status")]
+    private string? statusFilter { get; set; }
+
+    [SupplyParameterFromQuery(Name = "sort")]
+    private string? sortColumn { get; set; }
+
+    [SupplyParameterFromQuery(Name = "dir")]
+    private string? sortDir { get; set; }
+
     private IReadOnlyList<OrganizerSubmissionSummary>? submissions;
     private IReadOnlyList<GameFilterItem>? gameFilters;
 
@@ -122,7 +143,51 @@ else
                 .ToList();
         }
 
-        submissions = allSubmissions;
+        // Apply status filter
+        if (!string.IsNullOrWhiteSpace(statusFilter) && Enum.TryParse<SubmissionStatus>(statusFilter, out var parsedStatus))
+        {
+            allSubmissions = allSubmissions.Where(s => s.Status == parsedStatus).ToList();
+        }
+
+        // Apply sorting
+        submissions = ApplySort(allSubmissions);
+    }
+
+    private IReadOnlyList<OrganizerSubmissionSummary> ApplySort(IReadOnlyList<OrganizerSubmissionSummary> items)
+    {
+        var desc = string.Equals(sortDir, "desc", StringComparison.OrdinalIgnoreCase);
+
+        IEnumerable<OrganizerSubmissionSummary> sorted = sortColumn?.ToLowerInvariant() switch
+        {
+            "game" => desc ? items.OrderByDescending(s => s.GameName) : items.OrderBy(s => s.GameName),
+            "contact" => desc ? items.OrderByDescending(s => s.PrimaryContactName) : items.OrderBy(s => s.PrimaryContactName),
+            "email" => desc ? items.OrderByDescending(s => s.PrimaryEmail) : items.OrderBy(s => s.PrimaryEmail),
+            "status" => desc ? items.OrderByDescending(s => s.Status) : items.OrderBy(s => s.Status),
+            "attendees" => desc ? items.OrderByDescending(s => s.AttendeeCount) : items.OrderBy(s => s.AttendeeCount),
+            "total" => desc ? items.OrderByDescending(s => s.ExpectedTotalAmount) : items.OrderBy(s => s.ExpectedTotalAmount),
+            "balance" => desc ? items.OrderByDescending(s => s.BalanceStatus) : items.OrderBy(s => s.BalanceStatus),
+            "submitted" => desc ? items.OrderByDescending(s => s.SubmittedAtUtc) : items.OrderBy(s => s.SubmittedAtUtc),
+            _ => items.OrderByDescending(s => s.SubmittedAtUtc) // default sort
+        };
+
+        return sorted.ToList();
+    }
+
+    private MarkupString SortLink(string column, string label)
+    {
+        var isActive = string.Equals(sortColumn, column, StringComparison.OrdinalIgnoreCase);
+        var newDir = isActive && string.Equals(sortDir, "asc", StringComparison.OrdinalIgnoreCase) ? "desc" : "asc";
+        var arrow = isActive ? (string.Equals(sortDir, "desc", StringComparison.OrdinalIgnoreCase) ? " ▾" : " ▴") : "";
+
+        var qs = new List<string>();
+        if (selectedGameId.HasValue) qs.Add($"gameId={selectedGameId}");
+        if (!string.IsNullOrWhiteSpace(searchQuery)) qs.Add($"q={Uri.EscapeDataString(searchQuery)}");
+        if (!string.IsNullOrWhiteSpace(statusFilter)) qs.Add($"status={Uri.EscapeDataString(statusFilter)}");
+        qs.Add($"sort={column}");
+        qs.Add($"dir={newDir}");
+
+        var href = $"/organizace/prihlasky?{string.Join("&amp;", qs)}";
+        return new MarkupString($"<a href=\"{href}\" class=\"text-decoration-none text-dark\">{label}{arrow}</a>");
     }
 
     private static string GetSubmissionStatusLabel(SubmissionStatus status) => status switch
