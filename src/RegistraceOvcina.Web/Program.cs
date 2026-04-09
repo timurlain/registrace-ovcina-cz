@@ -330,9 +330,14 @@ public class Program
 
         await DatabaseInitializer.InitializeAsync(app);
 
-        using (var scope = app.Services.CreateScope())
+        try
         {
+            using var scope = app.Services.CreateScope();
             await DatabaseInitializer.SeedOidcClientsAsync(scope.ServiceProvider);
+        }
+        catch (Exception ex)
+        {
+            app.Logger.LogWarning(ex, "OIDC client seeding skipped — database may not be ready");
         }
 
         app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
