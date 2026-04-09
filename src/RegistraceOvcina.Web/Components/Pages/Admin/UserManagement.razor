@@ -113,6 +113,11 @@
                                             <td>@FormatLastLogin(user.LastLoginAtUtc)</td>
                                             <td class="text-end">
                                                 <div class="d-flex flex-wrap justify-content-end gap-1">
+                                                    <a href="@($"/admin/users/{user.Id}/roles")"
+                                                       class="btn btn-sm btn-outline-info"
+                                                       data-testid="@($"manage-roles-{user.Id}")">
+                                                        Role
+                                                    </a>
                                                     <form method="post" action="/admin/organizatori/@user.Id/organizator">
                                                         <AntiforgeryToken />
                                                         <button type="submit"
@@ -193,6 +198,11 @@
                                             <td>@FormatLastLogin(user.LastLoginAtUtc)</td>
                                             <td class="text-end">
                                                 <div class="d-flex flex-wrap justify-content-end gap-1">
+                                                    <a href="@($"/admin/users/{user.Id}/roles")"
+                                                       class="btn btn-sm btn-outline-info"
+                                                       data-testid="@($"manage-roles-{user.Id}")">
+                                                        Role
+                                                    </a>
                                                     <form method="post" action="/admin/organizatori/@user.Id/organizator">
                                                         <AntiforgeryToken />
                                                         <button type="submit"

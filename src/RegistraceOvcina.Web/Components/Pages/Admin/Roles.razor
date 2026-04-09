@@ -1,0 +1,371 @@
+@page "/admin/roles"
+@attribute [Authorize(Policy = AuthorizationPolicies.AdminOnly)]
+@rendermode InteractiveServer
+
+@inject RoleManager<ApplicationRole> RoleManager
+@inject UserManager<ApplicationUser> UserManager
+
+<PageTitle>Správa rolí</PageTitle>
+
+<div class="row g-4">
+    <div class="col-12">
+        <section class="card shadow-sm">
+            <div class="card-body p-4">
+                <h1 class="h3 mb-3">Správa rolí</h1>
+
+                @if (!string.IsNullOrEmpty(statusMessage))
+                {
+                    <div class="alert @(isError ? "alert-danger" : "alert-success") alert-dismissible fade show" role="alert">
+                        @statusMessage
+                        <button type="button" class="btn-close" @onclick="ClearStatus"></button>
+                    </div>
+                }
+
+                @* --- Create new role --- *@
+                <div class="card mb-4">
+                    <div class="card-body">
+                        <h3 class="h5 mb-3">Přidat novou roli</h3>
+                        <div class="row g-2 align-items-end">
+                            <div class="col-md-5">
+                                <label class="form-label">Název role</label>
+                                <input @bind="newRoleName" class="form-control" placeholder="Např. Courier" />
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">Kategorie</label>
+                                <select @bind="newRoleCategory" class="form-select">
+                                    <option value="game">Herní role</option>
+                                    <option value="staff">Organizační role</option>
+                                </select>
+                            </div>
+                            <div class="col-md-3">
+                                <button class="btn btn-primary w-100" @onclick="CreateRoleAsync">Přidat</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                @* --- Role list --- *@
+                @if (roleEntries is null)
+                {
+                    <p class="text-secondary">Načítám...</p>
+                }
+                else
+                {
+                    @foreach (var group in categoryOrder)
+                    {
+                        var roles = roleEntries.Where(r => r.Category == group.Key).ToList();
+                        if (roles.Count == 0) continue;
+
+                        <h3 class="h5 mt-4 mb-2">@group.Label</h3>
+                        <div class="table-responsive">
+                            <table class="table align-middle">
+                                <thead>
+                                    <tr>
+                                        <th>Název</th>
+                                        <th>Kategorie</th>
+                                        <th>Uživatelů</th>
+                                        <th>Akce</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var entry in roles)
+                                    {
+                                        @if (editingRoleId == entry.Id)
+                                        {
+                                            <tr>
+                                                <td>
+                                                    <input @bind="editRoleName" class="form-control form-control-sm" />
+                                                </td>
+                                                <td>
+                                                    <select @bind="editRoleCategory" class="form-select form-select-sm">
+                                                        <option value="game">Herní role</option>
+                                                        <option value="staff">Organizační role</option>
+                                                    </select>
+                                                </td>
+                                                <td>@entry.UserCount</td>
+                                                <td>
+                                                    <div class="d-flex gap-1">
+                                                        <button class="btn btn-sm btn-primary" @onclick="SaveEditAsync">Uložit</button>
+                                                        <button class="btn btn-sm btn-outline-secondary" @onclick="CancelEdit">Zrušit</button>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        }
+                                        else
+                                        {
+                                            <tr>
+                                                <td>@entry.Name</td>
+                                                <td>
+                                                    <span class="badge @CategoryBadgeClass(entry.Category)">@CategoryLabel(entry.Category)</span>
+                                                </td>
+                                                <td>@entry.UserCount</td>
+                                                <td>
+                                                    @if (!entry.IsProtected)
+                                                    {
+                                                        <div class="d-flex gap-1">
+                                                            <button class="btn btn-sm btn-outline-primary" @onclick="() => StartEdit(entry)">Upravit</button>
+                                                            @if (confirmDeleteId == entry.Id)
+                                                            {
+                                                                <button class="btn btn-sm btn-danger" @onclick="() => DeleteRoleAsync(entry.Id)">Potvrdit smazání</button>
+                                                                <button class="btn btn-sm btn-outline-secondary" @onclick="CancelDelete">Zrušit</button>
+                                                            }
+                                                            else
+                                                            {
+                                                                <button class="btn btn-sm btn-outline-danger" @onclick="() => ConfirmDelete(entry.Id)">Smazat</button>
+                                                            }
+                                                        </div>
+                                                    }
+                                                    else
+                                                    {
+                                                        <span class="text-muted small">Systémová role</span>
+                                                    }
+                                                </td>
+                                            </tr>
+                                        }
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                }
+            </div>
+        </section>
+    </div>
+</div>
+
+@code {
+    private static readonly string[] ProtectedRoleNames =
+    [
+        RoleNames.Admin,
+        RoleNames.Organizer,
+        RoleNames.Registrant,
+        RoleNames.Guest,
+    ];
+
+    private static readonly (string Key, string Label)[] categoryOrder =
+    [
+        ("system", "Systémové role"),
+        ("game", "Herní role"),
+        ("staff", "Organizační role"),
+    ];
+
+    private List<RoleEntry>? roleEntries;
+
+    // Create form
+    private string newRoleName = "";
+    private string newRoleCategory = "game";
+
+    // Edit form
+    private string? editingRoleId;
+    private string editRoleName = "";
+    private string editRoleCategory = "game";
+
+    // Delete confirmation
+    private string? confirmDeleteId;
+
+    // Status
+    private string? statusMessage;
+    private bool isError;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadRolesAsync();
+    }
+
+    private async Task LoadRolesAsync()
+    {
+        var allRoles = RoleManager.Roles.ToList();
+        var entries = new List<RoleEntry>();
+
+        foreach (var role in allRoles)
+        {
+            var usersInRole = await UserManager.GetUsersInRoleAsync(role.Name!);
+            entries.Add(new RoleEntry
+            {
+                Id = role.Id,
+                Name = role.Name!,
+                Category = role.Category,
+                UserCount = usersInRole.Count,
+                IsProtected = ProtectedRoleNames.Contains(role.Name!, StringComparer.OrdinalIgnoreCase),
+            });
+        }
+
+        roleEntries = entries.OrderBy(r => r.Name).ToList();
+    }
+
+    private async Task CreateRoleAsync()
+    {
+        if (string.IsNullOrWhiteSpace(newRoleName))
+        {
+            SetStatus("Zadejte název role.", true);
+            return;
+        }
+
+        if (await RoleManager.RoleExistsAsync(newRoleName.Trim()))
+        {
+            SetStatus($"Role \"{newRoleName.Trim()}\" již existuje.", true);
+            return;
+        }
+
+        var result = await RoleManager.CreateAsync(new ApplicationRole
+        {
+            Name = newRoleName.Trim(),
+            Category = newRoleCategory,
+        });
+
+        if (result.Succeeded)
+        {
+            SetStatus($"Role \"{newRoleName.Trim()}\" byla vytvořena.", false);
+            newRoleName = "";
+            newRoleCategory = "game";
+            await LoadRolesAsync();
+        }
+        else
+        {
+            SetStatus($"Chyba: {string.Join("; ", result.Errors.Select(e => e.Description))}", true);
+        }
+    }
+
+    private void StartEdit(RoleEntry entry)
+    {
+        editingRoleId = entry.Id;
+        editRoleName = entry.Name;
+        editRoleCategory = entry.Category;
+        confirmDeleteId = null;
+    }
+
+    private void CancelEdit()
+    {
+        editingRoleId = null;
+    }
+
+    private async Task SaveEditAsync()
+    {
+        if (string.IsNullOrWhiteSpace(editRoleName))
+        {
+            SetStatus("Název role nesmí být prázdný.", true);
+            return;
+        }
+
+        var role = await RoleManager.FindByIdAsync(editingRoleId!);
+        if (role is null)
+        {
+            SetStatus("Role nebyla nalezena.", true);
+            editingRoleId = null;
+            await LoadRolesAsync();
+            return;
+        }
+
+        var oldName = role.Name!;
+        var newName = editRoleName.Trim();
+
+        // Check if another role with the new name already exists
+        if (!string.Equals(oldName, newName, StringComparison.OrdinalIgnoreCase)
+            && await RoleManager.RoleExistsAsync(newName))
+        {
+            SetStatus($"Role \"{newName}\" již existuje.", true);
+            return;
+        }
+
+        role.Name = newName;
+        role.Category = editRoleCategory;
+
+        var result = await RoleManager.UpdateAsync(role);
+        if (result.Succeeded)
+        {
+            SetStatus($"Role \"{newName}\" byla uložena.", false);
+            editingRoleId = null;
+            await LoadRolesAsync();
+        }
+        else
+        {
+            SetStatus($"Chyba: {string.Join("; ", result.Errors.Select(e => e.Description))}", true);
+        }
+    }
+
+    private void ConfirmDelete(string roleId)
+    {
+        confirmDeleteId = roleId;
+        editingRoleId = null;
+    }
+
+    private void CancelDelete()
+    {
+        confirmDeleteId = null;
+    }
+
+    private async Task DeleteRoleAsync(string roleId)
+    {
+        var role = await RoleManager.FindByIdAsync(roleId);
+        if (role is null)
+        {
+            SetStatus("Role nebyla nalezena.", true);
+            confirmDeleteId = null;
+            await LoadRolesAsync();
+            return;
+        }
+
+        if (ProtectedRoleNames.Contains(role.Name!, StringComparer.OrdinalIgnoreCase))
+        {
+            SetStatus("Systémovou roli nelze smazat.", true);
+            confirmDeleteId = null;
+            return;
+        }
+
+        // Remove all users from the role first
+        var usersInRole = await UserManager.GetUsersInRoleAsync(role.Name!);
+        foreach (var user in usersInRole)
+        {
+            await UserManager.RemoveFromRoleAsync(user, role.Name!);
+        }
+
+        var result = await RoleManager.DeleteAsync(role);
+        if (result.Succeeded)
+        {
+            SetStatus($"Role \"{role.Name}\" byla smazána ({usersInRole.Count} uživatelů odebráno).", false);
+        }
+        else
+        {
+            SetStatus($"Chyba: {string.Join("; ", result.Errors.Select(e => e.Description))}", true);
+        }
+
+        confirmDeleteId = null;
+        await LoadRolesAsync();
+    }
+
+    private void SetStatus(string message, bool error)
+    {
+        statusMessage = message;
+        isError = error;
+    }
+
+    private void ClearStatus()
+    {
+        statusMessage = null;
+    }
+
+    private static string CategoryLabel(string category) => category switch
+    {
+        "system" => "Systémová",
+        "game" => "Herní",
+        "staff" => "Organizační",
+        _ => category,
+    };
+
+    private static string CategoryBadgeClass(string category) => category switch
+    {
+        "system" => "bg-secondary",
+        "game" => "bg-info text-dark",
+        "staff" => "bg-warning text-dark",
+        _ => "bg-light text-dark",
+    };
+
+    private sealed class RoleEntry
+    {
+        public required string Id { get; init; }
+        public required string Name { get; init; }
+        public required string Category { get; init; }
+        public required int UserCount { get; init; }
+        public required bool IsProtected { get; init; }
+    }
+}
