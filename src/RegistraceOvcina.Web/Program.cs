@@ -243,6 +243,9 @@ public class Program
         builder.Services.Configure<AcsEmailOptions>(builder.Configuration.GetSection(AcsEmailOptions.SectionName));
         builder.Services.AddScoped<AcsTransactionalEmailService>();
         builder.Services.AddScoped<MagicLinkAuthService>();
+        builder.Services.Configure<GuestAuthOptions>(
+            builder.Configuration.GetSection(GuestAuthOptions.SectionName));
+        builder.Services.AddScoped<GuestAuthService>();
         builder.Services.AddScoped<UserAdministrationService>();
         builder.Services.AddScoped<GameRoleService>();
         builder.Services.AddScoped<AnnouncementService>();
