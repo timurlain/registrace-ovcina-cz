@@ -50,20 +50,23 @@
 
                     @if (roleGroups is not null)
                     {
-                        @foreach (var group in roleGroups)
+                        @for (var gi = 0; gi < roleGroups.Count; gi++)
                         {
+                            var group = roleGroups[gi];
                             <h3 class="h5 mt-3 mb-2">@group.Label</h3>
                             <div class="row g-2 mb-3">
-                                @foreach (var role in group.Roles)
+                                @for (var ri = 0; ri < group.Roles.Count; ri++)
                                 {
+                                    var role = group.Roles[ri];
+                                    var checkboxId = $"role-{gi}-{ri}";
                                     <div class="col-md-4 col-lg-3">
                                         <div class="form-check">
                                             <input class="form-check-input"
                                                    type="checkbox"
-                                                   id="@($"role-{role.Name}")"
+                                                   id="@checkboxId"
                                                    checked="@role.IsAssigned"
                                                    @onchange="(e) => ToggleRole(role, (bool)e.Value!)" />
-                                            <label class="form-check-label" for="@($"role-{role.Name}")">
+                                            <label class="form-check-label" for="@checkboxId">
                                                 @role.Name
                                             </label>
                                         </div>
@@ -177,6 +180,18 @@
             {
                 SetStatus("Nebyly provedeny žádné změny.", false);
                 return;
+            }
+
+            // Last admin safeguard: if removing Admin role, ensure another active admin exists
+            if (toRemove.Contains(RoleNames.Admin, StringComparer.OrdinalIgnoreCase))
+            {
+                var admins = await UserManager.GetUsersInRoleAsync(RoleNames.Admin);
+                var otherActiveAdmins = admins.Count(u => u.IsActive && u.Id != user.Id);
+                if (otherActiveAdmins == 0)
+                {
+                    SetStatus("Posledního aktivního správce nelze odebrat. Nejprve přidejte jiného správce.", true);
+                    return;
+                }
             }
 
             if (toRemove.Count > 0)

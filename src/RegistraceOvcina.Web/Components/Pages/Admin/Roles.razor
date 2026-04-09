@@ -175,29 +175,42 @@
     private async Task LoadRolesAsync()
     {
         var allRoles = RoleManager.Roles.ToList();
-        var entries = new List<RoleEntry>();
 
-        foreach (var role in allRoles)
+        var countTasks = allRoles.Select(async role =>
         {
             var usersInRole = await UserManager.GetUsersInRoleAsync(role.Name!);
-            entries.Add(new RoleEntry
-            {
-                Id = role.Id,
-                Name = role.Name!,
-                Category = role.Category,
-                UserCount = usersInRole.Count,
-                IsProtected = ProtectedRoleNames.Contains(role.Name!, StringComparer.OrdinalIgnoreCase),
-            });
-        }
+            return (Role: role, Count: usersInRole.Count);
+        });
 
-        roleEntries = entries.OrderBy(r => r.Name).ToList();
+        var results = await Task.WhenAll(countTasks);
+
+        roleEntries = results
+            .Select(r => new RoleEntry
+            {
+                Id = r.Role.Id,
+                Name = r.Role.Name!,
+                Category = r.Role.Category,
+                UserCount = r.Count,
+                IsProtected = r.Role.Category == "system"
+                    || ProtectedRoleNames.Contains(r.Role.Name!, StringComparer.OrdinalIgnoreCase),
+            })
+            .OrderBy(r => r.Name)
+            .ToList();
     }
+
+    private static readonly string[] AllowedNewCategories = ["game", "staff"];
 
     private async Task CreateRoleAsync()
     {
         if (string.IsNullOrWhiteSpace(newRoleName))
         {
             SetStatus("Zadejte název role.", true);
+            return;
+        }
+
+        if (!AllowedNewCategories.Contains(newRoleCategory, StringComparer.OrdinalIgnoreCase))
+        {
+            SetStatus("Novou roli lze vytvořit pouze v kategorii Herní nebo Organizační.", true);
             return;
         }
 
@@ -256,6 +269,20 @@
             return;
         }
 
+        if (role.Category == "system"
+            || ProtectedRoleNames.Contains(role.Name!, StringComparer.OrdinalIgnoreCase))
+        {
+            SetStatus("Systémovou roli nelze upravovat.", true);
+            editingRoleId = null;
+            return;
+        }
+
+        if (!AllowedNewCategories.Contains(editRoleCategory, StringComparer.OrdinalIgnoreCase))
+        {
+            SetStatus("Kategorie role musí být Herní nebo Organizační.", true);
+            return;
+        }
+
         var oldName = role.Name!;
         var newName = editRoleName.Trim();
 
@@ -305,18 +332,27 @@
             return;
         }
 
-        if (ProtectedRoleNames.Contains(role.Name!, StringComparer.OrdinalIgnoreCase))
+        if (role.Category == "system"
+            || ProtectedRoleNames.Contains(role.Name!, StringComparer.OrdinalIgnoreCase))
         {
             SetStatus("Systémovou roli nelze smazat.", true);
             confirmDeleteId = null;
             return;
         }
 
-        // Remove all users from the role first
+        // Remove all users from the role first, checking each result
         var usersInRole = await UserManager.GetUsersInRoleAsync(role.Name!);
         foreach (var user in usersInRole)
         {
-            await UserManager.RemoveFromRoleAsync(user, role.Name!);
+            var removeResult = await UserManager.RemoveFromRoleAsync(user, role.Name!);
+            if (!removeResult.Succeeded)
+            {
+                SetStatus($"Chyba při odebírání uživatele \"{user.Email}\" z role: " +
+                    $"{string.Join("; ", removeResult.Errors.Select(e => e.Description))}", true);
+                confirmDeleteId = null;
+                await LoadRolesAsync();
+                return;
+            }
         }
 
         var result = await RoleManager.DeleteAsync(role);
