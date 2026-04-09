@@ -1,10 +1,13 @@
 @page "/Account/Login"
 
 @using Microsoft.AspNetCore.Authentication
+@using Microsoft.Extensions.Options
 @using RegistraceOvcina.Web.Data
+@using RegistraceOvcina.Web.Features.Auth
 
 @inject ILogger<Login> Logger
 @inject NavigationManager NavigationManager
+@inject IOptions<GuestAuthOptions> GuestOptions
 
 <PageTitle>Přihlášení</PageTitle>
 
@@ -56,6 +59,16 @@
         <div class="auth-divider">nebo se přihlaste přes</div>
 
         <ExternalLoginPicker />
+
+        @if (GuestOptions.Value.Enabled)
+        {
+            <div class="auth-divider">nebo</div>
+
+            <a href="/Account/GuestLogin@(ReturnUrl is not null ? $"?ReturnUrl={Uri.EscapeDataString(ReturnUrl)}" : "")"
+               class="btn btn-outline-secondary w-100" data-testid="guest-login-link">
+                Přihlásit se jako host
+            </a>
+        }
     </section>
 </div>
 

@@ -1,0 +1,73 @@
+@page "/Account/GuestLogin"
+
+@using Microsoft.Extensions.Options
+@using RegistraceOvcina.Web.Features.Auth
+
+@inject IOptions<GuestAuthOptions> GuestOptions
+
+<PageTitle>Přihlášení jako host</PageTitle>
+
+<div class="auth-container">
+    <section class="auth-card">
+        <h1>Přihlášení jako host</h1>
+
+        @if (!GuestOptions.Value.Enabled)
+        {
+            <div class="alert alert-warning" role="alert">
+                Přihlášení jako host není v tomto prostředí povoleno.
+            </div>
+        }
+        else
+        {
+            @if (error == "invalid-pin")
+            {
+                <div class="alert alert-danger" role="alert">
+                    Nesprávný PIN. Zkuste to prosím znovu.
+                </div>
+            }
+            else if (error == "create-failed")
+            {
+                <div class="alert alert-danger" role="alert">
+                    Nepodařilo se vytvořit hostovský účet. Zkuste to prosím znovu.
+                </div>
+            }
+
+            <p class="text-warm" style="text-align:center;">Zadejte PIN a své jméno pro přihlášení jako host.</p>
+
+            <form method="post" action="/Account/GuestSignIn">
+                <AntiforgeryToken />
+                <input type="hidden" name="returnUrl" value="@ReturnUrl" />
+
+                <div class="mb-3">
+                    <label for="pin" class="form-label">PIN</label>
+                    <input id="pin" name="pin" type="password" class="form-control"
+                           placeholder="Zadejte PIN" required autofocus data-testid="guest-pin" />
+                </div>
+
+                <div class="mb-3">
+                    <label for="displayName" class="form-label">Vaše jméno</label>
+                    <input id="displayName" name="displayName" type="text" class="form-control"
+                           placeholder="např. Honza" required minlength="1" maxlength="50"
+                           data-testid="guest-name" />
+                </div>
+
+                <button type="submit" class="btn btn-primary w-100" data-testid="guest-submit">Přihlásit se jako host</button>
+            </form>
+        }
+
+        <div class="auth-divider">nebo</div>
+
+        <a href="/Account/Login@(ReturnUrl is not null ? $"?ReturnUrl={Uri.EscapeDataString(ReturnUrl)}" : "")"
+           class="btn btn-outline-secondary w-100">
+            Zpět na přihlášení
+        </a>
+    </section>
+</div>
+
+@code {
+    [SupplyParameterFromQuery]
+    private string? ReturnUrl { get; set; }
+
+    [SupplyParameterFromQuery(Name = "error")]
+    private string? error { get; set; }
+}
