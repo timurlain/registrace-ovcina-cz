@@ -100,9 +100,8 @@ public sealed class ExternalContactService(
 
     /// <summary>
     /// Sends an email to all external contacts via the shared mailbox.
-    /// Returns the number of emails successfully sent.
     /// </summary>
-    public async Task<int> SendToAllAsync(
+    public async Task<SendResult> SendToAllAsync(
         string subject,
         string htmlBody,
         CancellationToken cancellationToken = default)
@@ -113,7 +112,7 @@ public sealed class ExternalContactService(
             logger.LogWarning(
                 "Cannot send to external contacts: shared mailbox is not configured. {Message}",
                 MailboxEmailOptions.ValidationMessage);
-            return 0;
+            return new SendResult(0, 0, "Sdílená poštovní schránka (Graph) není nakonfigurována. E-maily nelze odeslat.");
         }
 
         await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
@@ -126,12 +125,13 @@ public sealed class ExternalContactService(
         if (contactEmails.Count == 0)
         {
             logger.LogInformation("No external contacts to send to");
-            return 0;
+            return new SendResult(0, 0, "Žádné kontakty k odeslání.");
         }
 
         var accessToken = await accessTokenProvider.GetAccessTokenAsync(cancellationToken);
         var httpClient = httpClientFactory.CreateClient(GraphHttpClientName);
         var sentCount = 0;
+        var errors = new List<string>();
 
         foreach (var email in contactEmails)
         {
@@ -157,6 +157,7 @@ public sealed class ExternalContactService(
                 logger.LogError(ex,
                     "Failed to send external contact email to {RecipientEmail}",
                     email);
+                errors.Add($"{email}: {ex.Message}");
             }
         }
 
@@ -164,7 +165,16 @@ public sealed class ExternalContactService(
             "External contact send complete: {SentCount}/{TotalCount} emails sent",
             sentCount, contactEmails.Count);
 
-        return sentCount;
+        string? errorDetail = errors.Count > 0
+            ? $"Chyby při odesílání:\n{string.Join("\n", errors)}"
+            : null;
+
+        return new SendResult(sentCount, contactEmails.Count, errorDetail);
+    }
+
+    public sealed record SendResult(int Sent, int Total, string? Error)
+    {
+        public bool IsFullSuccess => Error is null && Sent == Total && Total > 0;
     }
 
     // ------------------------------------------------------------------ helpers

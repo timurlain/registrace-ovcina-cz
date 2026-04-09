@@ -241,21 +241,27 @@
         try
         {
             emailBody = emailEditor is not null ? await emailEditor.GetHtmlAsync() : emailBody;
-            var sentCount = await ExternalContactService.SendToAllAsync(emailSubject, emailBody);
-            var totalCount = contacts?.Count ?? 0;
+            var result = await ExternalContactService.SendToAllAsync(emailSubject, emailBody);
 
-            if (sentCount == totalCount)
-                SetStatus($"E-mail úspěšně odeslán {sentCount} kontaktům.", "alert-success");
+            if (result.IsFullSuccess)
+            {
+                SetStatus($"E-mail úspěšně odeslán {result.Sent} kontaktům.", "alert-success");
+                emailSubject = "";
+                emailBody = "";
+                if (emailEditor is not null) await emailEditor.SetHtmlAsync("");
+            }
+            else if (result.Error is not null && result.Sent == 0)
+            {
+                SetStatus(result.Error, "alert-danger");
+            }
             else
-                SetStatus($"Odesláno {sentCount} z {totalCount} e-mailů. Některé se nepodařilo odeslat.", "alert-warning");
-
-            emailSubject = "";
-            emailBody = "";
-            if (emailEditor is not null) await emailEditor.SetHtmlAsync("");
+            {
+                SetStatus($"Odesláno {result.Sent} z {result.Total}. {result.Error}", "alert-warning");
+            }
         }
-        catch (Exception)
+        catch (Exception ex)
         {
-            SetStatus("Při odesílání došlo k chybě.", "alert-danger");
+            SetStatus($"Při odesílání došlo k chybě: {ex.Message}", "alert-danger");
         }
         finally
         {
