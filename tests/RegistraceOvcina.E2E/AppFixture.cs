@@ -132,7 +132,7 @@ public sealed class AppFixture : IAsyncLifetime
                     return;
                 }
             }
-            catch (HttpRequestException)
+            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException)
             {
                 // Server not ready yet — retry after delay
             }
