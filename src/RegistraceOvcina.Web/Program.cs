@@ -197,8 +197,16 @@ public class Program
                 options.SetAccessTokenLifetime(TimeSpan.FromMinutes(30));
                 options.SetRefreshTokenLifetime(TimeSpan.FromDays(30));
 
-                options.AddEphemeralEncryptionKey()
-                    .AddEphemeralSigningKey();
+                if (builder.Environment.IsDevelopment() || builder.Environment.IsEnvironment("Testing"))
+                {
+                    options.AddEphemeralEncryptionKey()
+                        .AddEphemeralSigningKey();
+                }
+                else
+                {
+                    // Persistent keys via Data Protection — survives app restarts
+                    options.UseDataProtection();
+                }
 
                 options.UseAspNetCore()
                     .EnableAuthorizationEndpointPassthrough()
