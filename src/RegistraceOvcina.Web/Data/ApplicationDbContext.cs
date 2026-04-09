@@ -6,7 +6,7 @@ using Microsoft.EntityFrameworkCore;
 namespace RegistraceOvcina.Web.Data;
 
 public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)
-    : IdentityDbContext<ApplicationUser>(options), IDataProtectionKeyContext
+    : IdentityDbContext<ApplicationUser, ApplicationRole, string>(options), IDataProtectionKeyContext
 {
     public DbSet<DataProtectionKey> DataProtectionKeys => Set<DataProtectionKey>();
 
@@ -36,6 +36,8 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
     protected override void OnModelCreating(ModelBuilder builder)
     {
         base.OnModelCreating(builder);
+
+        builder.UseOpenIddict();
 
         builder.Entity<ApplicationUser>(entity =>
         {

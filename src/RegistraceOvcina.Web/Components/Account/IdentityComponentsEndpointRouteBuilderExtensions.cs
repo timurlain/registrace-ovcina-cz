@@ -7,6 +7,7 @@ using Microsoft.AspNetCore.Http.Extensions;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Primitives;
+using Microsoft.Extensions.Options;
 using RegistraceOvcina.Web.Components.Account.Pages;
 using RegistraceOvcina.Web.Components.Account.Pages.Manage;
 using RegistraceOvcina.Web.Data;
@@ -200,6 +201,52 @@ internal static class IdentityComponentsEndpointRouteBuilderExtensions
             var optionsJson = await signInManager.MakePasskeyRequestOptionsAsync(user);
             return TypedResults.Content(optionsJson, contentType: "application/json");
         });
+
+        accountGroup.MapPost("/GuestSignIn", async (
+            [FromForm] string pin,
+            [FromForm] string displayName,
+            [FromForm] string? returnUrl,
+            [FromServices] GuestAuthService guestAuthService,
+            [FromServices] SignInManager<ApplicationUser> signInManager,
+            [FromServices] ILoggerFactory loggerFactory) =>
+        {
+            var logger = loggerFactory.CreateLogger("GuestAuth");
+
+            // Re-verify PIN to prevent direct POST bypass
+            if (!guestAuthService.VerifyPin(pin))
+            {
+                var pinErrorRedirect = "/Account/GuestLogin?error=invalid-pin";
+                if (!string.IsNullOrWhiteSpace(returnUrl))
+                    pinErrorRedirect += $"&ReturnUrl={Uri.EscapeDataString(returnUrl)}";
+                return Results.Redirect(pinErrorRedirect);
+            }
+
+            if (string.IsNullOrWhiteSpace(displayName))
+            {
+                var missingNameRedirect = "/Account/GuestLogin?error=missing-name";
+                if (!string.IsNullOrWhiteSpace(returnUrl))
+                    missingNameRedirect += $"&ReturnUrl={Uri.EscapeDataString(returnUrl)}";
+                return Results.Redirect(missingNameRedirect);
+            }
+
+            try
+            {
+                var user = await guestAuthService.FindOrCreateGuestAsync(displayName);
+                await signInManager.SignInAsync(user, isPersistent: true);
+                logger.LogInformation("Guest user '{DisplayName}' signed in (UserId={UserId})",
+                    user.DisplayName, user.Id);
+
+                return Results.LocalRedirect(returnUrl ?? "~/");
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Failed to create/sign-in guest user '{DisplayName}'", displayName);
+                var errorRedirect = "/Account/GuestLogin?error=create-failed";
+                if (!string.IsNullOrWhiteSpace(returnUrl))
+                    errorRedirect += $"&ReturnUrl={Uri.EscapeDataString(returnUrl)}";
+                return Results.Redirect(errorRedirect);
+            }
+        }).AllowAnonymous();
 
         var manageGroup = accountGroup.MapGroup("/Manage").RequireAuthorization();
 
