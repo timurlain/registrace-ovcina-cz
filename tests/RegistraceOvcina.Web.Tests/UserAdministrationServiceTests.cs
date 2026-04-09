@@ -184,7 +184,7 @@ public sealed class UserAdministrationServiceTests
             return;
         }
 
-        db.Roles.Add(new IdentityRole
+        db.Roles.Add(new ApplicationRole
         {
             Id = roleId,
             Name = roleName,
