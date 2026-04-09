@@ -30,7 +30,7 @@ public sealed class KingdomAssignmentService(IDbContextFactory<ApplicationDbCont
         // Load all player registrations from submitted submissions for this game
         var playerRegistrations = await db.Registrations
             .AsNoTracking()
-            .Include(x => x.Person)
+            .Include(x => x.Person).ThenInclude(p => p.OrganizerNotes)
             .Include(x => x.Submission)
             .Include(x => x.PreferredKingdom)
             .Where(x => x.Submission.GameId == gameId
@@ -50,10 +50,45 @@ public sealed class KingdomAssignmentService(IDbContextFactory<ApplicationDbCont
             .Where(x => x.RegistrationId.HasValue)
             .ToDictionary(x => x.RegistrationId!.Value);
 
+        // Load previous game's kingdom assignments for continuity
+        var previousGame = await db.Games
+            .AsNoTracking()
+            .Where(g => g.Id != gameId && g.StartsAtUtc < game.StartsAtUtc)
+            .OrderByDescending(g => g.StartsAtUtc)
+            .FirstOrDefaultAsync(cancellationToken);
+
+        var previousKingdomByPerson = new Dictionary<int, string>();
+        if (previousGame is not null)
+        {
+            var prevAppearances = await db.CharacterAppearances
+                .AsNoTracking()
+                .Include(x => x.AssignedKingdom)
+                .Include(x => x.Registration)
+                .Where(x => x.GameId == previousGame.Id
+                    && x.RegistrationId != null
+                    && x.AssignedKingdomId != null)
+                .ToListAsync(cancellationToken);
+
+            foreach (var pa in prevAppearances)
+            {
+                if (pa.Registration?.PersonId is int personId && pa.AssignedKingdom is not null)
+                {
+                    previousKingdomByPerson[personId] = pa.AssignedKingdom.DisplayName;
+                }
+            }
+        }
+
         // Build player cards
         var playerCards = playerRegistrations.Select(r =>
         {
             appearanceByRegistration.TryGetValue(r.Id, out var appearance);
+            previousKingdomByPerson.TryGetValue(r.PersonId, out var prevKingdom);
+
+            var orgNotes = r.Person.OrganizerNotes
+                .Where(n => !string.IsNullOrWhiteSpace(n.Note))
+                .Select(n => n.Note)
+                .ToList();
+
             return new PlayerCard
             {
                 RegistrationId = r.Id,
@@ -63,7 +98,13 @@ public sealed class KingdomAssignmentService(IDbContextFactory<ApplicationDbCont
                 PreferredKingdomId = r.PreferredKingdomId,
                 PreferredKingdomName = r.PreferredKingdom?.DisplayName,
                 AssignedKingdomId = appearance?.AssignedKingdomId,
-                CharacterName = r.CharacterName
+                CharacterName = r.CharacterName,
+                GroupName = r.Submission.GroupName,
+                PreviousKingdomName = prevKingdom,
+                PersonNotes = r.Person.Notes,
+                OrganizerNotes = orgNotes.Count > 0 ? string.Join(" | ", orgNotes) : null,
+                RegistrantNote = r.Submission.RegistrantNote,
+                GuardianName = r.GuardianName
             };
         }).ToList();
 
@@ -75,12 +116,13 @@ public sealed class KingdomAssignmentService(IDbContextFactory<ApplicationDbCont
             DisplayName = kt.Kingdom.DisplayName,
             Color = kt.Kingdom.Color,
             TargetCount = kt.TargetPlayerCount,
-            Players = playerCards.Where(p => p.AssignedKingdomId == kt.KingdomId).OrderBy(p => p.PersonName).ToList()
+            Players = playerCards.Where(p => p.AssignedKingdomId == kt.KingdomId).OrderBy(p => p.BirthYear).ThenBy(p => p.PersonName).ToList()
         }).ToList();
 
         var unassignedPlayers = playerCards
             .Where(p => p.AssignedKingdomId is null)
-            .OrderBy(p => p.PersonName)
+            .OrderBy(p => p.BirthYear)
+            .ThenBy(p => p.PersonName)
             .ToList();
 
         return new AssignmentBoard
@@ -220,4 +262,12 @@ public sealed class PlayerCard
     public string? PreferredKingdomName { get; set; }
     public int? AssignedKingdomId { get; set; }
     public string? CharacterName { get; set; }
+    public string? GroupName { get; set; }
+    public string? PreviousKingdomName { get; set; }
+    public string? PersonNotes { get; set; }
+    public string? OrganizerNotes { get; set; }
+    public string? RegistrantNote { get; set; }
+    public string? GuardianName { get; set; }
+
+    public int Age(int currentYear) => currentYear - BirthYear;
 }
