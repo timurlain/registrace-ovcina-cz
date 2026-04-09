@@ -15,7 +15,7 @@ namespace RegistraceOvcina.Web.Migrations
                 table: "AspNetRoles",
                 type: "text",
                 nullable: false,
-                defaultValue: "");
+                defaultValue: "system");
         }
 
         /// <inheritdoc />

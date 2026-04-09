@@ -50,13 +50,18 @@ public static class AuthorizationEndpoints
             roleType: Claims.Role);
 
         identity.SetClaim(Claims.Subject, await userManager.GetUserIdAsync(user));
-        identity.SetClaim(Claims.Name, user.DisplayName);
-        identity.SetClaim(Claims.Email, await userManager.GetEmailAsync(user));
 
-        var roles = await userManager.GetRolesAsync(user);
-        foreach (var role in roles)
+        if (request.HasScope(Scopes.Profile))
+            identity.SetClaim(Claims.Name, user.DisplayName);
+
+        if (request.HasScope(Scopes.Email))
+            identity.SetClaim(Claims.Email, await userManager.GetEmailAsync(user));
+
+        if (request.HasScope("roles"))
         {
-            identity.AddClaim(Claims.Role, role);
+            var roles = await userManager.GetRolesAsync(user);
+            foreach (var role in roles)
+                identity.AddClaim(Claims.Role, role);
         }
 
         identity.SetScopes(request.GetScopes());
@@ -111,13 +116,21 @@ public static class AuthorizationEndpoints
         var principal = result.Principal
             ?? throw new InvalidOperationException("The claims principal cannot be retrieved.");
 
-        return Results.Ok(new
+        var response = new Dictionary<string, object?>
         {
-            sub = principal.GetClaim(Claims.Subject),
-            name = principal.GetClaim(Claims.Name),
-            email = principal.GetClaim(Claims.Email),
-            role = principal.GetClaims(Claims.Role),
-        });
+            ["sub"] = principal.GetClaim(Claims.Subject),
+        };
+
+        if (principal.HasScope(Scopes.Profile))
+            response["name"] = principal.GetClaim(Claims.Name);
+
+        if (principal.HasScope(Scopes.Email))
+            response["email"] = principal.GetClaim(Claims.Email);
+
+        if (principal.HasScope("roles"))
+            response["role"] = principal.GetClaims(Claims.Role);
+
+        return Results.Ok(response);
     }
 
     private static async Task<IResult> HandleLogout(HttpContext context)
@@ -130,13 +143,31 @@ public static class AuthorizationEndpoints
 
     private static IEnumerable<string> GetDestinations(Claim claim)
     {
-        return claim.Type switch
+        switch (claim.Type)
         {
-            Claims.Name or Claims.Email or Claims.Role
-                => [Destinations.AccessToken, Destinations.IdentityToken],
-            Claims.Subject
-                => [Destinations.AccessToken, Destinations.IdentityToken],
-            _ => [Destinations.AccessToken],
-        };
+            case Claims.Subject:
+                yield return Destinations.AccessToken;
+                yield return Destinations.IdentityToken;
+                yield break;
+
+            case Claims.Name when claim.Subject?.HasScope(Scopes.Profile) == true:
+                yield return Destinations.AccessToken;
+                yield return Destinations.IdentityToken;
+                yield break;
+
+            case Claims.Email when claim.Subject?.HasScope(Scopes.Email) == true:
+                yield return Destinations.AccessToken;
+                yield return Destinations.IdentityToken;
+                yield break;
+
+            case Claims.Role when claim.Subject?.HasScope("roles") == true:
+                yield return Destinations.AccessToken;
+                yield return Destinations.IdentityToken;
+                yield break;
+
+            default:
+                yield return Destinations.AccessToken;
+                yield break;
+        }
     }
 }

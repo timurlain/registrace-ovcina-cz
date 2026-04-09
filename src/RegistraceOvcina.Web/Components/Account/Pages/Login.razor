@@ -1,13 +1,12 @@
 @page "/Account/Login"
 
 @using Microsoft.AspNetCore.Authentication
-@using Microsoft.Extensions.Options
 @using RegistraceOvcina.Web.Data
 @using RegistraceOvcina.Web.Features.Auth
 
 @inject ILogger<Login> Logger
 @inject NavigationManager NavigationManager
-@inject IOptions<GuestAuthOptions> GuestOptions
+@inject GuestAuthService GuestAuthService
 
 <PageTitle>Přihlášení</PageTitle>
 
@@ -60,7 +59,7 @@
 
         <ExternalLoginPicker />
 
-        @if (GuestOptions.Value.Enabled)
+        @if (GuestAuthService.IsEnabled)
         {
             <div class="auth-divider">nebo</div>
 

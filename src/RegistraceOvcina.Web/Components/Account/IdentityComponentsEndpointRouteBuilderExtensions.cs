@@ -223,7 +223,10 @@ internal static class IdentityComponentsEndpointRouteBuilderExtensions
 
             if (string.IsNullOrWhiteSpace(displayName))
             {
-                return Results.Redirect("/Account/GuestLogin?step=name&error=create-failed");
+                var missingNameRedirect = "/Account/GuestLogin?error=missing-name";
+                if (!string.IsNullOrWhiteSpace(returnUrl))
+                    missingNameRedirect += $"&ReturnUrl={Uri.EscapeDataString(returnUrl)}";
+                return Results.Redirect(missingNameRedirect);
             }
 
             try

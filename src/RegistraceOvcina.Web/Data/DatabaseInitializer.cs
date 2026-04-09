@@ -74,6 +74,15 @@ public static class DatabaseInitializer
                 });
                 EnsureSuccess(createRoleResult, $"role '{name}'");
             }
+            else
+            {
+                var existingRole = await roleManager.FindByNameAsync(name);
+                if (existingRole is not null && existingRole.Category != category)
+                {
+                    existingRole.Category = category;
+                    await roleManager.UpdateAsync(existingRole);
+                }
+            }
         }
 
         // Production admin accounts — always seed, regardless of SeedDemoUsers
@@ -434,6 +443,10 @@ public static class DatabaseInitializer
         if (existing is null)
         {
             await manager.CreateAsync(descriptor);
+        }
+        else
+        {
+            await manager.UpdateAsync(existing, descriptor);
         }
     }
 

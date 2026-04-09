@@ -1,9 +1,8 @@
 @page "/Account/GuestLogin"
 
-@using Microsoft.Extensions.Options
 @using RegistraceOvcina.Web.Features.Auth
 
-@inject IOptions<GuestAuthOptions> GuestOptions
+@inject GuestAuthService GuestAuthService
 
 <PageTitle>Přihlášení jako host</PageTitle>
 
@@ -11,7 +10,7 @@
     <section class="auth-card">
         <h1>Přihlášení jako host</h1>
 
-        @if (!GuestOptions.Value.Enabled)
+        @if (!GuestAuthService.IsEnabled)
         {
             <div class="alert alert-warning" role="alert">
                 Přihlášení jako host není v tomto prostředí povoleno.
@@ -23,6 +22,12 @@
             {
                 <div class="alert alert-danger" role="alert">
                     Nesprávný PIN. Zkuste to prosím znovu.
+                </div>
+            }
+            else if (error == "missing-name")
+            {
+                <div class="alert alert-danger" role="alert">
+                    Zadejte prosím své jméno.
                 </div>
             }
             else if (error == "create-failed")

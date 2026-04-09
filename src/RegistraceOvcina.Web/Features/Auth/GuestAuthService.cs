@@ -35,15 +35,22 @@ public sealed class GuestAuthService
         var name = displayName.Trim();
         if (name.Length > 50) name = name[..50];
 
-        // Create a deterministic email for the guest based on name
-        var normalizedName = name.ToLowerInvariant().Replace(" ", "-");
-        var guestEmail = $"guest-{normalizedName}@ovcina.local";
+        // Generate a safe slug from the display name
+        var slug = string.Concat(name.Normalize(System.Text.NormalizationForm.FormD)
+            .Where(c => System.Globalization.CharUnicodeInfo.GetUnicodeCategory(c) != System.Globalization.UnicodeCategory.NonSpacingMark))
+            .ToLowerInvariant()
+            .Replace(" ", "-");
+        slug = System.Text.RegularExpressions.Regex.Replace(slug, @"[^a-z0-9\-]", "");
+        if (string.IsNullOrEmpty(slug)) slug = "guest";
+        var guestEmail = $"guest-{slug}@ovcina.local";
 
         var user = await _userManager.FindByEmailAsync(guestEmail);
         if (user is not null)
         {
             user.LastLoginAtUtc = _timeProvider.GetUtcNow().UtcDateTime;
-            await _userManager.UpdateAsync(user);
+            var updateResult = await _userManager.UpdateAsync(user);
+            if (!updateResult.Succeeded)
+                throw new InvalidOperationException($"Failed to update guest user: {string.Join(", ", updateResult.Errors.Select(e => e.Description))}");
             return user;
         }
 
@@ -62,7 +69,9 @@ public sealed class GuestAuthService
             throw new InvalidOperationException(
                 $"Failed to create guest user: {string.Join(", ", result.Errors.Select(e => e.Description))}");
 
-        await _userManager.AddToRoleAsync(user, RoleNames.Guest);
+        var addToRoleResult = await _userManager.AddToRoleAsync(user, RoleNames.Guest);
+        if (!addToRoleResult.Succeeded)
+            throw new InvalidOperationException($"Failed to add guest role: {string.Join(", ", addToRoleResult.Errors.Select(e => e.Description))}");
         return user;
     }
 }
