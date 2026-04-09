@@ -103,7 +103,8 @@ public sealed class KingdomAssignmentService(IDbContextFactory<ApplicationDbCont
                 PreviousKingdomName = prevKingdom,
                 PersonNotes = r.Person.Notes,
                 OrganizerNotes = orgNotes.Count > 0 ? string.Join(" | ", orgNotes) : null,
-                RegistrantNote = r.Submission.RegistrantNote,
+                RegistrantNote = r.RegistrantNote,
+                SubmissionNote = r.Submission.RegistrantNote,
                 GuardianName = r.GuardianName
             };
         }).ToList();
@@ -267,6 +268,7 @@ public sealed class PlayerCard
     public string? PersonNotes { get; set; }
     public string? OrganizerNotes { get; set; }
     public string? RegistrantNote { get; set; }
+    public string? SubmissionNote { get; set; }
     public string? GuardianName { get; set; }
 
     public int Age(int currentYear) => currentYear - BirthYear;

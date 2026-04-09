@@ -206,7 +206,11 @@ else
                 }
                 @if (!string.IsNullOrWhiteSpace(player.RegistrantNote))
                 {
-                    <div><strong>Přihlašovatel:</strong> @player.RegistrantNote</div>
+                    <div><strong>Poznámka účastníka:</strong> @player.RegistrantNote</div>
+                }
+                @if (!string.IsNullOrWhiteSpace(player.SubmissionNote))
+                {
+                    <div><strong>Poznámka skupiny:</strong> @player.SubmissionNote</div>
                 }
             </div>
             @if (currentKingdom is not null)
