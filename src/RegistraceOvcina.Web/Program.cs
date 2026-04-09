@@ -27,6 +27,7 @@ using RegistraceOvcina.Web.Features.Announcements;
 using RegistraceOvcina.Web.Features.Auth;
 using RegistraceOvcina.Web.Features.ExternalContacts;
 using RegistraceOvcina.Web.Features.Users;
+using RegistraceOvcina.Web.Endpoints;
 using RegistraceOvcina.Web.Security;
 
 namespace RegistraceOvcina.Web;
@@ -169,10 +170,47 @@ public class Program
                 options.Stores.SchemaVersion = IdentitySchemaVersions.Version3;
                 options.User.RequireUniqueEmail = true;
             })
-            .AddRoles<IdentityRole>()
+            .AddRoles<ApplicationRole>()
             .AddEntityFrameworkStores<ApplicationDbContext>()
             .AddSignInManager()
             .AddDefaultTokenProviders();
+
+        builder.Services.AddOpenIddict()
+            .AddCore(options =>
+            {
+                options.UseEntityFrameworkCore()
+                    .UseDbContext<ApplicationDbContext>();
+            })
+            .AddServer(options =>
+            {
+                options.AllowAuthorizationCodeFlow()
+                    .RequireProofKeyForCodeExchange();
+                options.AllowRefreshTokenFlow();
+
+                options.SetAuthorizationEndpointUris("/connect/authorize")
+                    .SetTokenEndpointUris("/connect/token")
+                    .SetUserInfoEndpointUris("/connect/userinfo")
+                    .SetEndSessionEndpointUris("/connect/logout");
+
+                options.RegisterScopes("openid", "profile", "email", "roles");
+
+                options.SetAccessTokenLifetime(TimeSpan.FromMinutes(30));
+                options.SetRefreshTokenLifetime(TimeSpan.FromDays(30));
+
+                options.AddEphemeralEncryptionKey()
+                    .AddEphemeralSigningKey();
+
+                options.UseAspNetCore()
+                    .EnableAuthorizationEndpointPassthrough()
+                    .EnableTokenEndpointPassthrough()
+                    .EnableUserInfoEndpointPassthrough()
+                    .EnableEndSessionEndpointPassthrough();
+            })
+            .AddValidation(options =>
+            {
+                options.UseLocalServer();
+                options.UseAspNetCore();
+            });
 
         builder.Services.AddSingleton(TimeProvider.System);
         builder.Services.AddHttpClient(
@@ -288,6 +326,11 @@ public class Program
         app.UseAntiforgery();
 
         await DatabaseInitializer.InitializeAsync(app);
+
+        using (var scope = app.Services.CreateScope())
+        {
+            await DatabaseInitializer.SeedOidcClientsAsync(scope.ServiceProvider);
+        }
 
         app.MapGet("/health", () => Results.Ok(new { status = "ok" }));
 
@@ -1192,6 +1235,7 @@ public class Program
             .AddInteractiveServerRenderMode();
 
         app.MapAdditionalIdentityEndpoints();
+        app.MapAuthorizationEndpoints();
 
         await app.RunAsync();
     }

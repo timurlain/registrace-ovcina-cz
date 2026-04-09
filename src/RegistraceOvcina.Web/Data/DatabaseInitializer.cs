@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using OpenIddict.Abstractions;
 using RegistraceOvcina.Web.Features.Announcements;
 using RegistraceOvcina.Web.Security;
 
@@ -7,6 +8,21 @@ namespace RegistraceOvcina.Web.Data;
 
 public static class DatabaseInitializer
 {
+    private static readonly (string Name, string Category)[] SeedRoles =
+    [
+        (RoleNames.Admin, "system"),
+        (RoleNames.Organizer, "system"),
+        (RoleNames.Registrant, "system"),
+        (RoleNames.Guest, "system"),
+        (RoleNames.King, "game"),
+        (RoleNames.Merchant, "game"),
+        (RoleNames.Player, "game"),
+        (RoleNames.Healer, "game"),
+        (RoleNames.StaffRegistration, "staff"),
+        (RoleNames.StaffAccounts, "staff"),
+        (RoleNames.StaffLogistics, "staff"),
+    ];
+
     public static async Task InitializeAsync(WebApplication app)
     {
         using var scope = app.Services.CreateScope();
@@ -46,13 +62,17 @@ public static class DatabaseInitializer
         await SeedAnnouncementsAsync(db);
 
         // Roles must always exist — external login creates users with Registrant role
-        var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<IdentityRole>>();
-        foreach (var role in new[] { RoleNames.Registrant, RoleNames.Organizer, RoleNames.Admin })
+        var roleManager = scope.ServiceProvider.GetRequiredService<RoleManager<ApplicationRole>>();
+        foreach (var (name, category) in SeedRoles)
         {
-            if (!await roleManager.RoleExistsAsync(role))
+            if (!await roleManager.RoleExistsAsync(name))
             {
-                var createRoleResult = await roleManager.CreateAsync(new IdentityRole(role));
-                EnsureSuccess(createRoleResult, $"role '{role}'");
+                var createRoleResult = await roleManager.CreateAsync(new ApplicationRole
+                {
+                    Name = name,
+                    Category = category,
+                });
+                EnsureSuccess(createRoleResult, $"role '{name}'");
             }
         }
 
@@ -336,6 +356,84 @@ public static class DatabaseInitializer
                 var addToRoleResult = await userManager.AddToRoleAsync(user, role);
                 EnsureSuccess(addToRoleResult, $"assign role '{role}' to '{email}'");
             }
+        }
+    }
+
+    public static async Task SeedOidcClientsAsync(IServiceProvider services)
+    {
+        var manager = services.GetRequiredService<IOpenIddictApplicationManager>();
+
+        await EnsureClientAsync(manager, new OpenIddictApplicationDescriptor
+        {
+            ClientId = "baca",
+            ClientSecret = "baca-dev-secret-change-in-production",
+            DisplayName = "Bača — Task Tracker",
+            ConsentType = OpenIddictConstants.ConsentTypes.Implicit,
+            ClientType = OpenIddictConstants.ClientTypes.Confidential,
+            RedirectUris =
+            {
+                new Uri("https://baca.ovcina.cz/auth/callback"),
+                new Uri("http://localhost:3000/auth/callback"),
+            },
+            PostLogoutRedirectUris =
+            {
+                new Uri("https://baca.ovcina.cz/"),
+                new Uri("http://localhost:3000/"),
+            },
+            Permissions =
+            {
+                OpenIddictConstants.Permissions.Endpoints.Authorization,
+                OpenIddictConstants.Permissions.Endpoints.Token,
+                OpenIddictConstants.Permissions.Endpoints.EndSession,
+                OpenIddictConstants.Permissions.GrantTypes.AuthorizationCode,
+                OpenIddictConstants.Permissions.GrantTypes.RefreshToken,
+                OpenIddictConstants.Permissions.ResponseTypes.Code,
+                OpenIddictConstants.Permissions.Scopes.Email,
+                OpenIddictConstants.Permissions.Scopes.Profile,
+                $"{OpenIddictConstants.Permissions.Prefixes.Scope}roles",
+            },
+        });
+
+        await EnsureClientAsync(manager, new OpenIddictApplicationDescriptor
+        {
+            ClientId = "ovcinahra",
+            ClientSecret = "ovcinahra-dev-secret-change-in-production",
+            DisplayName = "OvčinaHra — World App",
+            ConsentType = OpenIddictConstants.ConsentTypes.Implicit,
+            ClientType = OpenIddictConstants.ClientTypes.Confidential,
+            RedirectUris =
+            {
+                new Uri("https://ovcinahra.ovcina.cz/auth/callback"),
+                new Uri("http://localhost:5180/auth/callback"),
+            },
+            PostLogoutRedirectUris =
+            {
+                new Uri("https://ovcinahra.ovcina.cz/"),
+                new Uri("http://localhost:5180/"),
+            },
+            Permissions =
+            {
+                OpenIddictConstants.Permissions.Endpoints.Authorization,
+                OpenIddictConstants.Permissions.Endpoints.Token,
+                OpenIddictConstants.Permissions.Endpoints.EndSession,
+                OpenIddictConstants.Permissions.GrantTypes.AuthorizationCode,
+                OpenIddictConstants.Permissions.GrantTypes.RefreshToken,
+                OpenIddictConstants.Permissions.ResponseTypes.Code,
+                OpenIddictConstants.Permissions.Scopes.Email,
+                OpenIddictConstants.Permissions.Scopes.Profile,
+                $"{OpenIddictConstants.Permissions.Prefixes.Scope}roles",
+            },
+        });
+    }
+
+    private static async Task EnsureClientAsync(
+        IOpenIddictApplicationManager manager,
+        OpenIddictApplicationDescriptor descriptor)
+    {
+        var existing = await manager.FindByClientIdAsync(descriptor.ClientId!);
+        if (existing is null)
+        {
+            await manager.CreateAsync(descriptor);
         }
     }
 
