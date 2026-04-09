@@ -20,6 +20,10 @@ else
             <h1 class="h4 mb-1">Rozdělení &mdash; @board.GameName</h1>
             <p class="text-secondary small mb-0">Přetáhněte hráče mezi království. Celkem: @TotalPlayerCount</p>
         </div>
+        <div class="form-check form-switch">
+            <input class="form-check-input" type="checkbox" id="detail-toggle" checked="@showDetail" @onchange="ToggleDetail" />
+            <label class="form-check-label small" for="detail-toggle">Podrobnosti</label>
+        </div>
     </div>
 
     @if (!string.IsNullOrWhiteSpace(statusMessage))
@@ -54,18 +58,7 @@ else
                     {
                         @foreach (var player in board.UnassignedPlayers)
                         {
-                            <div class="kingdom-card border rounded px-2 py-1 mb-1 bg-light"
-                                 draggable="true" data-registration-id="@player.RegistrationId"
-                                 ondragstart="handleDragStart(event)">
-                                <div class="d-flex justify-content-between align-items-center">
-                                    <span class="fw-semibold" style="font-size:0.8rem;">@player.PersonName</span>
-                                    <span class="text-muted" style="font-size:0.7rem;">@(DateTime.UtcNow.Year - player.BirthYear) let</span>
-                                </div>
-                                @if (!string.IsNullOrWhiteSpace(player.PreferredKingdomName))
-                                {
-                                    <div style="font-size:0.7rem;"><span class="badge text-bg-info" style="font-size:0.65rem;">pref: @player.PreferredKingdomName</span></div>
-                                }
-                            </div>
+                            @RenderPlayerCard(player, null)
                         }
                     }
                 </div>
@@ -107,24 +100,7 @@ else
                         {
                             @foreach (var player in kingdom.Players)
                             {
-                                <div class="kingdom-card border rounded px-2 py-1 mb-1 bg-light"
-                                     draggable="true" data-registration-id="@player.RegistrationId"
-                                     ondragstart="handleDragStart(event)">
-                                    <div class="d-flex justify-content-between align-items-center">
-                                        <span class="fw-semibold" style="font-size:0.8rem;">@player.PersonName</span>
-                                        <span class="text-muted" style="font-size:0.7rem;">@(DateTime.UtcNow.Year - player.BirthYear) let</span>
-                                    </div>
-                                    <select class="reassign-select form-select form-select-sm mt-1"
-                                            style="font-size:0.65rem; padding:1px 4px; height:auto;"
-                                            onchange="reassignPlayer(this, '@player.RegistrationId')">
-                                        <option value="">Přesunout...</option>
-                                        <option value="">Nepřidělení</option>
-                                        @foreach (var k in board!.Kingdoms.Where(k => k.KingdomId != kingdom.KingdomId))
-                                        {
-                                            <option value="@k.KingdomId">@k.DisplayName</option>
-                                        }
-                                    </select>
-                                </div>
+                                @RenderPlayerCard(player, kingdom)
                             }
                         }
                     </div>
@@ -175,10 +151,88 @@ else
     .kingdom-card:hover { box-shadow: 0 2px 6px rgba(0,0,0,0.15); }
     .reassign-select { display: none; }
     .kingdom-card:hover .reassign-select { display: block; }
+    .card-detail { display: none; }
+    .kingdom-card:hover .card-detail { display: block; }
+    .card-detail-always { display: block; }
     [data-kingdom-id].drag-over { background: rgba(0,0,0,0.05); }
 </style>
 
 @code {
+    private static readonly int CurrentYear = DateTime.UtcNow.Year;
+
+    private RenderFragment RenderPlayerCard(PlayerCard player, KingdomColumn? currentKingdom) => __builder =>
+    {
+        <div class="kingdom-card border rounded px-2 py-1 mb-1 bg-light"
+             draggable="true" data-registration-id="@player.RegistrationId"
+             ondragstart="handleDragStart(event)">
+            <div class="d-flex justify-content-between align-items-center">
+                <span class="fw-semibold" style="font-size:0.8rem;">@player.PersonName</span>
+                <span class="text-muted" style="font-size:0.7rem;">@player.Age(CurrentYear) let</span>
+            </div>
+            <div style="font-size:0.7rem;" class="d-flex flex-wrap gap-1">
+                @if (!string.IsNullOrWhiteSpace(player.GroupName))
+                {
+                    <span class="badge text-bg-secondary" style="font-size:0.6rem;">@player.GroupName</span>
+                }
+                @if (!string.IsNullOrWhiteSpace(player.PreferredKingdomName))
+                {
+                    <span class="badge text-bg-info" style="font-size:0.6rem;">pref: @player.PreferredKingdomName</span>
+                }
+                @if (!string.IsNullOrWhiteSpace(player.PreviousKingdomName))
+                {
+                    <span class="badge text-bg-warning" style="font-size:0.6rem;">minule: @player.PreviousKingdomName</span>
+                }
+            </div>
+            <div class="@(showDetail ? "card-detail-always" : "card-detail")" style="font-size:0.65rem; border-top: 1px solid #dee2e6; margin-top: 3px; padding-top: 3px;">
+                @if (player.PlayerSubType.HasValue)
+                {
+                    <div><strong>Typ:</strong> @GetPlayerSubTypeLabel(player.PlayerSubType.Value)</div>
+                }
+                @if (!string.IsNullOrWhiteSpace(player.CharacterName))
+                {
+                    <div><strong>Postava:</strong> @player.CharacterName</div>
+                }
+                @if (!string.IsNullOrWhiteSpace(player.GuardianName))
+                {
+                    <div><strong>Zákonný zástupce:</strong> @player.GuardianName</div>
+                }
+                @if (!string.IsNullOrWhiteSpace(player.PersonNotes))
+                {
+                    <div><strong>Poznámka:</strong> @player.PersonNotes</div>
+                }
+                @if (!string.IsNullOrWhiteSpace(player.OrganizerNotes))
+                {
+                    <div><strong>Org. poznámky:</strong> @player.OrganizerNotes</div>
+                }
+                @if (!string.IsNullOrWhiteSpace(player.RegistrantNote))
+                {
+                    <div><strong>Přihlašovatel:</strong> @player.RegistrantNote</div>
+                }
+            </div>
+            @if (currentKingdom is not null)
+            {
+                <select class="reassign-select form-select form-select-sm mt-1"
+                        style="font-size:0.65rem; padding:1px 4px; height:auto;"
+                        onchange="reassignPlayer(this, '@player.RegistrationId')">
+                    <option value="">Přesunout...</option>
+                    <option value="">Nepřidělení</option>
+                    @foreach (var k in board!.Kingdoms.Where(k => k.KingdomId != currentKingdom.KingdomId))
+                    {
+                        <option value="@k.KingdomId">@k.DisplayName</option>
+                    }
+                </select>
+            }
+        </div>
+    };
+
+    private static string GetPlayerSubTypeLabel(PlayerSubType subType) => subType switch
+    {
+        Data.PlayerSubType.Pvp => "PvP hráč",
+        Data.PlayerSubType.Independent => "Samostatný",
+        Data.PlayerSubType.WithRanger => "S hraničářem",
+        Data.PlayerSubType.WithParent => "S rodičem",
+        _ => subType.ToString()
+    };
     [Parameter]
     public int GameId { get; set; }
 
@@ -191,6 +245,9 @@ else
     private AssignmentBoard? board;
     private string? statusMessage;
     private string? errorMessage;
+    private bool showDetail;
+
+    private void ToggleDetail() => showDetail = !showDetail;
     private int TotalPlayerCount => board is null ? 0
         : board.UnassignedPlayers.Count + board.Kingdoms.Sum(k => k.CurrentCount);
 
