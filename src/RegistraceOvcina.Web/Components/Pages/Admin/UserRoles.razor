@@ -1,0 +1,249 @@
+@page "/admin/users/{UserId}/roles"
+@attribute [Authorize(Policy = AuthorizationPolicies.AdminOnly)]
+@rendermode InteractiveServer
+
+@inject RoleManager<ApplicationRole> RoleManager
+@inject UserManager<ApplicationUser> UserManager
+@inject NavigationManager Navigation
+
+<PageTitle>Role uživatele</PageTitle>
+
+<div class="row g-4">
+    <div class="col-12">
+        <section class="card shadow-sm">
+            <div class="card-body p-4">
+                @if (user is null)
+                {
+                    @if (notFound)
+                    {
+                        <div class="alert alert-danger">Uživatel nebyl nalezen.</div>
+                        <a href="/admin/organizatori" class="btn btn-outline-secondary">
+                            <i class="bi bi-arrow-left me-1"></i>Zpět na seznam
+                        </a>
+                    }
+                    else
+                    {
+                        <p class="text-secondary">Načítám...</p>
+                    }
+                }
+                else
+                {
+                    <div class="d-flex flex-column flex-lg-row justify-content-between gap-3 mb-4">
+                        <div>
+                            <h1 class="h3 mb-1">Role uživatele: @userDisplayName</h1>
+                            <p class="text-secondary mb-0">@user.Email</p>
+                        </div>
+                        <div>
+                            <a href="/admin/organizatori" class="btn btn-outline-secondary">
+                                <i class="bi bi-arrow-left me-1"></i>Zpět na seznam
+                            </a>
+                        </div>
+                    </div>
+
+                    @if (!string.IsNullOrEmpty(statusMessage))
+                    {
+                        <div class="alert @(isError ? "alert-danger" : "alert-success") alert-dismissible fade show" role="alert">
+                            @statusMessage
+                            <button type="button" class="btn-close" @onclick="ClearStatus"></button>
+                        </div>
+                    }
+
+                    @if (roleGroups is not null)
+                    {
+                        @for (var gi = 0; gi < roleGroups.Count; gi++)
+                        {
+                            var group = roleGroups[gi];
+                            <h3 class="h5 mt-3 mb-2">@group.Label</h3>
+                            <div class="row g-2 mb-3">
+                                @for (var ri = 0; ri < group.Roles.Count; ri++)
+                                {
+                                    var role = group.Roles[ri];
+                                    var checkboxId = $"role-{gi}-{ri}";
+                                    <div class="col-md-4 col-lg-3">
+                                        <div class="form-check">
+                                            <input class="form-check-input"
+                                                   type="checkbox"
+                                                   id="@checkboxId"
+                                                   checked="@role.IsAssigned"
+                                                   @onchange="(e) => ToggleRole(role, (bool)e.Value!)" />
+                                            <label class="form-check-label" for="@checkboxId">
+                                                @role.Name
+                                            </label>
+                                        </div>
+                                    </div>
+                                }
+                            </div>
+                        }
+
+                        <hr class="my-3" />
+                        <div class="d-flex gap-2">
+                            <button class="btn btn-primary" @onclick="SaveChangesAsync" disabled="@saving">
+                                @if (saving)
+                                {
+                                    <span class="spinner-border spinner-border-sm me-1" role="status"></span>
+                                }
+                                Uložit změny
+                            </button>
+                            <a href="/admin/organizatori" class="btn btn-outline-secondary">Zrušit</a>
+                        </div>
+                    }
+                }
+            </div>
+        </section>
+    </div>
+</div>
+
+@code {
+    private static readonly (string Key, string Label)[] CategoryOrder =
+    [
+        ("system", "Systémové role"),
+        ("game", "Herní role"),
+        ("staff", "Organizační role"),
+    ];
+
+    [Parameter]
+    public string UserId { get; set; } = "";
+
+    private ApplicationUser? user;
+    private string userDisplayName = "";
+    private bool notFound;
+    private bool saving;
+
+    private List<RoleGroupViewModel>? roleGroups;
+    private HashSet<string> originalRoles = [];
+    private HashSet<string> selectedRoles = [];
+
+    // Status
+    private string? statusMessage;
+    private bool isError;
+
+    protected override async Task OnInitializedAsync()
+    {
+        user = await UserManager.FindByIdAsync(UserId);
+        if (user is null)
+        {
+            notFound = true;
+            return;
+        }
+
+        userDisplayName = !string.IsNullOrWhiteSpace(user.DisplayName)
+            ? user.DisplayName
+            : user.Email ?? user.UserName ?? UserId;
+
+        var userRoles = await UserManager.GetRolesAsync(user);
+        originalRoles = new HashSet<string>(userRoles, StringComparer.OrdinalIgnoreCase);
+        selectedRoles = new HashSet<string>(userRoles, StringComparer.OrdinalIgnoreCase);
+
+        var allRoles = RoleManager.Roles.ToList();
+
+        roleGroups = CategoryOrder
+            .Select(cat => new RoleGroupViewModel
+            {
+                Label = cat.Label,
+                Roles = allRoles
+                    .Where(r => r.Category == cat.Key)
+                    .OrderBy(r => r.Name)
+                    .Select(r => new RoleViewModel
+                    {
+                        Name = r.Name!,
+                        IsAssigned = selectedRoles.Contains(r.Name!),
+                    })
+                    .ToList(),
+            })
+            .Where(g => g.Roles.Count > 0)
+            .ToList();
+    }
+
+    private void ToggleRole(RoleViewModel role, bool isChecked)
+    {
+        role.IsAssigned = isChecked;
+
+        if (isChecked)
+            selectedRoles.Add(role.Name);
+        else
+            selectedRoles.Remove(role.Name);
+    }
+
+    private async Task SaveChangesAsync()
+    {
+        if (user is null) return;
+
+        saving = true;
+        ClearStatus();
+
+        try
+        {
+            var toAdd = selectedRoles.Except(originalRoles, StringComparer.OrdinalIgnoreCase).ToList();
+            var toRemove = originalRoles.Except(selectedRoles, StringComparer.OrdinalIgnoreCase).ToList();
+
+            if (toAdd.Count == 0 && toRemove.Count == 0)
+            {
+                SetStatus("Nebyly provedeny žádné změny.", false);
+                return;
+            }
+
+            // Last admin safeguard: if removing Admin role, ensure another active admin exists
+            if (toRemove.Contains(RoleNames.Admin, StringComparer.OrdinalIgnoreCase))
+            {
+                var admins = await UserManager.GetUsersInRoleAsync(RoleNames.Admin);
+                var otherActiveAdmins = admins.Count(u => u.IsActive && u.Id != user.Id);
+                if (otherActiveAdmins == 0)
+                {
+                    SetStatus("Posledního aktivního správce nelze odebrat. Nejprve přidejte jiného správce.", true);
+                    return;
+                }
+            }
+
+            if (toRemove.Count > 0)
+            {
+                var removeResult = await UserManager.RemoveFromRolesAsync(user, toRemove);
+                if (!removeResult.Succeeded)
+                {
+                    SetStatus($"Chyba při odebírání rolí: {string.Join("; ", removeResult.Errors.Select(e => e.Description))}", true);
+                    return;
+                }
+            }
+
+            if (toAdd.Count > 0)
+            {
+                var addResult = await UserManager.AddToRolesAsync(user, toAdd);
+                if (!addResult.Succeeded)
+                {
+                    SetStatus($"Chyba při přidávání rolí: {string.Join("; ", addResult.Errors.Select(e => e.Description))}", true);
+                    return;
+                }
+            }
+
+            // Update baseline so subsequent saves diff correctly
+            originalRoles = new HashSet<string>(selectedRoles, StringComparer.OrdinalIgnoreCase);
+            SetStatus("Role byly aktualizovány.", false);
+        }
+        finally
+        {
+            saving = false;
+        }
+    }
+
+    private void SetStatus(string message, bool error)
+    {
+        statusMessage = message;
+        isError = error;
+    }
+
+    private void ClearStatus()
+    {
+        statusMessage = null;
+    }
+
+    private sealed class RoleGroupViewModel
+    {
+        public required string Label { get; init; }
+        public required List<RoleViewModel> Roles { get; init; }
+    }
+
+    private sealed class RoleViewModel
+    {
+        public required string Name { get; init; }
+        public bool IsAssigned { get; set; }
+    }
+}
