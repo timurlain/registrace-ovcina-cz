@@ -236,7 +236,7 @@ internal static class IdentityComponentsEndpointRouteBuilderExtensions
                 logger.LogInformation("Guest user '{DisplayName}' signed in (UserId={UserId})",
                     user.DisplayName, user.Id);
 
-                return Results.LocalRedirect(returnUrl ?? "~/");
+                return Results.LocalRedirect(string.IsNullOrWhiteSpace(returnUrl) ? "~/" : returnUrl);
             }
             catch (Exception ex)
             {
