@@ -1,0 +1,291 @@
+@page "/admin/ubytovani"
+@attribute [Authorize(Policy = AuthorizationPolicies.AdminOnly)]
+@rendermode InteractiveServer
+
+@using Microsoft.EntityFrameworkCore
+
+@inject IDbContextFactory<ApplicationDbContext> DbContextFactory
+
+<PageTitle>Správa ubytování</PageTitle>
+
+<div class="row g-4">
+    <div class="col-12">
+        <section class="card shadow-sm">
+            <div class="card-body p-4">
+                <h1 class="h3 mb-3">Správa ubytování</h1>
+
+                @if (!string.IsNullOrEmpty(statusMessage))
+                {
+                    <div class="alert @(isError ? "alert-danger" : "alert-success") alert-dismissible fade show" role="alert">
+                        @statusMessage
+                        <button type="button" class="btn-close" @onclick="ClearStatus"></button>
+                    </div>
+                }
+
+                @* --- Create new room --- *@
+                <div class="card mb-4">
+                    <div class="card-body">
+                        <h3 class="h5 mb-3">Přidat místnost</h3>
+                        <div class="row g-2 align-items-end">
+                            <div class="col-md-5">
+                                <label class="form-label">Název</label>
+                                <input @bind="newRoomName" class="form-control" placeholder="Např. Pokoj 1" />
+                            </div>
+                            <div class="col-md-4">
+                                <label class="form-label">Výchozí kapacita</label>
+                                <input @bind="newRoomCapacity" type="number" min="1" class="form-control" />
+                            </div>
+                            <div class="col-md-3">
+                                <button class="btn btn-primary w-100" @onclick="CreateRoomAsync">Přidat</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                @* --- Room list --- *@
+                @if (rooms is null)
+                {
+                    <p class="text-secondary">Načítám...</p>
+                }
+                else if (rooms.Count == 0)
+                {
+                    <div class="empty-state">Zatím nejsou žádné místnosti.</div>
+                }
+                else
+                {
+                    <div class="table-responsive">
+                        <table class="table align-middle">
+                            <thead>
+                                <tr>
+                                    <th>Název</th>
+                                    <th>Výchozí kapacita</th>
+                                    <th>Akce</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var room in rooms)
+                                {
+                                    @if (editingRoomId == room.Id)
+                                    {
+                                        <tr>
+                                            <td>
+                                                <input @bind="editRoomName" class="form-control form-control-sm" />
+                                            </td>
+                                            <td>
+                                                <input @bind="editRoomCapacity" type="number" min="1" class="form-control form-control-sm" style="max-width:8rem;" />
+                                            </td>
+                                            <td>
+                                                <div class="d-flex gap-1">
+                                                    <button class="btn btn-sm btn-primary" @onclick="SaveEditAsync">Uložit</button>
+                                                    <button class="btn btn-sm btn-outline-secondary" @onclick="CancelEdit">Zrušit</button>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    }
+                                    else
+                                    {
+                                        <tr>
+                                            <td>@room.Name</td>
+                                            <td>@room.DefaultCapacity</td>
+                                            <td>
+                                                <div class="d-flex gap-1">
+                                                    <button class="btn btn-sm btn-outline-primary" @onclick="() => StartEdit(room)">Upravit</button>
+                                                    @if (confirmDeleteId == room.Id)
+                                                    {
+                                                        <button class="btn btn-sm btn-danger" @onclick="() => DeleteRoomAsync(room.Id)">Potvrdit smazání</button>
+                                                        <button class="btn btn-sm btn-outline-secondary" @onclick="CancelDelete">Zrušit</button>
+                                                    }
+                                                    else
+                                                    {
+                                                        <button class="btn btn-sm btn-outline-danger" @onclick="() => ConfirmDelete(room.Id)">Smazat</button>
+                                                    }
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    }
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </div>
+        </section>
+    </div>
+</div>
+
+@code {
+    private List<Room>? rooms;
+
+    // Create form
+    private string newRoomName = "";
+    private int newRoomCapacity = 4;
+
+    // Edit form
+    private int? editingRoomId;
+    private string editRoomName = "";
+    private int editRoomCapacity = 1;
+
+    // Delete confirmation
+    private int? confirmDeleteId;
+
+    // Status
+    private string? statusMessage;
+    private bool isError;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadRoomsAsync();
+    }
+
+    private async Task LoadRoomsAsync()
+    {
+        await using var db = await DbContextFactory.CreateDbContextAsync();
+        rooms = await db.Rooms.OrderBy(r => r.Name).ToListAsync();
+    }
+
+    private async Task CreateRoomAsync()
+    {
+        if (string.IsNullOrWhiteSpace(newRoomName))
+        {
+            SetStatus("Zadejte název místnosti.", true);
+            return;
+        }
+
+        if (newRoomCapacity < 1)
+        {
+            SetStatus("Kapacita musí být alespoň 1.", true);
+            return;
+        }
+
+        await using var db = await DbContextFactory.CreateDbContextAsync();
+
+        var trimmedName = newRoomName.Trim();
+        var exists = await db.Rooms.AnyAsync(r => r.Name == trimmedName);
+        if (exists)
+        {
+            SetStatus($"Místnost \"{trimmedName}\" již existuje.", true);
+            return;
+        }
+
+        db.Rooms.Add(new Room
+        {
+            Name = trimmedName,
+            DefaultCapacity = newRoomCapacity,
+        });
+
+        await db.SaveChangesAsync();
+        SetStatus($"Místnost \"{trimmedName}\" byla vytvořena.", false);
+        newRoomName = "";
+        newRoomCapacity = 4;
+        await LoadRoomsAsync();
+    }
+
+    private void StartEdit(Room room)
+    {
+        editingRoomId = room.Id;
+        editRoomName = room.Name;
+        editRoomCapacity = room.DefaultCapacity;
+        confirmDeleteId = null;
+    }
+
+    private void CancelEdit()
+    {
+        editingRoomId = null;
+    }
+
+    private async Task SaveEditAsync()
+    {
+        if (string.IsNullOrWhiteSpace(editRoomName))
+        {
+            SetStatus("Název místnosti nesmí být prázdný.", true);
+            return;
+        }
+
+        if (editRoomCapacity < 1)
+        {
+            SetStatus("Kapacita musí být alespoň 1.", true);
+            return;
+        }
+
+        await using var db = await DbContextFactory.CreateDbContextAsync();
+
+        var room = await db.Rooms.FindAsync(editingRoomId!.Value);
+        if (room is null)
+        {
+            SetStatus("Místnost nebyla nalezena.", true);
+            editingRoomId = null;
+            await LoadRoomsAsync();
+            return;
+        }
+
+        var trimmedName = editRoomName.Trim();
+
+        // Check for duplicate name (excluding current room)
+        var duplicate = await db.Rooms.AnyAsync(r => r.Name == trimmedName && r.Id != editingRoomId);
+        if (duplicate)
+        {
+            SetStatus($"Místnost \"{trimmedName}\" již existuje.", true);
+            return;
+        }
+
+        room.Name = trimmedName;
+        room.DefaultCapacity = editRoomCapacity;
+        await db.SaveChangesAsync();
+
+        SetStatus($"Místnost \"{trimmedName}\" byla uložena.", false);
+        editingRoomId = null;
+        await LoadRoomsAsync();
+    }
+
+    private void ConfirmDelete(int roomId)
+    {
+        confirmDeleteId = roomId;
+        editingRoomId = null;
+    }
+
+    private void CancelDelete()
+    {
+        confirmDeleteId = null;
+    }
+
+    private async Task DeleteRoomAsync(int roomId)
+    {
+        await using var db = await DbContextFactory.CreateDbContextAsync();
+
+        var room = await db.Rooms.FindAsync(roomId);
+        if (room is null)
+        {
+            SetStatus("Místnost nebyla nalezena.", true);
+            confirmDeleteId = null;
+            await LoadRoomsAsync();
+            return;
+        }
+
+        // Check if room is linked to any GameRoom
+        var isLinked = await db.GameRooms.AnyAsync(gr => gr.RoomId == roomId);
+        if (isLinked)
+        {
+            SetStatus($"Místnost \"{room.Name}\" nelze smazat — je přiřazena k nějaké hře.", true);
+            confirmDeleteId = null;
+            return;
+        }
+
+        db.Rooms.Remove(room);
+        await db.SaveChangesAsync();
+
+        SetStatus($"Místnost \"{room.Name}\" byla smazána.", false);
+        confirmDeleteId = null;
+        await LoadRoomsAsync();
+    }
+
+    private void SetStatus(string message, bool error)
+    {
+        statusMessage = message;
+        isError = error;
+    }
+
+    private void ClearStatus()
+    {
+        statusMessage = null;
+    }
+}
