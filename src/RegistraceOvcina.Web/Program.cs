@@ -202,6 +202,9 @@ public class Program
                 options.AddEphemeralEncryptionKey()
                     .AddEphemeralSigningKey();
 
+                // Disable access token encryption — client apps validate via JWKS
+                options.DisableAccessTokenEncryption();
+
                 options.UseAspNetCore()
                     .EnableAuthorizationEndpointPassthrough()
                     .EnableTokenEndpointPassthrough()
