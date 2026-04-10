@@ -19,6 +19,7 @@ using RegistraceOvcina.Web.Features.Invitations;
 using RegistraceOvcina.Web.Features.HistoricalImport;
 using RegistraceOvcina.Web.Features.Payments;
 using RegistraceOvcina.Web.Features.Kingdoms;
+using RegistraceOvcina.Web.Features.Lodging;
 using RegistraceOvcina.Web.Features.People;
 using RegistraceOvcina.Web.Features.Submissions;
 using RegistraceOvcina.Web.Features.Integration;
@@ -236,6 +237,7 @@ public class Program
         builder.Services.AddScoped<InboxService>();
         builder.Services.AddScoped<KingdomService>();
         builder.Services.AddScoped<KingdomAssignmentService>();
+        builder.Services.AddScoped<LodgingAssignmentService>();
         builder.Services.AddScoped<PeopleReviewService>();
         builder.Services.AddScoped<SubmissionService>();
         builder.Services.AddScoped<OrganizerSubmissionService>();
@@ -1224,6 +1226,35 @@ public class Program
                     catch (InvalidOperationException ex)
                     {
                         return Results.LocalRedirect($"/organizace/hry/{gameId}/kralovstvi?error={Uri.EscapeDataString(ex.Message)}");
+                    }
+                })
+            .RequireAuthorization(AuthorizationPolicies.StaffOnly);
+        app.MapPost(
+                "/organizace/hry/{gameId:int}/ubytovani/pridelit",
+                async (int gameId, HttpContext httpContext, UserManager<ApplicationUser> userManager, LodgingAssignmentService lodgingAssignmentService) =>
+                {
+                    var user = await userManager.GetUserAsync(httpContext.User);
+                    if (user is null)
+                    {
+                        return Results.LocalRedirect($"/Account/Login?ReturnUrl={Uri.EscapeDataString($"/organizace/hry/{gameId}/ubytovani")}");
+                    }
+
+                    try
+                    {
+                        var form = await httpContext.Request.ReadFormAsync();
+                        if (!int.TryParse(form["registrationId"], out var registrationId))
+                        {
+                            return Results.LocalRedirect($"/organizace/hry/{gameId}/ubytovani?error={Uri.EscapeDataString("Neplatn\u00e1 registrace.")}");
+                        }
+
+                        int? gameRoomId = int.TryParse(form["gameRoomId"], out var rid) && rid > 0 ? rid : null;
+
+                        await lodgingAssignmentService.AssignToRoomAsync(registrationId, gameRoomId, user.Id, expectedGameId: gameId);
+                        return Results.LocalRedirect($"/organizace/hry/{gameId}/ubytovani?assigned=1");
+                    }
+                    catch (InvalidOperationException ex)
+                    {
+                        return Results.LocalRedirect($"/organizace/hry/{gameId}/ubytovani?error={Uri.EscapeDataString(ex.Message)}");
                     }
                 })
             .RequireAuthorization(AuthorizationPolicies.StaffOnly);
