@@ -1,0 +1,27 @@
+@page "/organizace/statistiky"
+@attribute [Authorize(Policy = AuthorizationPolicies.StaffOnly)]
+
+@inject GameService GameService
+@inject NavigationManager NavigationManager
+
+<PageTitle>Statistiky</PageTitle>
+
+@if (latestGameId is null)
+{
+    <div class="empty-state">Žádná hra není k dispozici.</div>
+}
+
+@code {
+    private int? latestGameId;
+
+    protected override async Task OnInitializedAsync()
+    {
+        var games = await GameService.GetAdminGamesAsync();
+        var latest = games.FirstOrDefault();
+        if (latest is not null)
+        {
+            latestGameId = latest.Id;
+            NavigationManager.NavigateTo($"/organizace/hry/{latest.Id}/statistiky", replace: true);
+        }
+    }
+}

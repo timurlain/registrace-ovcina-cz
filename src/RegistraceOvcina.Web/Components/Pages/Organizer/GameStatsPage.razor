@@ -1,0 +1,352 @@
+@page "/organizace/hry/{gameId:int}/statistiky"
+@attribute [Authorize(Policy = AuthorizationPolicies.StaffOnly)]
+
+@using RegistraceOvcina.Web.Features.Stats
+
+@inject GameStatsService StatsService
+
+<PageTitle>Statistiky — @(stats?.GameName ?? "Načítání…")</PageTitle>
+
+@if (stats is null)
+{
+    <div class="text-center py-5">
+        <div class="spinner-border text-primary" role="status">
+            <span class="visually-hidden">Načítání…</span>
+        </div>
+    </div>
+}
+else
+{
+    <h2 class="mb-1">@stats.GameName</h2>
+    <p class="text-secondary mb-4">Statistiky registrací</p>
+
+    @* ────────── Hero KPI Cards ────────── *@
+    <div class="row g-3 mb-4">
+        @{ var attendeePercent = stats.PlayerCount > 0 && stats.SubmittedCount > 0 ? 100 : 0; }
+        <div class="col-md-3">
+            <div class="card shadow-sm border-start border-4 border-primary">
+                <div class="card-body">
+                    <h2 class="mb-0">@stats.TotalAttendees</h2>
+                    <span class="text-secondary">účastníků</span>
+                    <div class="small text-muted mt-1">@stats.SubmittedCount odeslaných přihlášek</div>
+                </div>
+            </div>
+        </div>
+
+        @{
+            var paymentPercent = stats.ExpectedTotal > 0 ? (int)Math.Round((double)stats.PaidTotal / (double)stats.ExpectedTotal * 100) : 0;
+            var paymentBorder = paymentPercent >= 90 ? "border-success" : paymentPercent >= 50 ? "border-warning" : "border-danger";
+        }
+        <div class="col-md-3">
+            <div class="card shadow-sm border-start border-4 @paymentBorder">
+                <div class="card-body">
+                    <h2 class="mb-0">@paymentPercent %</h2>
+                    <span class="text-secondary">zaplaceno</span>
+                    <div class="small text-muted mt-1">@stats.PaidTotal.ToString("N0") / @stats.ExpectedTotal.ToString("N0") Kč</div>
+                </div>
+            </div>
+        </div>
+
+        @{
+            var indoorTotal = stats.LodgingIndoor;
+            var indoorHoused = stats.RoomsAssigned;
+            var indoorPercent = indoorTotal > 0 ? (int)Math.Round((double)indoorHoused / indoorTotal * 100) : 0;
+            var indoorBorder = indoorPercent >= 90 ? "border-success" : indoorPercent >= 50 ? "border-warning" : "border-danger";
+        }
+        <div class="col-md-3">
+            <div class="card shadow-sm border-start border-4 @indoorBorder">
+                <div class="card-body">
+                    <h2 class="mb-0">@indoorHoused / @indoorTotal</h2>
+                    <span class="text-secondary">ubytovaných uvnitř</span>
+                    <div class="small text-muted mt-1">kapacita pokojů: @stats.RoomsTotal</div>
+                </div>
+            </div>
+        </div>
+
+        @{
+            var kingdomTotal = stats.PlayerCount;
+            var kingdomAssigned = kingdomTotal - stats.KingdomUnassigned;
+            var kingdomPercent = kingdomTotal > 0 ? (int)Math.Round((double)kingdomAssigned / kingdomTotal * 100) : 0;
+            var kingdomBorder = kingdomPercent >= 90 ? "border-success" : kingdomPercent >= 50 ? "border-warning" : "border-danger";
+        }
+        <div class="col-md-3">
+            <div class="card shadow-sm border-start border-4 @kingdomBorder">
+                <div class="card-body">
+                    <h2 class="mb-0">@kingdomAssigned / @kingdomTotal</h2>
+                    <span class="text-secondary">hráčů v království</span>
+                    <div class="small text-muted mt-1">@stats.KingdomUnassigned nepřiřazených</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    @* ────────── Action Items ────────── *@
+    @if (stats.UnpaidSubmissionCount > 0 || stats.PlayersWithoutKingdom > 0 || stats.IndoorWithoutRoom > 0)
+    {
+        <div class="mb-4">
+            @if (stats.UnpaidSubmissionCount > 0)
+            {
+                <div class="alert alert-danger d-flex align-items-center mb-2">
+                    <strong class="me-2">@stats.UnpaidSubmissionCount</strong> přihlášek bez plné platby
+                    <a href="/organizace/platby" class="ms-auto btn btn-sm btn-outline-danger">Platby</a>
+                </div>
+            }
+            @if (stats.PlayersWithoutKingdom > 0)
+            {
+                <div class="alert alert-warning d-flex align-items-center mb-2">
+                    <strong class="me-2">@stats.PlayersWithoutKingdom</strong> hráčů bez království
+                    <a href="/organizace/rozdeleni" class="ms-auto btn btn-sm btn-outline-warning">Rozdělení</a>
+                </div>
+            }
+            @if (stats.IndoorWithoutRoom > 0)
+            {
+                <div class="alert alert-warning d-flex align-items-center mb-2">
+                    <strong class="me-2">@stats.IndoorWithoutRoom</strong> ubytovaných uvnitř bez pokoje
+                    <a href="/organizace/ubytovani" class="ms-auto btn btn-sm btn-outline-warning">Ubytování</a>
+                </div>
+            }
+        </div>
+    }
+
+    <div class="row g-4">
+        @* ────────── Demographics ────────── *@
+        <div class="col-lg-6">
+            <div class="card shadow-sm border-start border-4 border-info mb-4">
+                <div class="card-body">
+                    <h5 class="card-title mb-3">Demografie hráčů</h5>
+                    <div class="d-flex gap-3 mb-3">
+                        <span class="badge bg-info text-dark fs-6">Průměrný věk: @stats.AveragePlayerAge</span>
+                        <span class="badge bg-secondary fs-6">Průměrná velikost skupiny: @stats.AverageGroupSize</span>
+                    </div>
+                    @foreach (var bracket in stats.AgeBrackets)
+                    {
+                        var pct = bracket.MaxCount > 0 ? (int)Math.Round((double)bracket.Count / bracket.MaxCount * 100) : 0;
+                        <div class="row align-items-center mb-2">
+                            <div class="col-2 text-end fw-semibold small">@bracket.Label</div>
+                            <div class="col-10">
+                                <div class="progress" style="height: 22px;">
+                                    <div class="progress-bar bg-info" role="progressbar"
+                                         style="width: @(pct)%;" aria-valuenow="@bracket.Count"
+                                         aria-valuemin="0" aria-valuemax="@bracket.MaxCount">
+                                        @bracket.Count
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    }
+                </div>
+            </div>
+        </div>
+
+        @* ────────── Attendee Breakdown ────────── *@
+        <div class="col-lg-6">
+            <div class="card shadow-sm mb-4">
+                <div class="card-body">
+                    <h5 class="card-title mb-3">Rozdělení účastníků</h5>
+
+                    <h6 class="text-muted mb-2">Hráči (@stats.PlayerCount)</h6>
+                    <div class="d-flex flex-wrap gap-2 mb-3">
+                        <span class="badge bg-primary">PvP: @stats.PlayerPvp</span>
+                        <span class="badge bg-primary">Samostatní: @stats.PlayerIndependent</span>
+                        <span class="badge bg-primary">S hraničárem: @stats.PlayerWithRanger</span>
+                        <span class="badge bg-primary">S rodičem: @stats.PlayerWithParent</span>
+                    </div>
+
+                    <h6 class="text-muted mb-2">Dospělí (@(stats.AdultNpc + stats.AdultMonster + stats.AdultHelper))</h6>
+                    <div class="d-flex flex-wrap gap-2 mb-3">
+                        <span class="badge bg-secondary">NPC / příšery: @stats.AdultNpc</span>
+                        <span class="badge bg-secondary">Přihlížející: @stats.AdultMonster</span>
+                        <span class="badge bg-secondary">Pomocníci / hraničáři: @stats.AdultHelper</span>
+                    </div>
+
+                    <h6 class="text-muted mb-2">Přihlášky</h6>
+                    <div class="d-flex flex-wrap gap-2">
+                        <span class="badge bg-success">Odeslané: @stats.SubmittedCount</span>
+                        <span class="badge bg-warning text-dark">Koncepty: @stats.DraftCount</span>
+                        <span class="badge bg-danger">Zrušené: @stats.CancelledCount</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        @* ────────── Lodging ────────── *@
+        <div class="col-lg-6">
+            <div class="card shadow-sm mb-4">
+                <div class="card-body">
+                    <h5 class="card-title mb-3">Ubytování</h5>
+                    <div class="d-flex flex-wrap gap-2 mb-3">
+                        <span class="badge bg-primary">Uvnitř: @stats.LodgingIndoor</span>
+                        <span class="badge bg-success">Stan: @stats.LodgingTent</span>
+                        <span class="badge bg-info text-dark">Venku: @stats.LodgingOutdoor</span>
+                        <span class="badge bg-secondary">Nespí: @stats.LodgingNotStaying</span>
+                    </div>
+
+                    @if (stats.RoomOccupancies.Count > 0)
+                    {
+                        <h6 class="text-muted mb-2">Pokoje</h6>
+                        @foreach (var room in stats.RoomOccupancies)
+                        {
+                            var roomPct = room.Capacity > 0 ? (int)Math.Round((double)room.Assigned / room.Capacity * 100) : 0;
+                            var roomColor = roomPct >= 100 ? "bg-danger" : roomPct >= 70 ? "bg-warning" : "bg-success";
+                            <div class="d-flex align-items-center mb-2">
+                                <span class="me-2 small fw-semibold" style="min-width: 120px;">@room.RoomName</span>
+                                <div class="progress flex-grow-1" style="height: 18px;">
+                                    <div class="progress-bar @roomColor" role="progressbar"
+                                         style="width: @(Math.Min(roomPct, 100))%;">
+                                    </div>
+                                </div>
+                                <span class="ms-2 small text-muted">@room.Assigned / @room.Capacity</span>
+                            </div>
+                        }
+                    }
+                </div>
+            </div>
+        </div>
+
+        @* ────────── Kingdoms ────────── *@
+        <div class="col-lg-6">
+            <div class="card shadow-sm mb-4">
+                <div class="card-body">
+                    <h5 class="card-title mb-3">Království</h5>
+                    @if (stats.Kingdoms.Count > 0)
+                    {
+                        <table class="table table-sm mb-0">
+                            <thead>
+                                <tr>
+                                    <th>Království</th>
+                                    <th style="width:40%;">Obsazení</th>
+                                    <th class="text-end">Počet</th>
+                                    <th class="text-end">Prům. věk</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var k in stats.Kingdoms)
+                                {
+                                    var kPct = k.Target > 0 ? (int)Math.Round((double)k.Assigned / k.Target * 100) : 0;
+                                    <tr>
+                                        <td>
+                                            @if (!string.IsNullOrEmpty(k.Color))
+                                            {
+                                                <span class="d-inline-block rounded-circle me-1" style="width:12px;height:12px;background:@k.Color;"></span>
+                                            }
+                                            @k.Name
+                                        </td>
+                                        <td>
+                                            <div class="progress" style="height: 16px;">
+                                                <div class="progress-bar bg-primary" role="progressbar"
+                                                     style="width: @(Math.Min(kPct, 100))%;">
+                                                </div>
+                                            </div>
+                                        </td>
+                                        <td class="text-end">@k.Assigned / @k.Target</td>
+                                        <td class="text-end">@(k.AverageAge > 0 ? k.AverageAge.ToString("F1") : "—")</td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    }
+                    else
+                    {
+                        <p class="text-muted mb-0">Žádná království nejsou nastavena.</p>
+                    }
+                </div>
+            </div>
+        </div>
+
+        @* ────────── Financial ────────── *@
+        <div class="col-lg-6">
+            <div class="card shadow-sm mb-4">
+                <div class="card-body">
+                    <h5 class="card-title mb-3">Finance</h5>
+                    @{
+                        var finPct = stats.ExpectedTotal > 0 ? (int)Math.Round((double)stats.PaidTotal / (double)stats.ExpectedTotal * 100) : 0;
+                        var finColor = finPct >= 90 ? "bg-success" : finPct >= 50 ? "bg-warning" : "bg-danger";
+                    }
+                    <div class="progress mb-3" style="height: 24px;">
+                        <div class="progress-bar @finColor" role="progressbar"
+                             style="width: @(Math.Min(finPct, 100))%;">
+                            @finPct %
+                        </div>
+                    </div>
+                    <table class="table table-sm mb-0">
+                        <tbody>
+                            <tr>
+                                <td>Očekávaná částka</td>
+                                <td class="text-end fw-semibold">@stats.ExpectedTotal.ToString("N0") Kč</td>
+                            </tr>
+                            <tr>
+                                <td>Zaplaceno</td>
+                                <td class="text-end fw-semibold text-success">@stats.PaidTotal.ToString("N0") Kč</td>
+                            </tr>
+                            <tr>
+                                <td>Zbývá</td>
+                                <td class="text-end fw-semibold text-danger">@((stats.ExpectedTotal - stats.PaidTotal).ToString("N0")) Kč</td>
+                            </tr>
+                            <tr>
+                                <td>Dobrovolné příspěvky</td>
+                                <td class="text-end">@stats.DonationTotal.ToString("N0") Kč</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        @* ────────── Food ────────── *@
+        <div class="col-lg-6">
+            <div class="card shadow-sm mb-4">
+                <div class="card-body">
+                    <h5 class="card-title mb-3">Stravování</h5>
+                    @if (stats.Meals.Count > 0)
+                    {
+                        var mealsByDay = stats.Meals.GroupBy(m => m.Day).ToList();
+                        <div class="row">
+                            @foreach (var dayGroup in mealsByDay)
+                            {
+                                <div class="col-md-6 mb-3">
+                                    <h6 class="text-muted">@dayGroup.Key</h6>
+                                    <table class="table table-sm mb-0">
+                                        <thead>
+                                            <tr>
+                                                <th>Jídlo</th>
+                                                <th class="text-end">Děti</th>
+                                                <th class="text-end">Dospělí</th>
+                                                <th class="text-end">Celkem</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            @foreach (var meal in dayGroup)
+                                            {
+                                                <tr>
+                                                    <td>@meal.MealName</td>
+                                                    <td class="text-end">@meal.ChildCount</td>
+                                                    <td class="text-end">@meal.AdultCount</td>
+                                                    <td class="text-end fw-semibold">@(meal.ChildCount + meal.AdultCount)</td>
+                                                </tr>
+                                            }
+                                        </tbody>
+                                    </table>
+                                </div>
+                            }
+                        </div>
+                    }
+                    else
+                    {
+                        <p class="text-muted mb-0">Žádné objednávky jídla.</p>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
+}
+
+@code {
+    [Parameter] public int GameId { get; set; }
+
+    private GameStats? stats;
+
+    protected override async Task OnInitializedAsync()
+    {
+        stats = await StatsService.GetGameStatsAsync(GameId);
+    }
+}
