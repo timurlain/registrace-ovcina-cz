@@ -27,6 +27,7 @@ using RegistraceOvcina.Web.Features.Roles;
 using RegistraceOvcina.Web.Features.Announcements;
 using RegistraceOvcina.Web.Features.Auth;
 using RegistraceOvcina.Web.Features.ExternalContacts;
+using RegistraceOvcina.Web.Features.Stats;
 using RegistraceOvcina.Web.Features.Users;
 using RegistraceOvcina.Web.Endpoints;
 using RegistraceOvcina.Web.Security;
@@ -251,6 +252,7 @@ public class Program
         builder.Services.AddScoped<UserAdministrationService>();
         builder.Services.AddScoped<GameRoleService>();
         builder.Services.AddScoped<AnnouncementService>();
+        builder.Services.AddScoped<GameStatsService>();
         builder.Services.Configure<IntegrationApiOptions>(
             builder.Configuration.GetSection(IntegrationApiOptions.SectionName));
 
