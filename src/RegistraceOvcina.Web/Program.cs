@@ -199,16 +199,9 @@ public class Program
                 options.SetAccessTokenLifetime(TimeSpan.FromMinutes(30));
                 options.SetRefreshTokenLifetime(TimeSpan.FromDays(30));
 
-                if (builder.Environment.IsDevelopment() || builder.Environment.IsEnvironment("Testing"))
-                {
-                    options.AddEphemeralEncryptionKey()
-                        .AddEphemeralSigningKey();
-                }
-                else
-                {
-                    // Persistent keys via Data Protection — survives app restarts
-                    options.UseDataProtection();
-                }
+                // TODO: replace with persistent keys (needs OpenIddict.Server.DataProtection package)
+                options.AddEphemeralEncryptionKey()
+                    .AddEphemeralSigningKey();
 
                 // Disable access token encryption — client apps validate via JWKS
                 options.DisableAccessTokenEncryption();
