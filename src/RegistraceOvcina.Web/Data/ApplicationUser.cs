@@ -15,4 +15,6 @@ public sealed class ApplicationUser : IdentityUser
     public DateTime? LastLoginAtUtc { get; set; }
 
     public DateTime CreatedAtUtc { get; set; }
+
+    public List<UserEmail> AlternateEmails { get; set; } = [];
 }
