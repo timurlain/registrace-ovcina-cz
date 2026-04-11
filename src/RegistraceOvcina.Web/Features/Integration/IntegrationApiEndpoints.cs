@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using RegistraceOvcina.Web.Data;
 using RegistraceOvcina.Web.Features.Roles;
+using RegistraceOvcina.Web.Features.Users;
 
 namespace RegistraceOvcina.Web.Features.Integration;
 
@@ -75,6 +76,7 @@ public static class IntegrationApiEndpoints
         group.MapGet("/users/by-email", async (
             string email,
             IDbContextFactory<ApplicationDbContext> dbFactory,
+            UserEmailService userEmailService,
             CancellationToken ct) =>
         {
             if (string.IsNullOrWhiteSpace(email))
@@ -82,12 +84,15 @@ public static class IntegrationApiEndpoints
 
             await using var db = await dbFactory.CreateDbContextAsync(ct);
 
-            var normalizedEmail = email.Trim().ToUpperInvariant();
+            var userId = await userEmailService.ResolveUserIdByEmailAsync(email, ct);
+
+            if (userId is null)
+                return Results.Ok(new { Exists = false, DisplayName = (string?)null, Roles = (List<string>?)null });
 
             var user = await db.Users
                 .AsNoTracking()
-                .Where(u => u.NormalizedEmail == normalizedEmail)
-                .Select(u => new { u.Id, u.DisplayName, u.IsActive })
+                .Where(u => u.Id == userId)
+                .Select(u => new { u.DisplayName, u.IsActive })
                 .FirstOrDefaultAsync(ct);
 
             if (user is null || !user.IsActive)
@@ -95,7 +100,7 @@ public static class IntegrationApiEndpoints
 
             var roles = await db.UserRoles
                 .AsNoTracking()
-                .Where(ur => ur.UserId == user.Id)
+                .Where(ur => ur.UserId == userId)
                 .Join(db.Roles, ur => ur.RoleId, r => r.Id, (ur, r) => r.Name!)
                 .ToListAsync(ct);
 
@@ -107,6 +112,7 @@ public static class IntegrationApiEndpoints
             string email,
             int gameId,
             IDbContextFactory<ApplicationDbContext> dbFactory,
+            UserEmailService userEmailService,
             CancellationToken ct) =>
         {
             if (string.IsNullOrWhiteSpace(email))
@@ -126,6 +132,33 @@ public static class IntegrationApiEndpoints
                     r.Person.Email != null &&
                     r.Person.Email.ToUpper() == normalizedEmail,
                     ct);
+
+            if (!isRegistered)
+            {
+                // Fallback: resolve user by primary + alternate emails, then check by PersonId
+                var userId = await userEmailService.ResolveUserIdByEmailAsync(email, ct);
+                if (userId is not null)
+                {
+                    var personId = await db.Users
+                        .AsNoTracking()
+                        .Where(u => u.Id == userId)
+                        .Select(u => u.PersonId)
+                        .FirstOrDefaultAsync(ct);
+
+                    if (personId.HasValue)
+                    {
+                        isRegistered = await db.Registrations
+                            .AsNoTracking()
+                            .AnyAsync(r =>
+                                r.Submission.GameId == gameId &&
+                                r.Submission.Status == SubmissionStatus.Submitted &&
+                                r.Status == RegistrationStatus.Active &&
+                                !r.Submission.IsDeleted &&
+                                r.PersonId == personId.Value,
+                                ct);
+                    }
+                }
+            }
 
             return Results.Ok(new PresenceCheckDto(isRegistered));
         }).AllowAnonymous();

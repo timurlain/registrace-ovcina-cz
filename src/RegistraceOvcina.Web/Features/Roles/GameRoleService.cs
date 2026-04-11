@@ -11,9 +11,21 @@ public sealed class GameRoleService(IDbContextFactory<ApplicationDbContext> dbFa
         await using var db = await dbFactory.CreateDbContextAsync();
         var normalizedEmail = email.Trim().ToUpperInvariant();
 
+        var userId = await db.Users.AsNoTracking()
+            .Where(u => u.NormalizedEmail == normalizedEmail)
+            .Select(u => u.Id)
+            .FirstOrDefaultAsync();
+
+        userId ??= await db.UserEmails.AsNoTracking()
+            .Where(ue => ue.NormalizedEmail == normalizedEmail)
+            .Select(ue => ue.UserId)
+            .FirstOrDefaultAsync();
+
+        if (userId is null) return [];
+
         return await db.GameRoles
             .AsNoTracking()
-            .Where(gr => gr.User.NormalizedEmail == normalizedEmail && gr.GameId == gameId)
+            .Where(gr => gr.UserId == userId && gr.GameId == gameId)
             .Select(gr => gr.RoleName)
             .ToListAsync();
     }
@@ -24,10 +36,22 @@ public sealed class GameRoleService(IDbContextFactory<ApplicationDbContext> dbFa
         var normalizedEmail = email.Trim().ToUpperInvariant();
         var normalizedRole = roleName.Trim().ToLowerInvariant();
 
+        var userId = await db.Users.AsNoTracking()
+            .Where(u => u.NormalizedEmail == normalizedEmail)
+            .Select(u => u.Id)
+            .FirstOrDefaultAsync();
+
+        userId ??= await db.UserEmails.AsNoTracking()
+            .Where(ue => ue.NormalizedEmail == normalizedEmail)
+            .Select(ue => ue.UserId)
+            .FirstOrDefaultAsync();
+
+        if (userId is null) return false;
+
         return await db.GameRoles
             .AsNoTracking()
             .AnyAsync(gr =>
-                gr.User.NormalizedEmail == normalizedEmail &&
+                gr.UserId == userId &&
                 gr.GameId == gameId &&
                 gr.RoleName == normalizedRole);
     }
