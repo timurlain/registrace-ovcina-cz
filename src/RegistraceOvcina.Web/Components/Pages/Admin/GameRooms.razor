@@ -1,0 +1,364 @@
+@page "/admin/hry/{gameId:int}/ubytovani"
+@attribute [Authorize(Policy = AuthorizationPolicies.AdminOnly)]
+@rendermode InteractiveServer
+
+@using Microsoft.EntityFrameworkCore
+
+@inject IDbContextFactory<ApplicationDbContext> DbContextFactory
+
+<PageTitle>Ubytování — @(game?.Name ?? "Hra")</PageTitle>
+
+<div class="row g-4">
+    <div class="col-xl-10">
+        <section class="card shadow-sm">
+            <div class="card-body p-4">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <div>
+                        <h1 class="h3 mb-1">Ubytování — @(game?.Name ?? "...")</h1>
+                        <p class="text-secondary mb-0">Přiřaďte místnosti z katalogu k této hře a nastavte kapacity.</p>
+                    </div>
+                    <a href="/admin/hry" class="btn btn-outline-secondary btn-sm">Zpět na hry</a>
+                </div>
+
+                @if (!string.IsNullOrEmpty(statusMessage))
+                {
+                    <div class="alert @(isError ? "alert-danger" : "alert-success") alert-dismissible fade show" role="alert">
+                        @statusMessage
+                        <button type="button" class="btn-close" @onclick="ClearStatus"></button>
+                    </div>
+                }
+
+                @if (game is null)
+                {
+                    <p class="text-secondary">Načítám...</p>
+                }
+                else
+                {
+                    @* --- Linked rooms table --- *@
+                    <h2 class="h5 mb-3">Přiřazené místnosti</h2>
+
+                    @if (gameRooms is null)
+                    {
+                        <p class="text-secondary">Načítám...</p>
+                    }
+                    else if (gameRooms.Count == 0)
+                    {
+                        <div class="empty-state mb-4">K této hře nejsou přiřazeny žádné místnosti.</div>
+                    }
+                    else
+                    {
+                        <div class="table-responsive mb-4">
+                            <table class="table align-middle">
+                                <thead>
+                                    <tr>
+                                        <th>Místnost</th>
+                                        <th>Kapacita</th>
+                                        <th>Akce</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var gr in gameRooms)
+                                    {
+                                        @if (editingGameRoomId == gr.Id)
+                                        {
+                                            <tr>
+                                                <td>@gr.Room.Name</td>
+                                                <td>
+                                                    <input @bind="editCapacity" type="number" min="1" class="form-control form-control-sm" style="max-width:8rem;" />
+                                                </td>
+                                                <td>
+                                                    <div class="d-flex gap-1">
+                                                        <button class="btn btn-sm btn-primary" @onclick="SaveEditAsync">Uložit</button>
+                                                        <button class="btn btn-sm btn-outline-secondary" @onclick="CancelEdit">Zrušit</button>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        }
+                                        else
+                                        {
+                                            <tr>
+                                                <td>@gr.Room.Name</td>
+                                                <td>@gr.Capacity</td>
+                                                <td>
+                                                    <div class="d-flex gap-1">
+                                                        <button class="btn btn-sm btn-outline-primary" @onclick="() => StartEdit(gr)">Upravit</button>
+                                                        @if (confirmRemoveId == gr.Id)
+                                                        {
+                                                            <button class="btn btn-sm btn-danger" @onclick="() => RemoveGameRoomAsync(gr.Id)">Potvrdit odebrání</button>
+                                                            <button class="btn btn-sm btn-outline-secondary" @onclick="CancelRemove">Zrušit</button>
+                                                        }
+                                                        else
+                                                        {
+                                                            <button class="btn btn-sm btn-outline-danger" @onclick="() => ConfirmRemove(gr.Id)">Odebrat</button>
+                                                        }
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        }
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+
+                    @* --- Add room section --- *@
+                    <hr />
+                    <h2 class="h5 mb-3">Přidat místnost</h2>
+
+                    @if (availableRooms is not null && availableRooms.Count == 0)
+                    {
+                        <p class="text-secondary">Všechny místnosti z katalogu jsou již přiřazeny.</p>
+                    }
+                    else if (availableRooms is not null)
+                    {
+                        <div class="row g-2 align-items-end mb-3">
+                            <div class="col-md-4">
+                                <label class="form-label">Místnost</label>
+                                <select @bind="selectedRoomId" class="form-select">
+                                    <option value="0">— vyberte —</option>
+                                    @foreach (var room in availableRooms)
+                                    {
+                                        <option value="@room.Id">@room.Name (kapacita @room.DefaultCapacity)</option>
+                                    }
+                                </select>
+                            </div>
+                            <div class="col-md-3">
+                                <label class="form-label">Kapacita</label>
+                                <input @bind="addCapacity" type="number" min="1" class="form-control" />
+                            </div>
+                            <div class="col-md-2">
+                                <button class="btn btn-primary w-100" @onclick="AddRoomAsync">Přidat</button>
+                            </div>
+                            <div class="col-md-3">
+                                <button class="btn btn-outline-primary w-100" @onclick="AddAllRoomsAsync">Přidat všechny</button>
+                            </div>
+                        </div>
+                    }
+                }
+            </div>
+        </section>
+    </div>
+</div>
+
+@code {
+    [Parameter]
+    public int GameId { get; set; }
+
+    private Game? game;
+    private List<GameRoom>? gameRooms;
+    private List<Room>? availableRooms;
+
+    // Add form
+    private int selectedRoomId;
+    private int addCapacity = 4;
+
+    // Edit form
+    private int? editingGameRoomId;
+    private int editCapacity = 1;
+
+    // Remove confirmation
+    private int? confirmRemoveId;
+
+    // Status
+    private string? statusMessage;
+    private bool isError;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await using var db = await DbContextFactory.CreateDbContextAsync();
+        game = await db.Games.AsNoTracking().FirstOrDefaultAsync(g => g.Id == GameId);
+        await LoadDataAsync();
+    }
+
+    private async Task LoadDataAsync()
+    {
+        await using var db = await DbContextFactory.CreateDbContextAsync();
+
+        gameRooms = await db.GameRooms
+            .Include(gr => gr.Room)
+            .Where(gr => gr.GameId == GameId)
+            .OrderBy(gr => gr.Room.Name)
+            .ToListAsync();
+
+        var linkedRoomIds = gameRooms.Select(gr => gr.RoomId).ToHashSet();
+        availableRooms = await db.Rooms
+            .Where(r => !linkedRoomIds.Contains(r.Id))
+            .OrderBy(r => r.Name)
+            .ToListAsync();
+
+        // Update addCapacity default from selected room
+        UpdateAddCapacityDefault();
+    }
+
+    private void UpdateAddCapacityDefault()
+    {
+        if (selectedRoomId > 0 && availableRooms is not null)
+        {
+            var room = availableRooms.FirstOrDefault(r => r.Id == selectedRoomId);
+            if (room is not null)
+            {
+                addCapacity = room.DefaultCapacity;
+                return;
+            }
+        }
+
+        // Default to first available room's capacity or 4
+        if (availableRooms is not null && availableRooms.Count > 0)
+        {
+            addCapacity = availableRooms[0].DefaultCapacity;
+        }
+        else
+        {
+            addCapacity = 4;
+        }
+    }
+
+    private async Task AddRoomAsync()
+    {
+        if (selectedRoomId <= 0)
+        {
+            SetStatus("Vyberte místnost.", true);
+            return;
+        }
+
+        if (addCapacity < 1)
+        {
+            SetStatus("Kapacita musí být alespoň 1.", true);
+            return;
+        }
+
+        await using var db = await DbContextFactory.CreateDbContextAsync();
+
+        // Check not already linked
+        var alreadyLinked = await db.GameRooms.AnyAsync(gr => gr.GameId == GameId && gr.RoomId == selectedRoomId);
+        if (alreadyLinked)
+        {
+            SetStatus("Tato místnost je již přiřazena k hře.", true);
+            return;
+        }
+
+        db.GameRooms.Add(new GameRoom
+        {
+            GameId = GameId,
+            RoomId = selectedRoomId,
+            Capacity = addCapacity,
+        });
+
+        await db.SaveChangesAsync();
+
+        var room = availableRooms?.FirstOrDefault(r => r.Id == selectedRoomId);
+        SetStatus($"Místnost \"{room?.Name ?? "?"}\" byla přiřazena.", false);
+        selectedRoomId = 0;
+        await LoadDataAsync();
+    }
+
+    private async Task AddAllRoomsAsync()
+    {
+        if (availableRooms is null || availableRooms.Count == 0)
+        {
+            SetStatus("Nejsou žádné nepřiřazené místnosti.", true);
+            return;
+        }
+
+        await using var db = await DbContextFactory.CreateDbContextAsync();
+
+        foreach (var room in availableRooms)
+        {
+            db.GameRooms.Add(new GameRoom
+            {
+                GameId = GameId,
+                RoomId = room.Id,
+                Capacity = room.DefaultCapacity,
+            });
+        }
+
+        await db.SaveChangesAsync();
+
+        SetStatus($"Přiřazeno {availableRooms.Count} místností s výchozí kapacitou.", false);
+        selectedRoomId = 0;
+        await LoadDataAsync();
+    }
+
+    private void StartEdit(GameRoom gr)
+    {
+        editingGameRoomId = gr.Id;
+        editCapacity = gr.Capacity;
+        confirmRemoveId = null;
+    }
+
+    private void CancelEdit()
+    {
+        editingGameRoomId = null;
+    }
+
+    private async Task SaveEditAsync()
+    {
+        if (editCapacity < 1)
+        {
+            SetStatus("Kapacita musí být alespoň 1.", true);
+            return;
+        }
+
+        await using var db = await DbContextFactory.CreateDbContextAsync();
+
+        var gr = await db.GameRooms.Include(x => x.Room).FirstOrDefaultAsync(x => x.Id == editingGameRoomId);
+        if (gr is null)
+        {
+            SetStatus("Záznam nebyl nalezen.", true);
+            editingGameRoomId = null;
+            await LoadDataAsync();
+            return;
+        }
+
+        gr.Capacity = editCapacity;
+        await db.SaveChangesAsync();
+
+        SetStatus($"Kapacita místnosti \"{gr.Room.Name}\" byla uložena.", false);
+        editingGameRoomId = null;
+        await LoadDataAsync();
+    }
+
+    private void ConfirmRemove(int gameRoomId)
+    {
+        confirmRemoveId = gameRoomId;
+        editingGameRoomId = null;
+    }
+
+    private void CancelRemove()
+    {
+        confirmRemoveId = null;
+    }
+
+    private async Task RemoveGameRoomAsync(int gameRoomId)
+    {
+        await using var db = await DbContextFactory.CreateDbContextAsync();
+
+        var gr = await db.GameRooms.Include(x => x.Room).FirstOrDefaultAsync(x => x.Id == gameRoomId);
+        if (gr is null)
+        {
+            SetStatus("Záznam nebyl nalezen.", true);
+            confirmRemoveId = null;
+            await LoadDataAsync();
+            return;
+        }
+
+        var roomName = gr.Room.Name;
+        db.GameRooms.Remove(gr);
+        await db.SaveChangesAsync();
+
+        SetStatus($"Místnost \"{roomName}\" byla odebrána z hry.", false);
+        confirmRemoveId = null;
+        await LoadDataAsync();
+    }
+
+    private void SetStatus(string message, bool error)
+    {
+        statusMessage = message;
+        isError = error;
+    }
+
+    private void ClearStatus()
+    {
+        statusMessage = null;
+    }
+}

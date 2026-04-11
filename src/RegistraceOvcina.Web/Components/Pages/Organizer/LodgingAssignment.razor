@@ -1,0 +1,240 @@
+@page "/organizace/hry/{gameId:int}/ubytovani"
+@attribute [Authorize(Policy = AuthorizationPolicies.StaffOnly)]
+
+@inject LodgingAssignmentService LodgingAssignmentService
+
+<PageTitle>Ubytov&#225;n&#237;</PageTitle>
+
+@if (board is null)
+{
+    <p class="text-secondary">Na&#269;&#237;t&#225;m rozd&#283;len&#237; ubytov&#225;n&#237;...</p>
+}
+else
+{
+    <div class="mb-3">
+        <a href="/admin/hry" class="text-decoration-none small">&larr; Zp&#283;t na spr&#225;vu her</a>
+    </div>
+
+    <div class="d-flex justify-content-between align-items-end mb-3">
+        <div>
+            <h1 class="h4 mb-1">Ubytov&#225;n&#237; &mdash; @board.GameName</h1>
+            <p class="text-secondary small mb-0">P&#345;et&#225;hn&#283;te hosty mezi pokoje. Celkem indoor: @TotalGuestCount</p>
+        </div>
+        <div class="form-check form-switch">
+            <input class="form-check-input" type="checkbox" id="detail-toggle" checked="@showDetail" @onchange="ToggleDetail" />
+            <label class="form-check-label small" for="detail-toggle">Podrobnosti</label>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(statusMessage))
+    {
+        <div class="alert alert-success py-1 small" role="status">@statusMessage</div>
+    }
+    @if (!string.IsNullOrWhiteSpace(errorMessage))
+    {
+        <div class="alert alert-danger py-1 small" role="alert">@errorMessage</div>
+    }
+
+    <div class="row g-2" id="lodging-board">
+        @* Unassigned column *@
+        <div class="col">
+            <div class="card shadow-sm h-100">
+                <div class="card-header bg-secondary text-white py-2 px-3"
+                     data-room-id=""
+                     ondragover="event.preventDefault();" ondrop="handleDrop(event)">
+                    <div class="d-flex justify-content-between align-items-center">
+                        <strong class="small">Nep&#345;id&#283;len&#237;</strong>
+                        <span class="badge text-bg-light">@board.UnassignedGuests.Count</span>
+                    </div>
+                </div>
+                <div class="card-body p-1" style="max-height: 70vh; overflow-y: auto;"
+                     data-room-id=""
+                     ondragover="event.preventDefault();" ondrop="handleDrop(event)">
+                    @if (board.UnassignedGuests.Count == 0)
+                    {
+                        <p class="text-muted small p-2 mb-0">V&#353;ichni p&#345;id&#283;leni.</p>
+                    }
+                    else
+                    {
+                        @foreach (var guest in board.UnassignedGuests)
+                        {
+                            @RenderGuestCard(guest, null)
+                        }
+                    }
+                </div>
+            </div>
+        </div>
+
+        @* Room columns *@
+        @{ var roomIndex = 0; }
+        @foreach (var room in board.Rooms)
+        {
+            var color = GetRoomColor(roomIndex);
+            roomIndex++;
+
+            <div class="col">
+                <div class="card shadow-sm h-100">
+                    <div class="card-header py-2 px-3"
+                         style="background-color: @color; color: white;"
+                         data-room-id="@room.GameRoomId"
+                         ondragover="event.preventDefault();" ondrop="handleDrop(event)">
+                        <div class="d-flex justify-content-between align-items-center">
+                            <strong class="small">@room.RoomName</strong>
+                            <span class="badge @GetCountBadgeClass(room)">
+                                @room.CurrentCount / @room.Capacity
+                            </span>
+                        </div>
+                    </div>
+                    <div class="card-body p-1" style="max-height: 70vh; overflow-y: auto;"
+                         data-room-id="@room.GameRoomId"
+                         ondragover="event.preventDefault();" ondrop="handleDrop(event)">
+                        @if (room.Guests.Count == 0)
+                        {
+                            <p class="text-muted small p-2 mb-0">Zat&#237;m nikdo.</p>
+                        }
+                        else
+                        {
+                            @foreach (var guest in room.Guests)
+                            {
+                                @RenderGuestCard(guest, room)
+                            }
+                        }
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+}
+
+<form id="assign-form" method="post" action="/organizace/hry/@GameId/ubytovani/pridelit" style="display:none;">
+    <AntiforgeryToken />
+    <input type="hidden" name="registrationId" id="assign-reg-id" />
+    <input type="hidden" name="gameRoomId" id="assign-room-id" />
+</form>
+
+<script>
+    function handleDragStart(e) {
+        e.dataTransfer.setData('text/plain', e.currentTarget.dataset.registrationId);
+        e.currentTarget.style.opacity = '0.5';
+        setTimeout(() => { e.currentTarget.style.opacity = '1'; }, 300);
+    }
+
+    function handleDrop(e) {
+        e.preventDefault();
+        const regId = e.dataTransfer.getData('text/plain');
+        const target = e.currentTarget.closest('[data-room-id]') || e.currentTarget;
+        const roomId = target.dataset.roomId || '';
+
+        const form = document.getElementById('assign-form');
+        document.getElementById('assign-reg-id').value = regId;
+        document.getElementById('assign-room-id').value = roomId;
+        form.submit();
+    }
+
+    function reassignGuest(selectEl, registrationId) {
+        const roomId = selectEl.value;
+        if (roomId === '' && selectEl.selectedIndex === 0) return;
+        const form = document.getElementById('assign-form');
+        document.getElementById('assign-reg-id').value = registrationId;
+        document.getElementById('assign-room-id').value = roomId;
+        form.submit();
+    }
+</script>
+
+<style>
+    .lodging-card { cursor: grab; transition: box-shadow 0.15s; }
+    .lodging-card:active { cursor: grabbing; }
+    .lodging-card:hover { box-shadow: 0 2px 6px rgba(0,0,0,0.15); }
+    .reassign-select { display: none; }
+    .lodging-card:hover .reassign-select { display: block; }
+    .card-detail { display: none; }
+    .lodging-card:hover .card-detail { display: block; }
+    .card-detail-always { display: block; }
+    [data-room-id].drag-over { background: rgba(0,0,0,0.05); }
+</style>
+
+@code {
+    private static readonly int CurrentYear = DateTime.UtcNow.Year;
+
+    private static readonly string[] RoomColors = ["#6A994E", "#386641", "#BC4749", "#A7C957", "#5C677D", "#7B2D8E", "#E76F51", "#264653", "#2A9D8F", "#E9C46A"];
+    private static string GetRoomColor(int index) => RoomColors[index % RoomColors.Length];
+
+    private RenderFragment RenderGuestCard(LodgingCard guest, RoomColumn? currentRoom) => __builder =>
+    {
+        <div class="lodging-card border rounded px-2 py-1 mb-1 bg-light"
+             draggable="true" data-registration-id="@guest.RegistrationId"
+             ondragstart="handleDragStart(event)">
+            <div class="d-flex justify-content-between align-items-center">
+                <span class="fw-semibold" style="font-size:0.8rem;">@guest.PersonName</span>
+                <span class="text-muted" style="font-size:0.7rem;">@guest.Age(CurrentYear) let</span>
+            </div>
+            <div style="font-size:0.7rem;" class="d-flex flex-wrap gap-1">
+                @if (!string.IsNullOrWhiteSpace(guest.GroupName))
+                {
+                    <span class="badge text-bg-secondary" style="font-size:0.6rem;">@guest.GroupName</span>
+                }
+            </div>
+            <div class="@(showDetail ? "card-detail-always" : "card-detail")" style="font-size:0.65rem; border-top: 1px solid #dee2e6; margin-top: 3px; padding-top: 3px;">
+                @if (!string.IsNullOrWhiteSpace(guest.PersonNotes))
+                {
+                    <div><strong>Pozn&#225;mka:</strong> @guest.PersonNotes</div>
+                }
+                @if (!string.IsNullOrWhiteSpace(guest.RegistrantNote))
+                {
+                    <div><strong>Pozn&#225;mka &#250;&#269;astn&#237;ka:</strong> @guest.RegistrantNote</div>
+                }
+            </div>
+            @if (currentRoom is not null)
+            {
+                <select class="reassign-select form-select form-select-sm mt-1"
+                        style="font-size:0.65rem; padding:1px 4px; height:auto;"
+                        onchange="reassignGuest(this, '@guest.RegistrationId')">
+                    <option value="">P&#345;esunout...</option>
+                    <option value="">Nep&#345;id&#283;len&#237;</option>
+                    @foreach (var r in board!.Rooms.Where(r => r.GameRoomId != currentRoom.GameRoomId))
+                    {
+                        <option value="@r.GameRoomId">@r.RoomName</option>
+                    }
+                </select>
+            }
+        </div>
+    };
+
+    [Parameter]
+    public int GameId { get; set; }
+
+    [SupplyParameterFromQuery(Name = "assigned")]
+    private int? assigned { get; set; }
+
+    [SupplyParameterFromQuery(Name = "error")]
+    private string? queryError { get; set; }
+
+    private LodgingBoard? board;
+    private string? statusMessage;
+    private string? errorMessage;
+    private bool showDetail;
+
+    private void ToggleDetail() => showDetail = !showDetail;
+    private int TotalGuestCount => board is null ? 0
+        : board.UnassignedGuests.Count + board.Rooms.Sum(r => r.CurrentCount);
+
+    protected override async Task OnInitializedAsync()
+    {
+        board = await LodgingAssignmentService.GetAssignmentBoardAsync(GameId);
+    }
+
+    protected override void OnParametersSet()
+    {
+        statusMessage = assigned == 1 ? "Host byl p\u0159id\u011blen." : null;
+        errorMessage = queryError;
+    }
+
+    private static string GetCountBadgeClass(RoomColumn room)
+    {
+        if (room.CurrentCount >= room.Capacity && room.Capacity > 0)
+            return "text-bg-danger";
+        if (room.CurrentCount > 0)
+            return "text-bg-warning";
+        return "text-bg-light";
+    }
+}

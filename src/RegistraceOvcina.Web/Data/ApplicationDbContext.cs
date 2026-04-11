@@ -16,6 +16,7 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
     public DbSet<EmailMessage> EmailMessages => Set<EmailMessage>();
     public DbSet<FoodOrder> FoodOrders => Set<FoodOrder>();
     public DbSet<Game> Games => Set<Game>();
+    public DbSet<GameRoom> GameRooms => Set<GameRoom>();
     public DbSet<GameRole> GameRoles => Set<GameRole>();
     public DbSet<GameInvitation> GameInvitations => Set<GameInvitation>();
     public DbSet<GameKingdomTarget> GameKingdomTargets => Set<GameKingdomTarget>();
@@ -28,6 +29,7 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
     public DbSet<Payment> Payments => Set<Payment>();
     public DbSet<Person> People => Set<Person>();
     public DbSet<Registration> Registrations => Set<Registration>();
+    public DbSet<Room> Rooms => Set<Room>();
     public DbSet<RegistrationSubmission> RegistrationSubmissions => Set<RegistrationSubmission>();
     public DbSet<Announcement> Announcements => Set<Announcement>();
     public DbSet<AnnouncementDismissal> AnnouncementDismissals => Set<AnnouncementDismissal>();
@@ -163,6 +165,10 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
                 .WithMany()
                 .HasForeignKey(x => x.PreferredKingdomId)
                 .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(x => x.AssignedGameRoom)
+                .WithMany()
+                .HasForeignKey(x => x.AssignedGameRoomId)
+                .OnDelete(DeleteBehavior.SetNull);
             entity.HasMany(x => x.FoodOrders)
                 .WithOne(x => x.Registration)
                 .HasForeignKey(x => x.RegistrationId)
@@ -399,6 +405,20 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
                 .WithMany()
                 .HasForeignKey(x => x.LinkedCharacterId)
                 .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        builder.Entity<Room>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Name).HasMaxLength(100).IsRequired();
+        });
+
+        builder.Entity<GameRoom>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.HasOne(x => x.Game).WithMany().HasForeignKey(x => x.GameId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(x => x.Room).WithMany().HasForeignKey(x => x.RoomId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasIndex(x => new { x.GameId, x.RoomId }).IsUnique();
         });
 
         builder.Entity<ExternalContact>(entity =>

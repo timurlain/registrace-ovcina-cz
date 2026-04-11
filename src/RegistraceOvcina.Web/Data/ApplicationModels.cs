@@ -204,6 +204,8 @@ public sealed class Registration
     public RegistrationSubmission Submission { get; set; } = default!;
     public Person Person { get; set; } = default!;
     public Kingdom? PreferredKingdom { get; set; }
+    public int? AssignedGameRoomId { get; set; }
+    public GameRoom? AssignedGameRoom { get; set; }
     public List<FoodOrder> FoodOrders { get; set; } = [];
 }
 
@@ -416,4 +418,21 @@ public sealed class ExternalContact
     public int Id { get; set; }
     public string Email { get; set; } = "";
     public DateTime CreatedAtUtc { get; set; }
+}
+
+public sealed class Room
+{
+    public int Id { get; set; }
+    public string Name { get; set; } = "";
+    public int DefaultCapacity { get; set; }
+}
+
+public sealed class GameRoom
+{
+    public int Id { get; set; }
+    public int GameId { get; set; }
+    public int RoomId { get; set; }
+    public int Capacity { get; set; }
+    public Game Game { get; set; } = default!;
+    public Room Room { get; set; } = default!;
 }

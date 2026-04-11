@@ -381,8 +381,8 @@ public static class DatabaseInitializer
             ClientType = OpenIddictConstants.ClientTypes.Confidential,
             RedirectUris =
             {
-                new Uri("https://baca.ovcina.cz/auth/callback"),
-                new Uri("http://localhost:3000/auth/callback"),
+                new Uri("https://baca.ovcina.cz/api/auth/callback"),
+                new Uri("http://localhost:3000/api/auth/callback"),
             },
             PostLogoutRedirectUris =
             {
@@ -412,13 +412,13 @@ public static class DatabaseInitializer
             ClientType = OpenIddictConstants.ClientTypes.Confidential,
             RedirectUris =
             {
-                new Uri("https://ovcinahra.ovcina.cz/auth/callback"),
-                new Uri("http://localhost:5180/auth/callback"),
+                new Uri("https://hra.ovcina.cz/auth-callback"),
+                new Uri("http://localhost:5290/auth-callback"),
             },
             PostLogoutRedirectUris =
             {
-                new Uri("https://ovcinahra.ovcina.cz/"),
-                new Uri("http://localhost:5180/"),
+                new Uri("https://hra.ovcina.cz/"),
+                new Uri("http://localhost:5290/"),
             },
             Permissions =
             {

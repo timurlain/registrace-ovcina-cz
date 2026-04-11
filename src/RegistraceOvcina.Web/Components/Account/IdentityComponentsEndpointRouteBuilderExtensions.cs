@@ -236,12 +236,13 @@ internal static class IdentityComponentsEndpointRouteBuilderExtensions
                 logger.LogInformation("Guest user '{DisplayName}' signed in (UserId={UserId})",
                     user.DisplayName, user.Id);
 
-                return Results.LocalRedirect(returnUrl ?? "~/");
+                return Results.LocalRedirect(string.IsNullOrWhiteSpace(returnUrl) ? "~/" : returnUrl);
             }
             catch (Exception ex)
             {
                 logger.LogError(ex, "Failed to create/sign-in guest user '{DisplayName}'", displayName);
-                var errorRedirect = "/Account/GuestLogin?error=create-failed";
+                var detail = Uri.EscapeDataString(ex.Message);
+                var errorRedirect = $"/Account/GuestLogin?error=create-failed&detail={detail}";
                 if (!string.IsNullOrWhiteSpace(returnUrl))
                     errorRedirect += $"&ReturnUrl={Uri.EscapeDataString(returnUrl)}";
                 return Results.Redirect(errorRedirect);

@@ -34,6 +34,10 @@
             {
                 <div class="alert alert-danger" role="alert">
                     Nepodařilo se vytvořit hostovský účet. Zkuste to prosím znovu.
+                    @if (!string.IsNullOrWhiteSpace(detail))
+                    {
+                        <div class="small mt-1 text-break">@detail</div>
+                    }
                 </div>
             }
 
@@ -75,4 +79,7 @@
 
     [SupplyParameterFromQuery(Name = "error")]
     private string? error { get; set; }
+
+    [SupplyParameterFromQuery(Name = "detail")]
+    private string? detail { get; set; }
 }
