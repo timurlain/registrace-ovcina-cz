@@ -232,6 +232,51 @@ public sealed class UserAdministrationService(IDbContextFactory<ApplicationDbCon
             RoleNames.Admin => granted ? "admin-added" : "admin-removed",
             _ => throw new InvalidOperationException($"Unsupported role '{roleName}'.")
         };
+
+    public async Task<UserLookupResult?> LookupByEmailAsync(string email, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(email)) return null;
+        var normalizedEmail = email.Trim().ToUpperInvariant();
+        await using var db = await dbContextFactory.CreateDbContextAsync(ct);
+
+        // Find user by primary or alternate email
+        var userId = await db.Users.AsNoTracking()
+            .Where(u => u.NormalizedEmail == normalizedEmail)
+            .Select(u => u.Id)
+            .FirstOrDefaultAsync(ct);
+
+        userId ??= await db.UserEmails.AsNoTracking()
+            .Where(ue => ue.NormalizedEmail == normalizedEmail)
+            .Select(ue => ue.UserId)
+            .FirstOrDefaultAsync(ct);
+
+        if (userId is null) return null;
+
+        var user = await db.Users.AsNoTracking()
+            .Where(u => u.Id == userId)
+            .Select(u => new { u.Id, u.DisplayName, u.Email, u.IsActive, u.LastLoginAtUtc, u.CreatedAtUtc })
+            .SingleAsync(ct);
+
+        var identityRoles = await db.UserRoles.AsNoTracking()
+            .Where(ur => ur.UserId == userId)
+            .Join(db.Roles, ur => ur.RoleId, r => r.Id, (ur, r) => r.Name!)
+            .ToListAsync(ct);
+
+        var alternateEmails = await db.UserEmails.AsNoTracking()
+            .Where(ue => ue.UserId == userId)
+            .OrderBy(ue => ue.Email)
+            .ToListAsync(ct);
+
+        var gameRoles = await db.GameRoles.AsNoTracking()
+            .Where(gr => gr.UserId == userId)
+            .Join(db.Games, gr => gr.GameId, g => g.Id, (gr, g) => new GameRoleSummary(g.Id, g.Name, gr.RoleName))
+            .ToListAsync(ct);
+
+        return new UserLookupResult(
+            user.Id, user.DisplayName, user.Email ?? "",
+            user.IsActive, user.LastLoginAtUtc, user.CreatedAtUtc,
+            identityRoles, alternateEmails, gameRoles);
+    }
 }
 
 public sealed record UserAdministrationPage(
@@ -258,3 +303,11 @@ public sealed record ManagedUserSummary(
 }
 
 public sealed record UserManagementChangeResult(string StatusCode);
+
+public sealed record UserLookupResult(
+    string Id, string DisplayName, string PrimaryEmail,
+    bool IsActive, DateTime? LastLoginAtUtc, DateTime CreatedAtUtc,
+    List<string> IdentityRoles, List<UserEmail> AlternateEmails,
+    List<GameRoleSummary> GameRoles);
+
+public sealed record GameRoleSummary(int GameId, string GameName, string RoleName);
