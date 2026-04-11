@@ -177,18 +177,22 @@
                 }
             }
 
-            // Check alternate emails — require confirmation before linking
-            var userEmailService = HttpContext.RequestServices.GetRequiredService<UserEmailService>();
-            var alternateUserId = await userEmailService.ResolveUserIdByEmailAsync(email);
-            if (alternateUserId is not null)
+            // Check alternate emails — require confirmation before linking.
+            // Only when no primary-email user was found, because
+            // ResolveUserIdByEmailAsync also resolves primary emails.
+            if (existingUser is null)
             {
-                // Make sure we didn't already find this user via primary email
-                var alternateUser = await UserManager.FindByIdAsync(alternateUserId);
-                if (alternateUser is not null)
+                var userEmailService = HttpContext.RequestServices.GetRequiredService<UserEmailService>();
+                var alternateUserId = await userEmailService.ResolveUserIdByEmailAsync(email);
+                if (alternateUserId is not null)
                 {
-                    pendingLinkUser = alternateUser;
-                    pendingLinkEmail = email;
-                    return; // Razor will render the confirmation section
+                    var alternateUser = await UserManager.FindByIdAsync(alternateUserId);
+                    if (alternateUser is not null)
+                    {
+                        pendingLinkUser = alternateUser;
+                        pendingLinkEmail = email;
+                        return; // Razor will render the confirmation section
+                    }
                 }
             }
 
@@ -220,6 +224,8 @@
 
     private async Task OnDenyLinkAsync()
     {
+        // Prefill registration form with the provider email before clearing
+        Input.Email = pendingLinkEmail ?? "";
         pendingLinkUser = null;
         pendingLinkEmail = null;
         // Falls through to show normal registration form
