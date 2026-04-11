@@ -34,6 +34,7 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
     public DbSet<Announcement> Announcements => Set<Announcement>();
     public DbSet<AnnouncementDismissal> AnnouncementDismissals => Set<AnnouncementDismissal>();
     public DbSet<ExternalContact> ExternalContacts => Set<ExternalContact>();
+    public DbSet<UserEmail> UserEmails => Set<UserEmail>();
 
     protected override void OnModelCreating(ModelBuilder builder)
     {
@@ -426,6 +427,18 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
             entity.HasKey(x => x.Id);
             entity.Property(x => x.Email).HasMaxLength(320).IsRequired();
             entity.HasIndex(x => x.Email).IsUnique();
+        });
+
+        builder.Entity<UserEmail>(entity =>
+        {
+            entity.HasIndex(x => x.NormalizedEmail).IsUnique();
+            entity.HasIndex(x => x.UserId);
+            entity.Property(x => x.Email).HasMaxLength(256).IsRequired();
+            entity.Property(x => x.NormalizedEmail).HasMaxLength(256).IsRequired();
+            entity.HasOne(x => x.User)
+                .WithMany(x => x.AlternateEmails)
+                .HasForeignKey(x => x.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
     }
 }

@@ -7,6 +7,7 @@
 @using Microsoft.AspNetCore.Identity
 @using Microsoft.AspNetCore.WebUtilities
 @using RegistraceOvcina.Web.Data
+@using RegistraceOvcina.Web.Features.Users
 @using RegistraceOvcina.Web.Security
 
 @inject SignInManager<ApplicationUser> SignInManager
@@ -30,6 +31,28 @@
     logging in.
 </div>
 
+@if (pendingLinkUser is not null)
+{
+    <div class="card shadow-sm mb-4">
+        <div class="card-body">
+            <h4 class="card-title">Nalezen existující účet</h4>
+            <p>Našli jsme účet <strong>@pendingLinkUser.DisplayName</strong> propojený
+               s e-mailovou adresou <strong>@pendingLinkEmail</strong>.</p>
+            <p>Je to váš účet?</p>
+            <div class="d-flex gap-2">
+                <form @formname="confirm-link" @onsubmit="OnConfirmLinkAsync" method="post">
+                    <AntiforgeryToken />
+                    <button type="submit" class="btn btn-primary">Ano, to jsem já</button>
+                </form>
+                <form @formname="deny-link" @onsubmit="OnDenyLinkAsync" method="post">
+                    <AntiforgeryToken />
+                    <button type="submit" class="btn btn-outline-secondary">Ne, vytvořit nový účet</button>
+                </form>
+            </div>
+        </div>
+    </div>
+}
+
 <div class="row">
     <div class="col-md-4">
         <EditForm Model="Input" OnValidSubmit="OnValidSubmitAsync" FormName="confirmation" method="post">
@@ -50,6 +73,8 @@
 
     private string? message;
     private ExternalLoginInfo? externalLoginInfo;
+    private ApplicationUser? pendingLinkUser;
+    private string? pendingLinkEmail;
 
     [CascadingParameter]
     private HttpContext HttpContext { get; set; } = default!;
@@ -152,12 +177,58 @@
                 }
             }
 
+            // Check alternate emails — require confirmation before linking.
+            // Only when no primary-email user was found, because
+            // ResolveUserIdByEmailAsync also resolves primary emails.
+            if (existingUser is null)
+            {
+                var userEmailService = HttpContext.RequestServices.GetRequiredService<UserEmailService>();
+                var alternateUserId = await userEmailService.ResolveUserIdByEmailAsync(email);
+                if (alternateUserId is not null)
+                {
+                    var alternateUser = await UserManager.FindByIdAsync(alternateUserId);
+                    if (alternateUser is not null)
+                    {
+                        pendingLinkUser = alternateUser;
+                        pendingLinkEmail = email;
+                        return; // Razor will render the confirmation section
+                    }
+                }
+            }
+
             Input.Email = email;
         }
         else if (externalLoginInfo.Principal.HasClaim(c => c.Type == ClaimTypes.Email))
         {
             Input.Email = externalLoginInfo.Principal.FindFirstValue(ClaimTypes.Email) ?? "";
         }
+    }
+
+    private async Task OnConfirmLinkAsync()
+    {
+        if (pendingLinkUser is not null && externalLoginInfo is not null)
+        {
+            var result = await UserManager.AddLoginAsync(pendingLinkUser, externalLoginInfo);
+            if (result.Succeeded)
+            {
+                Logger.LogInformation("Linked {Provider} to existing account {Email} via alternate email.",
+                    externalLoginInfo.LoginProvider, pendingLinkUser.Email);
+                await SignInManager.SignInAsync(pendingLinkUser, isPersistent: false);
+                RedirectManager.RedirectTo(ReturnUrl);
+                return;
+            }
+        }
+        RedirectManager.RedirectToWithStatus("Account/Login",
+            "Nepodařilo se propojit účet. Zkuste to znovu.", HttpContext);
+    }
+
+    private async Task OnDenyLinkAsync()
+    {
+        // Prefill registration form with the provider email before clearing
+        Input.Email = pendingLinkEmail ?? "";
+        pendingLinkUser = null;
+        pendingLinkEmail = null;
+        // Falls through to show normal registration form
     }
 
     private async Task OnValidSubmitAsync()
