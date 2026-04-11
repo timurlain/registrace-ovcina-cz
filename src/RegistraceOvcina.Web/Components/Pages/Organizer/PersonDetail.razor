@@ -188,6 +188,95 @@ else
         <section class="card shadow-sm border-0">
             <div class="card-body d-flex flex-column gap-3">
                 <div>
+                    <h2 class="h5 mb-1">Ruční vyhledání osoby ke sloučení</h2>
+                    <p class="text-secondary mb-0">Hledat osobu ke sloučení — jméno, e-mail nebo telefon</p>
+                </div>
+
+                <form method="get" action="/organizace/osoby/@PersonId" class="d-flex gap-2" data-testid="manual-merge-search-form">
+                    <input type="search"
+                           class="form-control"
+                           name="searchMerge"
+                           value="@SearchMerge"
+                           placeholder="Jméno, e-mail nebo telefon" />
+                    <button type="submit" class="btn btn-primary">Hledat</button>
+                </form>
+
+                @if (searchResults is not null)
+                {
+                    @if (searchResults.Count == 0)
+                    {
+                        <div class="alert alert-light border mb-0">Nenalezli jsme žádnou osobu pro zadaný filtr.</div>
+                    }
+                    else
+                    {
+                        <div class="d-flex flex-column gap-3">
+                            @foreach (var result in searchResults)
+                            {
+                                @if (confirmingMergePersonId == result.Id)
+                                {
+                                    <div class="border border-danger rounded p-3 d-flex flex-column gap-3" data-testid="merge-confirm-card">
+                                        <div class="fw-semibold text-danger">
+                                            Sloučit <strong>@result.FullName</strong> (ročník @result.BirthYear, @result.RegistrationCount účast/í)
+                                            do <strong>@model.FullName</strong> (ročník @model.BirthYear, @model.RegistrationHistory.Count účast/í)?
+                                        </div>
+                                        <p class="text-secondary mb-0">
+                                            Registrace, postavy a kontaktní údaje budou převedeny. Tato akce nelze vrátit.
+                                        </p>
+                                        <div class="d-flex gap-2">
+                                            <form method="post" action="/organizace/osoby/@PersonId/sloucit" class="d-inline">
+                                                <AntiforgeryToken />
+                                                <input type="hidden" name="duplicatePersonId" value="@result.Id" />
+                                                <button type="submit" class="btn btn-danger btn-sm">Potvrdit sloučení</button>
+                                            </form>
+                                            <a href="/organizace/osoby/@PersonId?searchMerge=@Uri.EscapeDataString(SearchMerge ?? "")" class="btn btn-outline-secondary btn-sm">Zrušit</a>
+                                        </div>
+                                    </div>
+                                }
+                                else
+                                {
+                                    <div class="border rounded p-3 d-flex flex-column gap-3" data-testid="merge-search-result">
+                                        <div class="d-flex flex-column flex-lg-row justify-content-between gap-3">
+                                            <div>
+                                                <div class="fw-semibold">@result.FullName</div>
+                                                <div class="text-secondary small">
+                                                    Ročník @result.BirthYear
+                                                    @if (!string.IsNullOrWhiteSpace(result.Email))
+                                                    {
+                                                        <span> · @result.Email</span>
+                                                    }
+                                                    @if (!string.IsNullOrWhiteSpace(result.Phone))
+                                                    {
+                                                        <span> · @result.Phone</span>
+                                                    }
+                                                </div>
+                                            </div>
+                                            <a class="btn btn-outline-secondary btn-sm align-self-start" href="/organizace/osoby/@result.Id">Otevřít detail</a>
+                                        </div>
+
+                                        <div class="text-secondary small">
+                                            @result.RegistrationCount × účast
+                                            @if (result.LastSeenAtUtc is not null)
+                                            {
+                                                <span> · naposledy @result.LastSeenGameName (@CzechTime.Format(result.LastSeenAtUtc.Value))</span>
+                                            }
+                                        </div>
+
+                                        <div>
+                                            <a href="/organizace/osoby/@PersonId?searchMerge=@Uri.EscapeDataString(SearchMerge ?? "")&confirmMerge=@result.Id"
+                                               class="btn btn-outline-danger btn-sm">Sloučit</a>
+                                        </div>
+                                    </div>
+                                }
+                            }
+                        </div>
+                    }
+                }
+            </div>
+        </section>
+
+        <section class="card shadow-sm border-0">
+            <div class="card-body d-flex flex-column gap-3">
+                <div>
                     <h2 class="h5 mb-1">Historie registrací</h2>
                     <p class="text-secondary mb-0">Přehled účastí a rolí napříč hrami.</p>
                 </div>
@@ -343,10 +432,18 @@ else
     [SupplyParameterFromQuery(Name = "error")]
     private string? Error { get; set; }
 
+    [SupplyParameterFromQuery(Name = "searchMerge")]
+    private string? SearchMerge { get; set; }
+
+    [SupplyParameterFromQuery(Name = "confirmMerge")]
+    private int? ConfirmMerge { get; set; }
+
     private PersonReviewDetailPageModel? model;
     private string? statusMessage;
     private string? errorMessage;
     private bool isLoaded;
+    private List<PersonSearchResultItem>? searchResults;
+    private int? confirmingMergePersonId;
 
     protected override async Task OnParametersSetAsync()
     {
@@ -361,6 +458,13 @@ else
                 : Merged == 1
                     ? "Duplicitní osoba byla sloučena."
                     : null;
+
+        if (!string.IsNullOrWhiteSpace(SearchMerge))
+        {
+            searchResults = await PeopleReviewService.SearchPersonsAsync(SearchMerge, PersonId);
+            confirmingMergePersonId = ConfirmMerge;
+        }
+
         isLoaded = true;
     }
 

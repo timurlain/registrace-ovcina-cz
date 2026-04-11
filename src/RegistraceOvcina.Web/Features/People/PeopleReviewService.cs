@@ -465,6 +465,74 @@ public sealed class PeopleReviewService(
         await db.SaveChangesAsync(cancellationToken);
     }
 
+    public async Task<List<PersonSearchResultItem>> SearchPersonsAsync(
+        string query,
+        int excludePersonId,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(query))
+        {
+            return [];
+        }
+
+        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+
+        var trimmed = query.Trim();
+
+        // Coarse SQL filter first (case-insensitive via DB collation)
+        var candidates = await db.People
+            .AsNoTracking()
+            .Where(x => x.Id != excludePersonId)
+            .Where(x =>
+                (x.FirstName + " " + x.LastName).Contains(trimmed)
+                || (x.Email != null && x.Email.Contains(trimmed))
+                || (x.Phone != null && x.Phone.Contains(trimmed)))
+            .Select(x => new PersonSearchProjection(
+                x.Id,
+                x.FirstName,
+                x.LastName,
+                x.BirthYear,
+                x.Email,
+                x.Phone,
+                x.Registrations.Count,
+                x.Registrations
+                    .OrderByDescending(r => r.Submission.Game.StartsAtUtc)
+                    .Select(r => (DateTime?)r.Submission.Game.StartsAtUtc)
+                    .FirstOrDefault(),
+                x.Registrations
+                    .OrderByDescending(r => r.Submission.Game.StartsAtUtc)
+                    .Select(r => r.Submission.Game.Name)
+                    .FirstOrDefault()))
+            .ToListAsync(cancellationToken);
+
+        // Refine in-memory with diacritic/phone normalization
+        var normalizedQuery = PersonIdentityNormalizer.NormalizeComparisonText(query);
+        var normalizedPhone = PersonIdentityNormalizer.NormalizePhone(query);
+
+        return candidates
+            .Where(x =>
+                PersonIdentityNormalizer.NormalizeComparisonText($"{x.FirstName} {x.LastName}")
+                    .Contains(normalizedQuery, StringComparison.Ordinal)
+                || PersonIdentityNormalizer.NormalizeEmail(x.Email)
+                    .Contains(trimmed, StringComparison.OrdinalIgnoreCase)
+                || (!string.IsNullOrWhiteSpace(normalizedPhone)
+                    && PersonIdentityNormalizer.NormalizePhone(x.Phone)
+                        .Contains(normalizedPhone, StringComparison.Ordinal)))
+            .OrderBy(x => x.LastName, StringComparer.CurrentCultureIgnoreCase)
+            .ThenBy(x => x.FirstName, StringComparer.CurrentCultureIgnoreCase)
+            .Take(10)
+            .Select(x => new PersonSearchResultItem(
+                x.Id,
+                $"{x.FirstName} {x.LastName}",
+                x.BirthYear,
+                x.Email,
+                x.Phone,
+                x.RegistrationCount,
+                x.LastSeenAtUtc,
+                x.LastSeenGameName))
+            .ToList();
+    }
+
     private async Task<List<LinkableAccountItem>> GetLinkableAccountsAsync(
         ApplicationDbContext db,
         Person person,
@@ -609,6 +677,17 @@ public sealed class PeopleReviewService(
         DateTime? LastSeenAtUtc,
         string? LastSeenGameName);
 
+    private sealed record PersonSearchProjection(
+        int Id,
+        string FirstName,
+        string LastName,
+        int BirthYear,
+        string? Email,
+        string? Phone,
+        int RegistrationCount,
+        DateTime? LastSeenAtUtc,
+        string? LastSeenGameName);
+
     private sealed record PersonCandidateProjection(
         int Id,
         string FirstName,
@@ -700,3 +779,13 @@ public sealed record PersonOrganizerNoteItem(
     string Note,
     DateTime CreatedAtUtc,
     string AuthorLabel);
+
+public sealed record PersonSearchResultItem(
+    int Id,
+    string FullName,
+    int BirthYear,
+    string? Email,
+    string? Phone,
+    int RegistrationCount,
+    DateTime? LastSeenAtUtc,
+    string? LastSeenGameName);
