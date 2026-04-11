@@ -254,6 +254,7 @@ public class Program
             builder.Configuration.GetSection(GuestAuthOptions.SectionName));
         builder.Services.AddScoped<GuestAuthService>();
         builder.Services.AddScoped<UserAdministrationService>();
+        builder.Services.AddScoped<UserEmailService>();
         builder.Services.AddScoped<GameRoleService>();
         builder.Services.AddScoped<AnnouncementService>();
         builder.Services.AddScoped<GameStatsService>();
