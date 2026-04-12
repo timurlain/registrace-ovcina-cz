@@ -16,7 +16,7 @@
         margin-bottom: 8px;
     }
 
-    .sticker-qr svg {
+    .sticker-qr img {
         width: 80px;
         height: 80px;
     }
@@ -73,7 +73,7 @@ else
                 <div class="sticker">
                     <div class="sticker-name">@reg.FirstName @reg.LastName</div>
                     <div class="sticker-character">@reg.CharacterName</div>
-                    <div class="sticker-qr">@((MarkupString)GenerateQrSvg(reg.PersonId))</div>
+                    <div class="sticker-qr"><img src="@GenerateQrDataUri(reg.PersonId)" alt="QR" /></div>
                 </div>
             </div>
         }
@@ -111,13 +111,14 @@ else
             .ToListAsync();
     }
 
-    private string GenerateQrSvg(int personId)
+    private string GenerateQrDataUri(int personId)
     {
         var url = $"https://hra.ovcina.cz/p/{personId}";
         using var generator = new QRCodeGenerator();
-        using var data = generator.CreateQrCode(url, QRCodeGenerator.ECCLevel.M);
-        using var svgQr = new SvgQRCode(data);
-        return svgQr.GetGraphic(3);
+        using var qrData = generator.CreateQrCode(url, QRCodeGenerator.ECCLevel.M);
+        var qrCode = new PngByteQRCode(qrData);
+        var pngBytes = qrCode.GetGraphic(5);
+        return $"data:image/png;base64,{Convert.ToBase64String(pngBytes)}";
     }
 
     private sealed record StickerData(int PersonId, string FirstName, string LastName, string? CharacterName);
