@@ -1,0 +1,280 @@
+@page "/admin/uzivatele"
+@attribute [Authorize(Policy = AuthorizationPolicies.AdminOnly)]
+@rendermode InteractiveServer
+
+@using System.ComponentModel.DataAnnotations
+@using RegistraceOvcina.Web.Features.Users
+@using RegistraceOvcina.Web.Infrastructure
+
+@inject UserAdministrationService UserAdministrationService
+@inject UserEmailService UserEmailService
+
+<PageTitle>Správa uživatelů</PageTitle>
+
+<div class="row g-4">
+    <div class="col-12">
+        <section class="card shadow-sm">
+            <div class="card-body p-4">
+                <h1 class="h3 mb-2">Správa uživatelů</h1>
+                <p class="text-secondary mb-3">Vyhledejte uživatele podle e-mailu a spravujte alternativní e-maily.</p>
+
+                <div class="d-flex gap-2 mb-3">
+                    <input type="email"
+                           class="form-control"
+                           style="max-width: 400px;"
+                           placeholder="E-mail uživatele"
+                           @bind="searchEmail"
+                           @bind:event="oninput"
+                           @onkeydown="HandleKeyDown" />
+                    <button class="btn btn-primary" @onclick="SearchAsync" disabled="@isSearching">
+                        @(isSearching ? "Hledám..." : "Hledat")
+                    </button>
+                </div>
+
+                @if (!string.IsNullOrWhiteSpace(errorMessage))
+                {
+                    <div class="alert alert-danger" role="alert">@errorMessage</div>
+                }
+
+                @if (hasSearched && lookupResult is null && string.IsNullOrWhiteSpace(errorMessage))
+                {
+                    <div class="alert alert-warning" role="alert">Uživatel s tímto e-mailem nebyl nalezen.</div>
+                }
+            </div>
+        </section>
+    </div>
+
+    @if (lookupResult is not null)
+    {
+        <div class="col-12">
+            <section class="card shadow-sm">
+                <div class="card-body p-4">
+                    <div class="d-flex flex-column flex-lg-row justify-content-between gap-3 mb-4">
+                        <div>
+                            <h2 class="h4 mb-1">@lookupResult.DisplayName</h2>
+                            <div class="text-secondary">@lookupResult.PrimaryEmail</div>
+                        </div>
+                        <div class="d-flex align-items-center gap-2">
+                            <span class="badge @(lookupResult.IsActive ? "text-bg-success" : "text-bg-secondary")">
+                                @(lookupResult.IsActive ? "Aktivní" : "Deaktivovaný")
+                            </span>
+                        </div>
+                    </div>
+
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <div class="small text-secondary">Poslední přihlášení</div>
+                            <div>@FormatLastLogin(lookupResult.LastLoginAtUtc)</div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="small text-secondary">Vytvořen</div>
+                            <div>@CzechTime.Format(lookupResult.CreatedAtUtc)</div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </div>
+
+        @* Identity roles *@
+        <div class="col-12">
+            <section class="card shadow-sm">
+                <div class="card-body p-4">
+                    <h3 class="h5 mb-3">Systémové role</h3>
+                    @if (lookupResult.IdentityRoles.Count == 0)
+                    {
+                        <span class="text-secondary">Žádné systémové role.</span>
+                    }
+                    else
+                    {
+                        <div class="d-flex flex-wrap gap-1">
+                            @foreach (var role in lookupResult.IdentityRoles)
+                            {
+                                <span class="badge text-bg-primary">@role</span>
+                            }
+                        </div>
+                    }
+                </div>
+            </section>
+        </div>
+
+        @* Alternate emails *@
+        <div class="col-12">
+            <section class="card shadow-sm">
+                <div class="card-body p-4">
+                    <h3 class="h5 mb-3">Alternativní e-maily</h3>
+
+                    @if (lookupResult.AlternateEmails.Count == 0)
+                    {
+                        <p class="text-secondary mb-3">Žádné alternativní e-maily.</p>
+                    }
+                    else
+                    {
+                        <ul class="list-group mb-3">
+                            @foreach (var alt in lookupResult.AlternateEmails)
+                            {
+                                <li class="list-group-item d-flex justify-content-between align-items-center">
+                                    <span>@alt.Email</span>
+                                    <button class="btn btn-sm btn-outline-danger"
+                                            title="Odebrat"
+                                            @onclick="() => RemoveAlternateEmailAsync(alt.Id)">
+                                        &times;
+                                    </button>
+                                </li>
+                            }
+                        </ul>
+                    }
+
+                    @if (!string.IsNullOrWhiteSpace(emailError))
+                    {
+                        <div class="alert alert-danger" role="alert">@emailError</div>
+                    }
+
+                    @if (!string.IsNullOrWhiteSpace(emailSuccess))
+                    {
+                        <div class="alert alert-success" role="alert">@emailSuccess</div>
+                    }
+
+                    <div class="d-flex gap-2">
+                        <input type="email"
+                               class="form-control"
+                               style="max-width: 400px;"
+                               placeholder="Nový alternativní e-mail"
+                               @bind="newAlternateEmail"
+                               @bind:event="oninput" />
+                        <button class="btn btn-outline-primary" @onclick="AddAlternateEmailAsync" disabled="@isAddingEmail">
+                            Přidat
+                        </button>
+                    </div>
+                </div>
+            </section>
+        </div>
+
+        @* Game roles *@
+        <div class="col-12">
+            <section class="card shadow-sm">
+                <div class="card-body p-4">
+                    <h3 class="h5 mb-3">Herní role</h3>
+                    @if (lookupResult.GameRoles.Count == 0)
+                    {
+                        <span class="text-secondary">Žádné herní role.</span>
+                    }
+                    else
+                    {
+                        @foreach (var group in lookupResult.GameRoles.GroupBy(gr => gr.GameName))
+                        {
+                            <div class="mb-2">
+                                <div class="fw-semibold">@group.Key</div>
+                                <div class="d-flex flex-wrap gap-1 mt-1">
+                                    @foreach (var role in group)
+                                    {
+                                        <span class="badge text-bg-info">@role.RoleName</span>
+                                    }
+                                </div>
+                            </div>
+                        }
+                    }
+                </div>
+            </section>
+        </div>
+    }
+</div>
+
+@code {
+    private string searchEmail = "";
+    private string newAlternateEmail = "";
+    private string? errorMessage;
+    private string? emailError;
+    private string? emailSuccess;
+    private bool hasSearched;
+    private bool isSearching;
+    private bool isAddingEmail;
+    private UserLookupResult? lookupResult;
+
+    private async Task HandleKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            await SearchAsync();
+        }
+    }
+
+    private async Task SearchAsync()
+    {
+        errorMessage = null;
+        emailError = null;
+        emailSuccess = null;
+        lookupResult = null;
+        hasSearched = true;
+
+        if (string.IsNullOrWhiteSpace(searchEmail))
+        {
+            errorMessage = "Zadejte e-mail.";
+            return;
+        }
+
+        isSearching = true;
+        try
+        {
+            lookupResult = await UserAdministrationService.LookupByEmailAsync(searchEmail);
+        }
+        catch (Exception ex)
+        {
+            errorMessage = ex.Message;
+        }
+        finally
+        {
+            isSearching = false;
+        }
+    }
+
+    private async Task AddAlternateEmailAsync()
+    {
+        emailError = null;
+        emailSuccess = null;
+
+        if (lookupResult is null || string.IsNullOrWhiteSpace(newAlternateEmail))
+        {
+            emailError = "Zadejte e-mail.";
+            return;
+        }
+
+        isAddingEmail = true;
+        try
+        {
+            await UserEmailService.AddAlternateEmailAsync(lookupResult.Id, newAlternateEmail);
+            emailSuccess = $"E-mail {newAlternateEmail} byl přidán.";
+            newAlternateEmail = "";
+            lookupResult = await UserAdministrationService.LookupByEmailAsync(lookupResult.PrimaryEmail);
+        }
+        catch (ValidationException ex)
+        {
+            emailError = ex.Message;
+        }
+        finally
+        {
+            isAddingEmail = false;
+        }
+    }
+
+    private async Task RemoveAlternateEmailAsync(int emailId)
+    {
+        emailError = null;
+        emailSuccess = null;
+
+        if (lookupResult is null) return;
+
+        try
+        {
+            await UserEmailService.RemoveAlternateEmailAsync(lookupResult.Id, emailId);
+            emailSuccess = "E-mail byl odebrán.";
+            lookupResult = await UserAdministrationService.LookupByEmailAsync(lookupResult.PrimaryEmail);
+        }
+        catch (ValidationException ex)
+        {
+            emailError = ex.Message;
+        }
+    }
+
+    private static string FormatLastLogin(DateTime? lastLoginAtUtc) =>
+        lastLoginAtUtc is null ? "Nikdy" : CzechTime.Format(lastLoginAtUtc.Value);
+}
