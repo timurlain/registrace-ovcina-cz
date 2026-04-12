@@ -8,11 +8,7 @@ public static class RoleNames
     public const string Registrant = "Registrant";
     public const string Guest = "Guest";
 
-    // Game roles (world identity)
-    public const string King = "King";
-    public const string Merchant = "Merchant";
-    public const string Player = "Player";
-    public const string Healer = "Healer";
+    // Game roles are managed by admins in /admin/roles — no hardcoded constants
 
     // Staff roles (organizational)
     public const string StaffRegistration = "Staff-Registration";
