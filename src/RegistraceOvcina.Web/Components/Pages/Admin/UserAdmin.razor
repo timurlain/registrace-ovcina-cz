@@ -66,6 +66,53 @@
         </section>
     </div>
 
+    @* All users list *@
+    @if (lookupResult is null && allUsers is not null)
+    {
+        <div class="col-12">
+            <section class="card shadow-sm">
+                <div class="card-body p-4">
+                    <h2 class="h5 mb-3">Všichni uživatelé <span class="badge text-bg-secondary">@allUsers.Count</span></h2>
+                    <div class="table-responsive">
+                        <table class="table table-hover mb-0">
+                            <thead>
+                                <tr>
+                                    <th>Jméno</th>
+                                    <th>E-mail</th>
+                                    <th>Stav</th>
+                                    <th>Poslední přihlášení</th>
+                                    <th></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var user in allUsers)
+                                {
+                                    <tr>
+                                        <td>@user.DisplayName</td>
+                                        <td class="text-secondary">@user.Email</td>
+                                        <td>
+                                            <span class="badge @(user.IsActive ? "text-bg-success" : "text-bg-secondary") small">
+                                                @(user.IsActive ? "Aktivní" : "Deaktivovaný")
+                                            </span>
+                                        </td>
+                                        <td class="text-secondary small">
+                                            @(user.LastLoginAtUtc?.ToLocalTime().ToString("d. M. yyyy HH:mm") ?? "Nikdy")
+                                        </td>
+                                        <td>
+                                            <button class="btn btn-sm btn-outline-primary" @onclick="() => SelectUserAsync(user.Id)">
+                                                Otevřít
+                                            </button>
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+        </div>
+    }
+
     @if (lookupResult is not null)
     {
         @* User detail card *@
@@ -348,6 +395,9 @@
 </div>
 
 @code {
+    // All users list
+    private List<UserSearchResult>? allUsers;
+
     // Search state
     private string searchQuery = "";
     private string? errorMessage;
@@ -378,6 +428,19 @@
     private bool isMerging;
     private string? mergeError;
     private string? mergeSuccess;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAllUsersAsync();
+    }
+
+    private async Task LoadAllUsersAsync()
+    {
+        var page = await UserAdministrationService.GetPageAsync();
+        allUsers = page.StaffUsers.Concat(page.OtherUsers)
+            .Select(u => new UserSearchResult(u.Id, u.DisplayName, u.Email, u.IsActive, u.LastLoginAtUtc))
+            .ToList();
+    }
 
     private async Task HandleKeyDown(KeyboardEventArgs e)
     {
@@ -477,6 +540,7 @@
             isEditingName = false;
             renameMessage = "Jméno bylo úspěšně změněno.";
             renameIsError = false;
+            await LoadAllUsersAsync();
         }
         catch (ValidationException ex)
         {
@@ -632,8 +696,9 @@
             mergeSearchResults = null;
             mergeSearchQuery = "";
             mergeConfirmationShown = false;
-            // Refresh the canonical user to show updated data
+            // Refresh the canonical user and user list
             lookupResult = await UserAdministrationService.LookupByIdAsync(lookupResult.Id);
+            await LoadAllUsersAsync();
         }
         catch (ValidationException ex)
         {
