@@ -72,6 +72,35 @@ public static class IntegrationApiEndpoints
             return Results.Ok(registrations);
         }).AllowAnonymous();
 
+        // GET /api/v1/games/{id}/characters — character seeds for hra import
+        group.MapGet("/games/{id:int}/characters", async (
+            int id,
+            IDbContextFactory<ApplicationDbContext> dbFactory,
+            CancellationToken ct) =>
+        {
+            await using var db = await dbFactory.CreateDbContextAsync(ct);
+
+            var characters = await db.CharacterAppearances
+                .AsNoTracking()
+                .Where(ca => ca.GameId == id && !ca.Character.IsDeleted)
+                .Select(ca => new CharacterSeedDto(
+                    ca.CharacterId,
+                    ca.Character.PersonId,
+                    ca.Character.Person.FirstName,
+                    ca.Character.Person.LastName,
+                    ca.Character.Person.BirthYear,
+                    ca.Character.Name,
+                    ca.Character.Race,
+                    ca.Character.ClassOrType,
+                    ca.AssignedKingdom != null ? ca.AssignedKingdom.Name : null,
+                    ca.AssignedKingdomId,
+                    ca.LevelReached,
+                    ca.ContinuityStatus.ToString()))
+                .ToListAsync(ct);
+
+            return Results.Ok(characters);
+        }).AllowAnonymous();
+
         // GET /api/v1/users/by-email?email=... — user existence check for OvčinaHra auth
         group.MapGet("/users/by-email", async (
             string email,
