@@ -1,37 +1,38 @@
 @page "/organizace/role"
+@rendermode InteractiveServer
 @attribute [Authorize(Policy = AuthorizationPolicies.StaffOnly)]
 
-@using RegistraceOvcina.Web.Infrastructure
 @using Microsoft.EntityFrameworkCore
 @inject IDbContextFactory<ApplicationDbContext> DbFactory
 @inject GameService GameService
+@inject GameRoleService GameRoleService
+@inject AuthenticationStateProvider AuthStateProvider
 
-<PageTitle>Role dospělých</PageTitle>
+<PageTitle>Dospělí</PageTitle>
 
 <div class="d-flex justify-content-between align-items-end mb-4">
     <div>
-        <h1 class="h3 mb-1">Role dospělých</h1>
-        <p class="text-secondary mb-0">Přehled dospělých účastníků a jejich rolí pro aktuální hru.</p>
+        <h1 class="h3 mb-1">Dospělí</h1>
+        <p class="text-secondary mb-0">Přehled a správa herních rolí dospělých účastníků.</p>
     </div>
-    <div>
-        <form method="get" class="d-flex align-items-center gap-2">
-            <label class="form-label mb-0 text-nowrap" for="game-filter">Hra</label>
-            <select id="game-filter" name="gameId" class="form-select form-select-sm" style="min-width: 200px;" onchange="this.form.submit()">
-                @if (games is not null)
+    <div class="d-flex align-items-center gap-2">
+        <label class="form-label mb-0 text-nowrap" for="game-filter">Hra</label>
+        <select id="game-filter" class="form-select form-select-sm" style="min-width: 200px;"
+                value="@selectedGameId" @onchange="OnGameChanged">
+            @if (games is not null)
+            {
+                @foreach (var game in games)
                 {
-                    @foreach (var game in games)
-                    {
-                        <option value="@game.Id" selected="@(selectedGameId == game.Id)">@game.Name</option>
-                    }
+                    <option value="@game.Id">@game.Name</option>
                 }
-            </select>
-        </form>
+            }
+        </select>
     </div>
 </div>
 
 @if (adults is null)
 {
-    <p class="text-secondary">Načítám...</p>
+    <p class="text-secondary">Načítám…</p>
 }
 else if (adults.Count == 0)
 {
@@ -39,85 +40,348 @@ else if (adults.Count == 0)
 }
 else
 {
-    <div class="table-responsive">
-        <table class="table align-middle">
-            <thead>
-                <tr>
-                    <th>Jméno</th>
-                    <th>Skupina</th>
-                    <th>Zvolené role</th>
-                    <th>Poznámka</th>
-                </tr>
-            </thead>
-            <tbody>
-                @foreach (var adult in adults)
-                {
-                    <tr>
-                        <td class="fw-semibold">@adult.FullName</td>
-                        <td>@adult.GroupName</td>
-                        <td>
-                            @if (adult.Roles.Count > 0)
-                            {
-                                <div class="d-flex flex-wrap gap-1">
-                                    @foreach (var role in adult.Roles)
-                                    {
-                                        <span class="badge text-bg-secondary">@role</span>
-                                    }
-                                </div>
-                            }
-                            else
-                            {
-                                <span class="text-secondary">Bez role</span>
-                            }
-                        </td>
-                        <td class="small text-secondary">@(adult.Note ?? "—")</td>
-                    </tr>
-                }
-            </tbody>
-        </table>
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <div class="text-secondary small">Celkem: <strong>@adults.Count</strong> dospělých</div>
+        <button class="btn btn-sm @(groupByRole ? "btn-primary" : "btn-outline-secondary")"
+                @onclick="ToggleGrouping">
+            <i class="bi bi-collection me-1"></i>Seskupit podle role
+        </button>
     </div>
 
-    <div class="text-secondary small mt-2">Celkem: <strong>@adults.Count</strong> dospělých</div>
+    @if (groupByRole)
+    {
+        @foreach (var group in GetRoleGroups())
+        {
+            <div class="mb-4">
+                <h5 class="mb-2">@group.RoleName <span class="badge text-bg-secondary">@group.Adults.Count</span></h5>
+                @if (group.Adults.Count == 0)
+                {
+                    <p class="text-secondary small ms-2">Nikdo nemá tuto roli.</p>
+                }
+                else
+                {
+                    <div class="table-responsive">
+                        <table class="table table-sm align-middle mb-0">
+                            <thead>
+                                <tr>
+                                    <th role="button" @onclick="ToggleSort" class="user-select-none">
+                                        Jméno @SortIndicator
+                                    </th>
+                                    <th>Skupina</th>
+                                    <th>E-mail</th>
+                                    <th>Zvolené role</th>
+                                    <th>Přidělené herní role</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var adult in SortAdults(group.Adults))
+                                {
+                                    <tr>
+                                        <td class="fw-semibold">@adult.FullName</td>
+                                        <td>@adult.GroupName</td>
+                                        <td class="small">@(adult.Email ?? "—")</td>
+                                        <td>
+                                            <div class="d-flex flex-wrap gap-1">
+                                                @foreach (var label in GetAdultRoleLabels(adult.AdultRoles))
+                                                {
+                                                    <span class="badge text-bg-light border">@label</span>
+                                                }
+                                            </div>
+                                        </td>
+                                        <td>
+                                            @if (adult.HasAccount)
+                                            {
+                                                <div class="d-flex flex-wrap gap-1 mb-1">
+                                                    @foreach (var role in adult.AssignedGameRoles)
+                                                    {
+                                                        <span class="badge text-bg-primary d-inline-flex align-items-center gap-1">
+                                                            @role
+                                                            <button type="button" class="btn-close btn-close-white" style="font-size: 0.5rem;"
+                                                                    @onclick="() => RevokeRoleAsync(adult, role)"></button>
+                                                        </span>
+                                                    }
+                                                </div>
+                                                <div class="d-flex gap-1">
+                                                    <select class="form-select form-select-sm" style="max-width: 180px;"
+                                                            value="@adult.SelectedRole"
+                                                            @onchange="(e) => adult.SelectedRole = e.Value?.ToString() ?? string.Empty">
+                                                        <option value="">-- Vybrat --</option>
+                                                        @foreach (var r in GetAvailableRolesFor(adult))
+                                                        {
+                                                            <option value="@r">@r</option>
+                                                        }
+                                                    </select>
+                                                    <button class="btn btn-sm btn-outline-primary"
+                                                            disabled="@string.IsNullOrEmpty(adult.SelectedRole)"
+                                                            @onclick="() => AssignRoleAsync(adult)">
+                                                        Přidat
+                                                    </button>
+                                                </div>
+                                            }
+                                            else
+                                            {
+                                                <span class="badge text-bg-warning">Bez účtu</span>
+                                            }
+                                        </td>
+                                    </tr>
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </div>
+        }
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table class="table align-middle">
+                <thead>
+                    <tr>
+                        <th role="button" @onclick="ToggleSort" class="user-select-none">
+                            Jméno @SortIndicator
+                        </th>
+                        <th>Skupina</th>
+                        <th>E-mail</th>
+                        <th>Zvolené role</th>
+                        <th>Přidělené herní role</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var adult in SortAdults(adults))
+                    {
+                        <tr>
+                            <td class="fw-semibold">@adult.FullName</td>
+                            <td>@adult.GroupName</td>
+                            <td class="small">@(adult.Email ?? "—")</td>
+                            <td>
+                                <div class="d-flex flex-wrap gap-1">
+                                    @foreach (var label in GetAdultRoleLabels(adult.AdultRoles))
+                                    {
+                                        <span class="badge text-bg-light border">@label</span>
+                                    }
+                                </div>
+                            </td>
+                            <td>
+                                @if (adult.HasAccount)
+                                {
+                                    <div class="d-flex flex-wrap gap-1 mb-1">
+                                        @foreach (var role in adult.AssignedGameRoles)
+                                        {
+                                            <span class="badge text-bg-primary d-inline-flex align-items-center gap-1">
+                                                @role
+                                                <button type="button" class="btn-close btn-close-white" style="font-size: 0.5rem;"
+                                                        @onclick="() => RevokeRoleAsync(adult, role)"></button>
+                                            </span>
+                                        }
+                                    </div>
+                                    <div class="d-flex gap-1">
+                                        <select class="form-select form-select-sm" style="max-width: 180px;"
+                                                value="@adult.SelectedRole"
+                                                @onchange="(e) => adult.SelectedRole = e.Value?.ToString() ?? string.Empty">
+                                            <option value="">-- Vybrat --</option>
+                                            @foreach (var r in GetAvailableRolesFor(adult))
+                                            {
+                                                <option value="@r">@r</option>
+                                            }
+                                        </select>
+                                        <button class="btn btn-sm btn-outline-primary"
+                                                disabled="@string.IsNullOrEmpty(adult.SelectedRole)"
+                                                @onclick="() => AssignRoleAsync(adult)">
+                                            Přidat
+                                        </button>
+                                    </div>
+                                }
+                                else
+                                {
+                                    <span class="badge text-bg-warning">Bez účtu</span>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
 }
 
 @code {
-    [SupplyParameterFromQuery(Name = "gameId")]
-    private int? selectedGameId { get; set; }
-
+    private int? selectedGameId;
     private IReadOnlyList<GameSummary>? games;
-    private IReadOnlyList<AdultRoleView>? adults;
+    private List<AdultRoleView>? adults;
+    private List<string> availableGameRoles = [];
+    private bool groupByRole;
+    private bool sortDescending;
+    private string currentUserId = "";
+
+    private string SortIndicator => sortDescending ? "▼" : "▲";
 
     protected override async Task OnInitializedAsync()
     {
+        var authState = await AuthStateProvider.GetAuthenticationStateAsync();
+        currentUserId = authState.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value ?? "";
+
         games = await GameService.GetAdminGamesAsync();
 
-        if (!selectedGameId.HasValue && games.Count > 0)
+        if (games.Count > 0)
         {
             selectedGameId = games[0].Id;
-        }
-
-        if (selectedGameId.HasValue)
-        {
-            await using var db = await DbFactory.CreateDbContextAsync();
-            adults = await db.Registrations
-                .AsNoTracking()
-                .Where(r => r.Submission.GameId == selectedGameId.Value
-                    && r.AttendeeType == AttendeeType.Adult
-                    && r.Status == RegistrationStatus.Active
-                    && !r.Submission.IsDeleted)
-                .OrderBy(r => r.Person.LastName)
-                .ThenBy(r => r.Person.FirstName)
-                .Select(r => new AdultRoleView(
-                    r.Id,
-                    $"{r.Person.FirstName} {r.Person.LastName}",
-                    r.Submission.GroupName,
-                    GetRoleLabels(r.AdultRoles),
-                    r.RegistrantNote))
-                .ToListAsync();
+            await LoadDataAsync();
         }
     }
 
-    private static List<string> GetRoleLabels(AdultRoleFlags flags)
+    private async Task OnGameChanged(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out var gameId))
+        {
+            selectedGameId = gameId;
+            await LoadDataAsync();
+        }
+    }
+
+    private async Task LoadDataAsync()
+    {
+        if (!selectedGameId.HasValue) return;
+
+        await using var db = await DbFactory.CreateDbContextAsync();
+
+        // Load available game roles
+        availableGameRoles = await db.Roles.AsNoTracking()
+            .Where(r => r.Category == "game")
+            .OrderBy(r => r.Name)
+            .Select(r => r.Name!)
+            .ToListAsync();
+
+        // Load adults
+        var adultRows = await db.Registrations.AsNoTracking()
+            .Where(r => r.Submission.GameId == selectedGameId.Value
+                && r.AttendeeType == AttendeeType.Adult
+                && r.Status == RegistrationStatus.Active
+                && !r.Submission.IsDeleted)
+            .OrderBy(r => r.Person.LastName)
+            .ThenBy(r => r.Person.FirstName)
+            .Select(r => new
+            {
+                r.Id,
+                FirstName = r.Person.FirstName,
+                LastName = r.Person.LastName,
+                r.Submission.GroupName,
+                Email = r.Person.Email,
+                r.AdultRoles
+            })
+            .ToListAsync();
+
+        // Load all emails that have user accounts
+        var allEmails = adultRows
+            .Where(a => !string.IsNullOrWhiteSpace(a.Email))
+            .Select(a => a.Email!.Trim().ToUpperInvariant())
+            .Distinct()
+            .ToList();
+
+        var emailsWithAccounts = allEmails.Count > 0
+            ? await db.Users.AsNoTracking()
+                .Where(u => allEmails.Contains(u.NormalizedEmail!))
+                .Select(u => u.NormalizedEmail!)
+                .ToListAsync()
+            : [];
+
+        var emailsWithAccountsSet = emailsWithAccounts.ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        // Load assigned game roles for this game
+        var assignedRoles = await db.GameRoles.AsNoTracking()
+            .Where(gr => gr.GameId == selectedGameId.Value)
+            .Select(gr => new { gr.User.Email, gr.RoleName })
+            .ToListAsync();
+
+        var rolesByEmail = assignedRoles
+            .Where(r => r.Email is not null)
+            .GroupBy(r => r.Email!.Trim(), StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(
+                g => g.Key,
+                g => g.Select(r => r.RoleName).OrderBy(r => r).ToList(),
+                StringComparer.OrdinalIgnoreCase);
+
+        adults = adultRows.Select(a =>
+        {
+            var email = a.Email?.Trim();
+            var normalizedEmail = email?.ToUpperInvariant();
+            var hasAccount = normalizedEmail is not null && emailsWithAccountsSet.Contains(normalizedEmail);
+            var assignedRolesList = email is not null && rolesByEmail.TryGetValue(email, out var roles)
+                ? roles
+                : new List<string>();
+
+            return new AdultRoleView
+            {
+                RegistrationId = a.Id,
+                FullName = $"{a.FirstName} {a.LastName}",
+                LastName = a.LastName,
+                FirstName = a.FirstName,
+                GroupName = a.GroupName,
+                Email = email,
+                AdultRoles = a.AdultRoles,
+                HasAccount = hasAccount,
+                AssignedGameRoles = assignedRolesList,
+                SelectedRole = ""
+            };
+        }).ToList();
+    }
+
+    private async Task AssignRoleAsync(AdultRoleView adult)
+    {
+        if (string.IsNullOrEmpty(adult.SelectedRole) || string.IsNullOrEmpty(adult.Email) || !selectedGameId.HasValue)
+            return;
+
+        await GameRoleService.AssignRoleAsync(adult.Email, selectedGameId.Value, adult.SelectedRole, currentUserId);
+
+        // Update local state
+        if (!adult.AssignedGameRoles.Contains(adult.SelectedRole, StringComparer.OrdinalIgnoreCase))
+        {
+            adult.AssignedGameRoles.Add(adult.SelectedRole);
+            adult.AssignedGameRoles.Sort(StringComparer.OrdinalIgnoreCase);
+        }
+        adult.SelectedRole = "";
+    }
+
+    private async Task RevokeRoleAsync(AdultRoleView adult, string roleName)
+    {
+        if (string.IsNullOrEmpty(adult.Email) || !selectedGameId.HasValue)
+            return;
+
+        await GameRoleService.RevokeRoleAsync(adult.Email, selectedGameId.Value, roleName, currentUserId);
+
+        // Update local state
+        adult.AssignedGameRoles.RemoveAll(r => string.Equals(r, roleName, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private List<string> GetAvailableRolesFor(AdultRoleView adult)
+    {
+        return availableGameRoles
+            .Where(r => !adult.AssignedGameRoles.Contains(r, StringComparer.OrdinalIgnoreCase))
+            .ToList();
+    }
+
+    private List<RoleGroup> GetRoleGroups()
+    {
+        if (adults is null) return [];
+
+        return availableGameRoles
+            .Select(roleName => new RoleGroup(
+                roleName,
+                adults.Where(a => a.AssignedGameRoles.Contains(roleName, StringComparer.OrdinalIgnoreCase)).ToList()))
+            .Where(g => g.Adults.Count > 0)
+            .ToList();
+    }
+
+    private void ToggleSort() => sortDescending = !sortDescending;
+
+    private void ToggleGrouping() => groupByRole = !groupByRole;
+
+    private List<AdultRoleView> SortAdults(IEnumerable<AdultRoleView> source) =>
+        sortDescending
+            ? source.OrderByDescending(a => a.LastName).ThenByDescending(a => a.FirstName).ToList()
+            : source.OrderBy(a => a.LastName).ThenBy(a => a.FirstName).ToList();
+
+    private static List<string> GetAdultRoleLabels(AdultRoleFlags flags)
     {
         var labels = new List<string>();
         if (flags.HasFlag(AdultRoleFlags.PlayMonster)) labels.Add("Příšera");
@@ -128,5 +392,19 @@ else
         return labels;
     }
 
-    private sealed record AdultRoleView(int RegistrationId, string FullName, string GroupName, List<string> Roles, string? Note);
+    private sealed class AdultRoleView
+    {
+        public int RegistrationId { get; set; }
+        public string FullName { get; set; } = "";
+        public string LastName { get; set; } = "";
+        public string FirstName { get; set; } = "";
+        public string GroupName { get; set; } = "";
+        public string? Email { get; set; }
+        public AdultRoleFlags AdultRoles { get; set; }
+        public bool HasAccount { get; set; }
+        public List<string> AssignedGameRoles { get; set; } = [];
+        public string SelectedRole { get; set; } = "";
+    }
+
+    private sealed record RoleGroup(string RoleName, List<AdultRoleView> Adults);
 }
