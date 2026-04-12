@@ -100,14 +100,13 @@ else
                 && r.Status == RegistrationStatus.Active
                 && !r.Submission.IsDeleted
                 && !r.Person.IsDeleted)
+            .OrderBy(r => r.Person.LastName)
+            .ThenBy(r => r.Person.FirstName)
             .Select(r => new StickerData(
                 r.Person.Id,
                 r.Person.FirstName,
                 r.Person.LastName,
                 r.CharacterName))
-            .Distinct()
-            .OrderBy(r => r.LastName)
-            .ThenBy(r => r.FirstName)
             .ToListAsync();
     }
 
