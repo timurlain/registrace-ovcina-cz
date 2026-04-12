@@ -295,16 +295,16 @@ public sealed class UserAdministrationService(IDbContextFactory<ApplicationDbCon
         var term = query.Trim().ToUpperInvariant();
         await using var db = await dbContextFactory.CreateDbContextAsync(ct);
 
-        // Find user IDs matching by primary email or display name
+        // Find user IDs matching by primary email or display name (active only)
         var primaryMatches = await db.Users.AsNoTracking()
-            .Where(u => u.NormalizedEmail!.Contains(term) || u.DisplayName.ToUpper().Contains(term))
+            .Where(u => u.IsActive && (u.NormalizedEmail!.Contains(term) || u.DisplayName.ToUpper().Contains(term)))
             .Select(u => u.Id)
             .Take(10)
             .ToListAsync(ct);
 
-        // Find user IDs matching by alternate email
+        // Find user IDs matching by alternate email (active users only)
         var alternateMatches = await db.UserEmails.AsNoTracking()
-            .Where(ue => ue.NormalizedEmail.Contains(term))
+            .Where(ue => ue.NormalizedEmail.Contains(term) && ue.User.IsActive)
             .Select(ue => ue.UserId)
             .Distinct()
             .Take(10)

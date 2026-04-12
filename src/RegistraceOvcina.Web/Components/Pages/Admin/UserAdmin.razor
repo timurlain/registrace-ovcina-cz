@@ -438,6 +438,7 @@
     {
         var page = await UserAdministrationService.GetPageAsync();
         allUsers = page.StaffUsers.Concat(page.OtherUsers)
+            .Where(u => u.IsActive)
             .Select(u => new UserSearchResult(u.Id, u.DisplayName, u.Email, u.IsActive, u.LastLoginAtUtc))
             .ToList();
     }
