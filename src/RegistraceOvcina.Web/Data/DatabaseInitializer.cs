@@ -14,10 +14,7 @@ public static class DatabaseInitializer
         (RoleNames.Organizer, "system"),
         (RoleNames.Registrant, "system"),
         (RoleNames.Guest, "system"),
-        (RoleNames.King, "game"),
-        (RoleNames.Merchant, "game"),
-        (RoleNames.Player, "game"),
-        (RoleNames.Healer, "game"),
+        // Game roles are managed by admins in /admin/roles — no longer seeded
         (RoleNames.StaffRegistration, "staff"),
         (RoleNames.StaffAccounts, "staff"),
         (RoleNames.StaffLogistics, "staff"),
