@@ -1,0 +1,124 @@
+@page "/organizace/hry/{GameId:int}/qr-stitky"
+@attribute [Authorize(Policy = AuthorizationPolicies.StaffOnly)]
+
+@using Microsoft.EntityFrameworkCore
+@using QRCoder
+
+@inject IDbContextFactory<ApplicationDbContext> DbFactory
+
+<PageTitle>QR štítky pro hru</PageTitle>
+
+<style>
+    .sticker {
+        border: 1px dashed #ccc;
+        padding: 8px;
+        text-align: center;
+        margin-bottom: 8px;
+    }
+
+    .sticker-qr svg {
+        width: 80px;
+        height: 80px;
+    }
+
+    .sticker-name {
+        font-weight: bold;
+        font-size: 12px;
+    }
+
+    .sticker-character {
+        font-size: 11px;
+        color: #666;
+        margin-bottom: 4px;
+    }
+
+    @@media print {
+        .no-print { display: none !important; }
+        body { margin: 0; padding: 0; }
+        .sticker {
+            border: 1px dashed #999;
+            padding: 8px;
+            text-align: center;
+            break-inside: avoid;
+            height: 120px;
+        }
+        .sticker-qr svg { width: 80px; height: 80px; }
+        .sticker-name { font-weight: bold; font-size: 11px; }
+        .sticker-character { font-size: 10px; color: #666; margin-bottom: 4px; }
+    }
+</style>
+
+@if (game is null)
+{
+    <p class="text-secondary">Načítám...</p>
+}
+else
+{
+    <div class="no-print mb-3">
+        <a href="/admin/hry" class="text-decoration-none small">&larr; Zpět na správu her</a>
+    </div>
+
+    <div class="no-print d-flex justify-content-between align-items-center mb-3">
+        <div>
+            <h1 class="h4 mb-1">QR štítky &mdash; @game.Name</h1>
+            <p class="text-secondary small mb-0">Celkem štítků: @registrations.Count</p>
+        </div>
+        <button onclick="window.print()" class="btn btn-primary">Vytisknout</button>
+    </div>
+
+    <div class="row">
+        @foreach (var reg in registrations)
+        {
+            <div class="col-4">
+                <div class="sticker">
+                    <div class="sticker-name">@reg.FirstName @reg.LastName</div>
+                    <div class="sticker-character">@reg.CharacterName</div>
+                    <div class="sticker-qr">@((MarkupString)GenerateQrSvg(reg.PersonId))</div>
+                </div>
+            </div>
+        }
+    </div>
+}
+
+@code {
+    [Parameter] public int GameId { get; set; }
+
+    private Game? game;
+    private List<StickerData> registrations = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+
+        game = await db.Games.AsNoTracking().FirstOrDefaultAsync(g => g.Id == GameId);
+        if (game is null) return;
+
+        registrations = await db.Registrations
+            .AsNoTracking()
+            .Where(r => r.Submission.GameId == GameId
+                && r.Submission.Status == SubmissionStatus.Submitted
+                && r.Status == RegistrationStatus.Active
+                && !r.Submission.IsDeleted
+                && !r.Person.IsDeleted)
+            .Select(r => new StickerData(
+                r.Person.Id,
+                r.Person.FirstName,
+                r.Person.LastName,
+                r.CharacterName))
+            .Distinct()
+            .OrderBy(r => r.LastName)
+            .ThenBy(r => r.FirstName)
+            .ToListAsync();
+    }
+
+    private string GenerateQrSvg(int personId)
+    {
+        var url = $"https://hra.ovcina.cz/p/{personId}";
+        using var generator = new QRCodeGenerator();
+        using var data = generator.CreateQrCode(url, QRCodeGenerator.ECCLevel.M);
+        using var svgQr = new SvgQRCode(data);
+        return svgQr.GetGraphic(3);
+    }
+
+    private sealed record StickerData(int PersonId, string FirstName, string LastName, string? CharacterName);
+}
