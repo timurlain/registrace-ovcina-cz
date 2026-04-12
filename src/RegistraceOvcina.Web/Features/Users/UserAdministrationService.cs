@@ -252,10 +252,19 @@ public sealed class UserAdministrationService(IDbContextFactory<ApplicationDbCon
 
         if (userId is null) return null;
 
+        return await LookupByIdAsync(userId, ct);
+    }
+
+    public async Task<UserLookupResult?> LookupByIdAsync(string userId, CancellationToken ct = default)
+    {
+        await using var db = await dbContextFactory.CreateDbContextAsync(ct);
+
         var user = await db.Users.AsNoTracking()
             .Where(u => u.Id == userId)
             .Select(u => new { u.Id, u.DisplayName, u.Email, u.IsActive, u.LastLoginAtUtc, u.CreatedAtUtc })
-            .SingleAsync(ct);
+            .SingleOrDefaultAsync(ct);
+
+        if (user is null) return null;
 
         var identityRoles = await db.UserRoles.AsNoTracking()
             .Where(ur => ur.UserId == userId)
@@ -276,6 +285,222 @@ public sealed class UserAdministrationService(IDbContextFactory<ApplicationDbCon
             user.Id, user.DisplayName, user.Email ?? "",
             user.IsActive, user.LastLoginAtUtc, user.CreatedAtUtc,
             identityRoles, alternateEmails, gameRoles);
+    }
+
+    public async Task<List<UserSearchResult>> SearchUsersAsync(string query, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(query) || query.Trim().Length < 2)
+            return [];
+
+        var term = query.Trim().ToUpperInvariant();
+        await using var db = await dbContextFactory.CreateDbContextAsync(ct);
+
+        // Find user IDs matching by primary email or display name
+        var primaryMatches = await db.Users.AsNoTracking()
+            .Where(u => u.NormalizedEmail!.Contains(term) || u.DisplayName.ToUpper().Contains(term))
+            .Select(u => u.Id)
+            .Take(10)
+            .ToListAsync(ct);
+
+        // Find user IDs matching by alternate email
+        var alternateMatches = await db.UserEmails.AsNoTracking()
+            .Where(ue => ue.NormalizedEmail.Contains(term))
+            .Select(ue => ue.UserId)
+            .Distinct()
+            .Take(10)
+            .ToListAsync(ct);
+
+        var allUserIds = primaryMatches.Union(alternateMatches).Distinct().ToList();
+        if (allUserIds.Count == 0) return [];
+
+        var results = await db.Users.AsNoTracking()
+            .Where(u => allUserIds.Contains(u.Id))
+            .OrderBy(u => u.DisplayName)
+            .ThenBy(u => u.Email)
+            .Take(10)
+            .Select(u => new UserSearchResult(u.Id, u.DisplayName, u.Email ?? "", u.IsActive, u.LastLoginAtUtc))
+            .ToListAsync(ct);
+
+        return results;
+    }
+
+    public async Task RenameUserAsync(string userId, string newDisplayName, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(newDisplayName))
+            throw new ValidationException("Jméno nesmí být prázdné.");
+
+        newDisplayName = newDisplayName.Trim();
+        if (newDisplayName.Length > 200)
+            throw new ValidationException("Jméno je příliš dlouhé (max 200 znaků).");
+
+        await using var db = await dbContextFactory.CreateDbContextAsync(ct);
+        var nowUtc = timeProvider.GetUtcNow().UtcDateTime;
+
+        var user = await db.Users.SingleOrDefaultAsync(u => u.Id == userId, ct)
+            ?? throw new ValidationException("Uživatel nebyl nalezen.");
+
+        var oldName = user.DisplayName;
+        user.DisplayName = newDisplayName;
+
+        db.AuditLogs.Add(new AuditLog
+        {
+            EntityType = nameof(ApplicationUser),
+            EntityId = user.Id,
+            Action = "UserRenamed",
+            ActorUserId = userId,
+            CreatedAtUtc = nowUtc,
+            DetailsJson = JsonSerializer.Serialize(new
+            {
+                OldDisplayName = oldName,
+                NewDisplayName = newDisplayName,
+                user.Email
+            })
+        });
+
+        await db.SaveChangesAsync(ct);
+    }
+
+    public async Task MergeUsersAsync(string canonicalUserId, string duplicateUserId, CancellationToken ct = default)
+    {
+        if (canonicalUserId == duplicateUserId)
+            throw new ValidationException("Nelze sloučit uživatele sám se sebou.");
+
+        await using var db = await dbContextFactory.CreateDbContextAsync(ct);
+        var nowUtc = timeProvider.GetUtcNow().UtcDateTime;
+
+        var canonical = await db.Users.SingleOrDefaultAsync(u => u.Id == canonicalUserId, ct)
+            ?? throw new ValidationException("Cílový uživatel nebyl nalezen.");
+        var duplicate = await db.Users.SingleOrDefaultAsync(u => u.Id == duplicateUserId, ct)
+            ?? throw new ValidationException("Duplicitní uživatel nebyl nalezen.");
+
+        // 1. Transfer identity roles
+        var canonicalRoleIds = await db.UserRoles.AsNoTracking()
+            .Where(ur => ur.UserId == canonicalUserId)
+            .Select(ur => ur.RoleId)
+            .ToListAsync(ct);
+
+        var duplicateRoles = await db.UserRoles
+            .Where(ur => ur.UserId == duplicateUserId)
+            .ToListAsync(ct);
+
+        foreach (var role in duplicateRoles)
+        {
+            if (!canonicalRoleIds.Contains(role.RoleId))
+            {
+                db.UserRoles.Add(new IdentityUserRole<string>
+                {
+                    UserId = canonicalUserId,
+                    RoleId = role.RoleId
+                });
+            }
+            db.UserRoles.Remove(role);
+        }
+
+        // 2. Transfer game roles
+        var canonicalGameRoles = await db.GameRoles.AsNoTracking()
+            .Where(gr => gr.UserId == canonicalUserId)
+            .Select(gr => new { gr.GameId, gr.RoleName })
+            .ToListAsync(ct);
+
+        var duplicateGameRoles = await db.GameRoles
+            .Where(gr => gr.UserId == duplicateUserId)
+            .ToListAsync(ct);
+
+        foreach (var gr in duplicateGameRoles)
+        {
+            if (!canonicalGameRoles.Any(c => c.GameId == gr.GameId && c.RoleName == gr.RoleName))
+            {
+                gr.UserId = canonicalUserId;
+            }
+            else
+            {
+                db.GameRoles.Remove(gr);
+            }
+        }
+
+        // 3. Transfer external logins
+        var duplicateLogins = await db.UserLogins
+            .Where(ul => ul.UserId == duplicateUserId)
+            .ToListAsync(ct);
+
+        foreach (var login in duplicateLogins)
+        {
+            db.UserLogins.Remove(login);
+            db.UserLogins.Add(new IdentityUserLogin<string>
+            {
+                UserId = canonicalUserId,
+                LoginProvider = login.LoginProvider,
+                ProviderKey = login.ProviderKey,
+                ProviderDisplayName = login.ProviderDisplayName
+            });
+        }
+
+        // 4. Transfer alternate emails
+        var canonicalEmails = await db.UserEmails.AsNoTracking()
+            .Where(ue => ue.UserId == canonicalUserId)
+            .Select(ue => ue.NormalizedEmail)
+            .ToListAsync(ct);
+
+        var duplicateEmails = await db.UserEmails
+            .Where(ue => ue.UserId == duplicateUserId)
+            .ToListAsync(ct);
+
+        foreach (var ue in duplicateEmails)
+        {
+            if (!canonicalEmails.Contains(ue.NormalizedEmail))
+            {
+                ue.UserId = canonicalUserId;
+            }
+            else
+            {
+                db.UserEmails.Remove(ue);
+            }
+        }
+
+        // 5. Copy PersonId if canonical doesn't have one
+        if (canonical.PersonId is null && duplicate.PersonId is not null)
+        {
+            canonical.PersonId = duplicate.PersonId;
+        }
+
+        // 6. Deactivate duplicate
+        duplicate.IsActive = false;
+        duplicate.SecurityStamp = Guid.NewGuid().ToString("N");
+
+        // 7. Add duplicate's primary email as alternate on canonical (if different and not already there)
+        var duplicatePrimaryNormalized = duplicate.Email?.Trim().ToUpperInvariant();
+        var canonicalPrimaryNormalized = canonical.Email?.Trim().ToUpperInvariant();
+        if (!string.IsNullOrWhiteSpace(duplicatePrimaryNormalized)
+            && duplicatePrimaryNormalized != canonicalPrimaryNormalized
+            && !canonicalEmails.Contains(duplicatePrimaryNormalized))
+        {
+            db.UserEmails.Add(new UserEmail
+            {
+                UserId = canonicalUserId,
+                Email = duplicate.Email!.Trim(),
+                NormalizedEmail = duplicatePrimaryNormalized,
+                CreatedAtUtc = nowUtc
+            });
+        }
+
+        db.AuditLogs.Add(new AuditLog
+        {
+            EntityType = nameof(ApplicationUser),
+            EntityId = canonicalUserId,
+            Action = "UserMerged",
+            ActorUserId = canonicalUserId,
+            CreatedAtUtc = nowUtc,
+            DetailsJson = JsonSerializer.Serialize(new
+            {
+                CanonicalUserId = canonicalUserId,
+                CanonicalEmail = canonical.Email,
+                DuplicateUserId = duplicateUserId,
+                DuplicateEmail = duplicate.Email,
+                DuplicateDisplayName = duplicate.DisplayName
+            })
+        });
+
+        await db.SaveChangesAsync(ct);
     }
 }
 
@@ -311,3 +536,5 @@ public sealed record UserLookupResult(
     List<GameRoleSummary> GameRoles);
 
 public sealed record GameRoleSummary(int GameId, string GameName, string RoleName);
+
+public sealed record UserSearchResult(string Id, string DisplayName, string Email, bool IsActive, DateTime? LastLoginAtUtc);
