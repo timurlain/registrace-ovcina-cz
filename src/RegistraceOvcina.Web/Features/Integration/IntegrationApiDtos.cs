@@ -33,3 +33,18 @@ public sealed record HasRoleDto(bool HasRole);
 
 /// <summary>Role assignment request body.</summary>
 public sealed record AssignRoleRequest(int GameId, string RoleName);
+
+/// <summary>Character seed data for hra import.</summary>
+public sealed record CharacterSeedDto(
+    int CharacterId,
+    int PersonId,
+    string PersonFirstName,
+    string PersonLastName,
+    int PersonBirthYear,
+    string CharacterName,
+    string? Race,
+    string? ClassOrType,
+    string? KingdomName,
+    int? KingdomId,
+    int? LevelReached,
+    string ContinuityStatus);
