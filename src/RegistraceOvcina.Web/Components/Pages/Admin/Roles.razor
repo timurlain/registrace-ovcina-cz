@@ -82,7 +82,12 @@
                                                         <option value="staff">Organizační role</option>
                                                     </select>
                                                 </td>
-                                                <td>@entry.UserCount</td>
+                                                <td>
+                                                    <button class="btn btn-sm btn-link p-0 text-decoration-none" @onclick="() => ToggleExpandAsync(entry)">
+                                                        @entry.UserCount
+                                                        <i class="bi @(expandedRoleId == entry.Id ? "bi-chevron-up" : "bi-chevron-down") ms-1 small"></i>
+                                                    </button>
+                                                </td>
                                                 <td>
                                                     <div class="d-flex gap-1">
                                                         <button class="btn btn-sm btn-primary" @onclick="SaveEditAsync">Uložit</button>
@@ -90,6 +95,10 @@
                                                     </div>
                                                 </td>
                                             </tr>
+                                            @if (expandedRoleId == entry.Id && expandedRoleUsers is not null)
+                                            {
+                                                @ExpandedUsersRow
+                                            }
                                         }
                                         else
                                         {
@@ -98,7 +107,12 @@
                                                 <td>
                                                     <span class="badge @CategoryBadgeClass(entry.Category)">@CategoryLabel(entry.Category)</span>
                                                 </td>
-                                                <td>@entry.UserCount</td>
+                                                <td>
+                                                    <button class="btn btn-sm btn-link p-0 text-decoration-none" @onclick="() => ToggleExpandAsync(entry)">
+                                                        @entry.UserCount
+                                                        <i class="bi @(expandedRoleId == entry.Id ? "bi-chevron-up" : "bi-chevron-down") ms-1 small"></i>
+                                                    </button>
+                                                </td>
                                                 <td>
                                                     @if (!entry.IsProtected)
                                                     {
@@ -121,6 +135,10 @@
                                                     }
                                                 </td>
                                             </tr>
+                                            @if (expandedRoleId == entry.Id && expandedRoleUsers is not null)
+                                            {
+                                                @ExpandedUsersRow
+                                            }
                                         }
                                     }
                                 </tbody>
@@ -163,6 +181,10 @@
     // Delete confirmation
     private string? confirmDeleteId;
 
+    // Expand user list
+    private string? expandedRoleId;
+    private List<RoleUserInfo>? expandedRoleUsers;
+
     // Status
     private string? statusMessage;
     private bool isError;
@@ -174,6 +196,9 @@
 
     private async Task LoadRolesAsync()
     {
+        expandedRoleId = null;
+        expandedRoleUsers = null;
+
         var allRoles = RoleManager.Roles.ToList();
         var entries = new List<RoleEntry>();
 
@@ -376,12 +401,60 @@
         statusMessage = null;
     }
 
+    private async Task ToggleExpandAsync(RoleEntry entry)
+    {
+        if (expandedRoleId == entry.Id)
+        {
+            expandedRoleId = null;
+            expandedRoleUsers = null;
+            return;
+        }
+
+        var targetId = entry.Id;
+        expandedRoleId = targetId;
+        var usersInRole = await UserManager.GetUsersInRoleAsync(entry.Name);
+
+        // Guard against race: if user clicked another role while awaiting, discard stale result
+        if (expandedRoleId != targetId) return;
+
+        expandedRoleUsers = usersInRole
+            .OrderBy(u => u.DisplayName)
+            .Select(u => new RoleUserInfo(u.DisplayName, u.Email ?? ""))
+            .ToList();
+    }
+
     private static string CategoryLabel(string category) => category switch
     {
         "system" => "Systémová",
         "game" => "Herní",
         "staff" => "Organizační",
         _ => category,
+    };
+
+    private RenderFragment ExpandedUsersRow => __builder =>
+    {
+        <tr>
+            <td colspan="4" class="p-0">
+                <div class="bg-light border-top px-4 py-2">
+                    @if (expandedRoleUsers!.Count == 0)
+                    {
+                        <span class="text-muted small">Žádní uživatelé v této roli.</span>
+                    }
+                    else
+                    {
+                        <ul class="list-unstyled mb-0 small">
+                            @foreach (var user in expandedRoleUsers)
+                            {
+                                <li class="py-1 border-bottom border-light-subtle">
+                                    <strong>@user.DisplayName</strong>
+                                    <span class="text-muted ms-2">@user.Email</span>
+                                </li>
+                            }
+                        </ul>
+                    }
+                </div>
+            </td>
+        </tr>
     };
 
     private static string CategoryBadgeClass(string category) => category switch
@@ -400,4 +473,6 @@
         public required int UserCount { get; init; }
         public required bool IsProtected { get; init; }
     }
+
+    private sealed record RoleUserInfo(string DisplayName, string Email);
 }
