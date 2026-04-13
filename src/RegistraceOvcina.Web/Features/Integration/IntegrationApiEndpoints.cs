@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
@@ -38,6 +39,85 @@ public static class IntegrationApiEndpoints
 
             return Results.Ok(games);
         }).AllowAnonymous();
+
+        // GET /api/v1/games/{id}/info — full game info with parsed organization metadata
+        group.MapGet("/games/{id:int}/info", async (
+            int id,
+            IDbContextFactory<ApplicationDbContext> dbFactory,
+            CancellationToken ct) =>
+        {
+            await using var db = await dbFactory.CreateDbContextAsync(ct);
+
+            var game = await db.Games.AsNoTracking()
+                .Where(g => g.Id == id && g.IsPublished)
+                .FirstOrDefaultAsync(ct);
+
+            if (game is null)
+                return Results.NotFound();
+
+            // Parse OrganizationInfo JSON if present
+            JsonElement? orgInfo = null;
+            if (!string.IsNullOrWhiteSpace(game.OrganizationInfo))
+            {
+                try
+                {
+                    using var doc = JsonDocument.Parse(game.OrganizationInfo);
+                    orgInfo = doc.RootElement.Clone();
+                }
+                catch (JsonException)
+                {
+                    // Malformed JSON — return null
+                }
+            }
+
+            var totalRegistered = await db.Registrations.AsNoTracking()
+                .CountAsync(r => r.Submission.GameId == id
+                    && r.Submission.Status == SubmissionStatus.Submitted
+                    && r.Status == RegistrationStatus.Active
+                    && !r.Submission.IsDeleted, ct);
+
+            return Results.Ok(new GameInfoDto(
+                game.Id,
+                game.Name,
+                game.Description,
+                game.StartsAtUtc,
+                game.EndsAtUtc,
+                game.RegistrationClosesAtUtc,
+                game.TargetPlayerCountTotal,
+                totalRegistered,
+                game.IsPublished,
+                orgInfo));
+        }).AllowAnonymous();
+
+        // GET /api/v1/users/{email}/game-info?gameId=... — comprehensive user-in-game info
+        group.MapGet("/users/{email}/game-info", async (
+            string email,
+            int gameId,
+            IDbContextFactory<ApplicationDbContext> dbFactory,
+            UserEmailService userEmailService,
+            CancellationToken ct) =>
+        {
+            if (string.IsNullOrWhiteSpace(email))
+                return Results.BadRequest("email is required.");
+
+            var info = await LoadUserGameInfoAsync(email, gameId, dbFactory, userEmailService, ct);
+            return Results.Ok(info);
+        });
+
+        // GET /api/v1/users/{email}/lodging?gameId=... — lodging slice only
+        group.MapGet("/users/{email}/lodging", async (
+            string email,
+            int gameId,
+            IDbContextFactory<ApplicationDbContext> dbFactory,
+            UserEmailService userEmailService,
+            CancellationToken ct) =>
+        {
+            if (string.IsNullOrWhiteSpace(email))
+                return Results.BadRequest("email is required.");
+
+            var info = await LoadUserGameInfoAsync(email, gameId, dbFactory, userEmailService, ct);
+            return Results.Ok(info.Lodging);
+        });
 
         // GET /api/v1/games/{id}/registrations — active registrations for a game
         group.MapGet("/games/{id:int}/registrations", async (
@@ -262,6 +342,123 @@ public static class IntegrationApiEndpoints
         });
 
         return app;
+    }
+
+    private static async Task<UserGameInfoDto> LoadUserGameInfoAsync(
+        string email,
+        int gameId,
+        IDbContextFactory<ApplicationDbContext> dbFactory,
+        UserEmailService userEmailService,
+        CancellationToken ct)
+    {
+        var userId = await userEmailService.ResolveUserIdByEmailAsync(email, ct);
+        if (userId is null)
+        {
+            return new UserGameInfoDto(email, gameId, false, null, null, "unpaid", null, null, [], null, []);
+        }
+
+        await using var db = await dbFactory.CreateDbContextAsync(ct);
+
+        var submission = await db.RegistrationSubmissions.AsNoTracking()
+            .Where(s => s.RegistrantUserId == userId && s.GameId == gameId && !s.IsDeleted)
+            .OrderByDescending(s => s.SubmittedAtUtc ?? s.LastEditedAtUtc)
+            .FirstOrDefaultAsync(ct);
+
+        if (submission is null)
+        {
+            return new UserGameInfoDto(email, gameId, false, null, null, "unpaid", null, null, [], null, []);
+        }
+
+        // Load attendees with associated person + kingdom + room data
+        var attendees = await db.Registrations.AsNoTracking()
+            .Where(r => r.SubmissionId == submission.Id && r.Status == RegistrationStatus.Active)
+            .OrderBy(r => r.Person.LastName).ThenBy(r => r.Person.FirstName)
+            .Select(r => new
+            {
+                RegistrationId = r.Id,
+                r.PersonId,
+                r.Person.FirstName,
+                r.Person.LastName,
+                r.Person.BirthYear,
+                r.AttendeeType,
+                r.CharacterName,
+                r.PreferredKingdomId,
+                r.AssignedGameRoomId
+            })
+            .ToListAsync(ct);
+
+        var attendeeDtos = attendees.Select(a => new UserAttendeeDto(
+            a.PersonId,
+            a.FirstName,
+            a.LastName,
+            a.BirthYear,
+            a.AttendeeType.ToString(),
+            a.CharacterName,
+            a.PreferredKingdomId
+        )).ToList();
+
+        // Compute payment totals + status
+        var paid = await db.Payments.AsNoTracking()
+            .Where(p => p.SubmissionId == submission.Id)
+            .SumAsync(p => (decimal?)p.Amount, ct) ?? 0m;
+
+        var expected = submission.ExpectedTotalAmount;
+        string paymentStatus = expected > 0 && paid >= expected ? "paid"
+            : paid > 0 ? "partial"
+            : "unpaid";
+
+        // Resolve the registrant's own attendee record (by user's PersonId link)
+        var user = await db.Users.AsNoTracking()
+            .Where(u => u.Id == userId)
+            .Select(u => new { u.PersonId })
+            .FirstOrDefaultAsync(ct);
+        var selfPersonId = user?.PersonId;
+
+        var selfReg = attendees.FirstOrDefault(a => selfPersonId.HasValue && a.PersonId == selfPersonId.Value)
+            ?? attendees.FirstOrDefault(a => a.AttendeeType == AttendeeType.Adult)
+            ?? attendees.FirstOrDefault();
+
+        UserLodgingDto? lodging = null;
+        if (selfReg?.AssignedGameRoomId is int roomId)
+        {
+            var room = await db.GameRooms.AsNoTracking()
+                .Where(gr => gr.Id == roomId)
+                .Select(gr => new { gr.Id, RoomName = gr.Room.Name, gr.Capacity })
+                .FirstOrDefaultAsync(ct);
+
+            if (room is not null)
+            {
+                var roommates = await db.Registrations.AsNoTracking()
+                    .Where(r => r.AssignedGameRoomId == room.Id
+                        && r.Submission.GameId == gameId
+                        && r.Status == RegistrationStatus.Active
+                        && !r.Submission.IsDeleted
+                        && r.PersonId != selfReg.PersonId)
+                    .Select(r => r.Person.FirstName + " " + r.Person.LastName)
+                    .ToListAsync(ct);
+
+                lodging = new UserLodgingDto("Indoor", room.RoomName, room.Capacity, roommates);
+            }
+        }
+
+        // Game roles for this user in this game
+        var gameRoles = await db.GameRoles.AsNoTracking()
+            .Where(gr => gr.UserId == userId && gr.GameId == gameId)
+            .Select(gr => gr.RoleName)
+            .ToListAsync(ct);
+
+        return new UserGameInfoDto(
+            email,
+            gameId,
+            true,
+            submission.GroupName,
+            submission.SubmittedAtUtc,
+            paymentStatus,
+            expected,
+            paid,
+            attendeeDtos,
+            lodging,
+            gameRoles);
     }
 }
 

@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using System.Globalization;
+using System.Text.Json;
 using RegistraceOvcina.Web.Data;
 using RegistraceOvcina.Web.Infrastructure;
 
@@ -59,6 +60,9 @@ public sealed class CreateGameInput : IValidatableObject
     public int TargetPlayerCountTotal { get; set; } = 50;
 
     public bool IsPublished { get; set; } = true;
+
+    /// <summary>Free-form JSON blob exposing org info via API (parsed by bot).</summary>
+    public string? OrganizationInfo { get; set; }
 
     public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
     {
@@ -151,6 +155,26 @@ public sealed class CreateGameInput : IValidatableObject
                 "Uzávěrka jídel musí být nejpozději v okamžiku startu.",
                 [nameof(MealOrderingClosesAtLocalText)]);
         }
+
+        if (!string.IsNullOrWhiteSpace(OrganizationInfo) && !IsValidJson(OrganizationInfo))
+        {
+            yield return new ValidationResult(
+                "Organizační informace musí být platný JSON.",
+                [nameof(OrganizationInfo)]);
+        }
+    }
+
+    private static bool IsValidJson(string value)
+    {
+        try
+        {
+            using var _ = JsonDocument.Parse(value);
+            return true;
+        }
+        catch (JsonException)
+        {
+            return false;
+        }
     }
 
     public CreateGameCommand ToCommand() => new(
@@ -171,7 +195,8 @@ public sealed class CreateGameInput : IValidatableObject
         BankAccount,
         BankAccountName,
         TargetPlayerCountTotal,
-        IsPublished);
+        IsPublished,
+        OrganizationInfo);
 
     public static CreateGameInput FromGame(Game game)
     {
@@ -196,7 +221,8 @@ public sealed class CreateGameInput : IValidatableObject
             BankAccount = game.BankAccount,
             BankAccountName = game.BankAccountName,
             TargetPlayerCountTotal = game.TargetPlayerCountTotal,
-            IsPublished = game.IsPublished
+            IsPublished = game.IsPublished,
+            OrganizationInfo = game.OrganizationInfo
         };
     }
 
