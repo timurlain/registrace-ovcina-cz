@@ -196,16 +196,16 @@ public static class IntegrationApiEndpoints
             var userId = await userEmailService.ResolveUserIdByEmailAsync(email, ct);
 
             if (userId is null)
-                return Results.Ok(new { Exists = false, DisplayName = (string?)null, Roles = (List<string>?)null });
+                return Results.Ok(new { Exists = false, DisplayName = (string?)null, PersonId = (int?)null, Roles = (List<string>?)null });
 
             var user = await db.Users
                 .AsNoTracking()
                 .Where(u => u.Id == userId)
-                .Select(u => new { u.DisplayName, u.IsActive })
+                .Select(u => new { u.DisplayName, u.IsActive, u.PersonId })
                 .FirstOrDefaultAsync(ct);
 
             if (user is null || !user.IsActive)
-                return Results.Ok(new { Exists = false, DisplayName = (string?)null, Roles = (List<string>?)null });
+                return Results.Ok(new { Exists = false, DisplayName = (string?)null, PersonId = (int?)null, Roles = (List<string>?)null });
 
             var roles = await db.UserRoles
                 .AsNoTracking()
@@ -213,8 +213,31 @@ public static class IntegrationApiEndpoints
                 .Join(db.Roles, ur => ur.RoleId, r => r.Id, (ur, r) => r.Name!)
                 .ToListAsync(ct);
 
-            return Results.Ok(new { Exists = true, DisplayName = user.DisplayName, Roles = roles });
+            return Results.Ok(new { Exists = true, DisplayName = user.DisplayName, user.PersonId, Roles = roles });
         }).AllowAnonymous();
+
+        // GET /api/v1/users/{email}/person-id — quick email→personId resolver for hra/bot
+        group.MapGet("/users/{email}/person-id", async (
+            string email,
+            IDbContextFactory<ApplicationDbContext> dbFactory,
+            UserEmailService userEmailService,
+            CancellationToken ct) =>
+        {
+            if (string.IsNullOrWhiteSpace(email))
+                return Results.BadRequest("email is required.");
+
+            var userId = await userEmailService.ResolveUserIdByEmailAsync(email, ct);
+            if (userId is null) return Results.NotFound();
+
+            await using var db = await dbFactory.CreateDbContextAsync(ct);
+            var personId = await db.Users.AsNoTracking()
+                .Where(u => u.Id == userId)
+                .Select(u => u.PersonId)
+                .FirstOrDefaultAsync(ct);
+
+            if (personId is null) return Results.NotFound();
+            return Results.Ok(new { PersonId = personId.Value });
+        });
 
         // GET /api/v1/registrations/check?email=...&gameId=... — presence check
         group.MapGet("/registrations/check", async (
