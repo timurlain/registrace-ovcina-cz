@@ -98,6 +98,7 @@ else
             .Where(r => r.Submission.GameId == GameId
                 && r.Submission.Status == SubmissionStatus.Submitted
                 && r.Status == RegistrationStatus.Active
+                && r.AttendeeType == AttendeeType.Player
                 && !r.Submission.IsDeleted
                 && !r.Person.IsDeleted)
             .OrderBy(r => r.Person.LastName)
