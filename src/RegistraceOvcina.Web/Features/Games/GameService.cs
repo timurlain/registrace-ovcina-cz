@@ -114,6 +114,7 @@ public sealed class GameService(IDbContextFactory<ApplicationDbContext> dbContex
             VariableSymbolStrategy = VariableSymbolStrategy.PerSubmissionId,
             TargetPlayerCountTotal = command.TargetPlayerCountTotal,
             IsPublished = command.IsPublished,
+            OrganizationInfo = string.IsNullOrWhiteSpace(command.OrganizationInfo) ? null : command.OrganizationInfo,
             CreatedAtUtc = nowUtc,
             UpdatedAtUtc = nowUtc
         };
@@ -176,6 +177,7 @@ public sealed class GameService(IDbContextFactory<ApplicationDbContext> dbContex
         game.BankAccountName = command.BankAccountName.Trim();
         game.TargetPlayerCountTotal = command.TargetPlayerCountTotal;
         game.IsPublished = command.IsPublished;
+        game.OrganizationInfo = string.IsNullOrWhiteSpace(command.OrganizationInfo) ? null : command.OrganizationInfo;
         game.UpdatedAtUtc = nowUtc;
 
         await db.SaveChangesAsync(ct);
@@ -235,7 +237,8 @@ public sealed record CreateGameCommand(
     string BankAccount,
     string BankAccountName,
     int TargetPlayerCountTotal,
-    bool IsPublished);
+    bool IsPublished,
+    string? OrganizationInfo = null);
 
 public sealed record GameSummary(
     int Id,

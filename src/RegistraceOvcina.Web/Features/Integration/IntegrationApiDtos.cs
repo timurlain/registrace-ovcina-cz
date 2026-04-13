@@ -1,3 +1,5 @@
+using System.Text.Json;
+
 namespace RegistraceOvcina.Web.Features.Integration;
 
 /// <summary>Publicly safe game info — excludes payment/pricing fields.</summary>
@@ -33,6 +35,50 @@ public sealed record HasRoleDto(bool HasRole);
 
 /// <summary>Role assignment request body.</summary>
 public sealed record AssignRoleRequest(int GameId, string RoleName);
+
+/// <summary>Full game info including parsed organization metadata.</summary>
+public sealed record GameInfoDto(
+    int Id,
+    string Name,
+    string? Description,
+    DateTime StartsAtUtc,
+    DateTime EndsAtUtc,
+    DateTime RegistrationClosesAtUtc,
+    int TargetPlayerCountTotal,
+    int TotalRegistered,
+    bool IsPublished,
+    JsonElement? OrganizationInfo);
+
+/// <summary>Attendee (registration) entry for a user's game info response.</summary>
+public sealed record UserAttendeeDto(
+    int PersonId,
+    string FirstName,
+    string LastName,
+    int BirthYear,
+    string AttendeeType,
+    string? CharacterName,
+    int? PreferredKingdomId);
+
+/// <summary>Lodging assignment details for a user in a game.</summary>
+public sealed record UserLodgingDto(
+    string LodgingType,
+    string? RoomName,
+    int? RoomCapacity,
+    List<string> Roommates);
+
+/// <summary>Full user-in-game info: registration, payments, attendees, lodging, roles.</summary>
+public sealed record UserGameInfoDto(
+    string Email,
+    int GameId,
+    bool Registered,
+    string? GroupName,
+    DateTime? RegistrationDate,
+    string PaymentStatus,
+    decimal? ExpectedAmount,
+    decimal? PaidAmount,
+    List<UserAttendeeDto> Attendees,
+    UserLodgingDto? Lodging,
+    List<string> GameRoles);
 
 /// <summary>Character seed data for hra import.</summary>
 public sealed record CharacterSeedDto(

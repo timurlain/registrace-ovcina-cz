@@ -110,6 +110,12 @@
                         </div>
                     </div>
 
+                    <div class="mb-3 mt-3">
+                        <label class="form-label" for="organization-info">Organizační informace (JSON)</label>
+                        <textarea id="organization-info" name="@nameof(CreateGameInput.OrganizationInfo)" rows="10" class="form-control font-monospace" placeholder='{"location":"...","gatheringPoint":"...","whatToBring":[],"schedule":"...","organizerContact":"..."}'>@input.OrganizationInfo</textarea>
+                        <div class="form-text">Volný JSON blob pro bot integraci (místo konání, sraz, co s sebou, program, kontakt). Musí být platný JSON nebo prázdné.</div>
+                    </div>
+
                     <button type="submit" class="btn btn-primary mt-4 w-100" data-testid="create-game-submit">
                         @(editGameId.HasValue ? "Uložit změny" : "Uložit hru")
                     </button>

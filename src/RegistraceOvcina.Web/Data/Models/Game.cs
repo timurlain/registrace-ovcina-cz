@@ -22,6 +22,12 @@ public sealed class Game
     public VariableSymbolStrategy VariableSymbolStrategy { get; set; }
     public int TargetPlayerCountTotal { get; set; }
     public bool IsPublished { get; set; }
+
+    /// <summary>
+    /// Free-form JSON blob with organizational info (location, gathering point, what to bring,
+    /// schedule outline, organizer contact). Parsed by API endpoints into structured response.
+    /// </summary>
+    public string? OrganizationInfo { get; set; }
     public DateTime CreatedAtUtc { get; set; }
     public DateTime UpdatedAtUtc { get; set; }
     public List<GameKingdomTarget> KingdomTargets { get; set; } = [];
