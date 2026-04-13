@@ -457,7 +457,12 @@ public sealed class UserAdministrationService(IDbContextFactory<ApplicationDbCon
             }
         }
 
-        // 5. Copy PersonId if canonical doesn't have one
+        // 5. Transfer registration submissions
+        await db.RegistrationSubmissions
+            .Where(s => s.RegistrantUserId == duplicateUserId)
+            .ExecuteUpdateAsync(s => s.SetProperty(x => x.RegistrantUserId, canonicalUserId), ct);
+
+        // 6. Copy PersonId if canonical doesn't have one
         if (canonical.PersonId is null && duplicate.PersonId is not null)
         {
             canonical.PersonId = duplicate.PersonId;
