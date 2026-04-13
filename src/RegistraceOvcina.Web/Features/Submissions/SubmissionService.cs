@@ -73,7 +73,7 @@ public sealed class SubmissionService(
 
         if (game.RegistrationClosesAtUtc < nowUtc)
         {
-            throw new ValidationException("Registrace pro tuto hru už byla uzavřena.");
+            throw new ValidationException("Registrace pro tuto hru je již uzavřena. Jsme za kapacitou — pokud se chcete přihlásit jako náhradník, napište nám na ovcina@ovcina.cz.");
         }
 
         var submission = new RegistrationSubmission
@@ -918,7 +918,7 @@ public sealed class SubmissionService(
             throw new ValidationException("Tuto hru zatím nelze přihlašovat.");
 
         if (game.RegistrationClosesAtUtc < nowUtc)
-            throw new ValidationException("Registrace pro tuto hru už byla uzavřena.");
+            throw new ValidationException("Registrace pro tuto hru je již uzavřena. Jsme za kapacitou — pokud se chcete přihlásit jako náhradník, napište nám na ovcina@ovcina.cz.");
 
         var existingDraft = await db.RegistrationSubmissions
             .Where(x => x.GameId == targetGameId && x.RegistrantUserId == user.Id && !x.IsDeleted)
