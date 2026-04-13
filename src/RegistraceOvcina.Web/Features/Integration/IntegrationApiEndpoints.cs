@@ -153,6 +153,9 @@ public static class IntegrationApiEndpoints
         }).AllowAnonymous();
 
         // GET /api/v1/games/{id}/characters — character seeds for hra import
+        // Source of truth: Registrations table with the same filters as the QR stickers page.
+        // Only active player registrations are included. CharacterAppearance is joined
+        // for race/class/kingdom/level if it exists for this registration.
         group.MapGet("/games/{id:int}/characters", async (
             int id,
             IDbContextFactory<ApplicationDbContext> dbFactory,
@@ -160,22 +163,44 @@ public static class IntegrationApiEndpoints
         {
             await using var db = await dbFactory.CreateDbContextAsync(ct);
 
-            var characters = await db.CharacterAppearances
+            var characters = await db.Registrations
                 .AsNoTracking()
-                .Where(ca => ca.GameId == id && !ca.Character.IsDeleted)
-                .Select(ca => new CharacterSeedDto(
-                    ca.CharacterId,
-                    ca.Character.PersonId,
-                    ca.Character.Person.FirstName,
-                    ca.Character.Person.LastName,
-                    ca.Character.Person.BirthYear,
-                    ca.Character.Name,
-                    ca.Character.Race,
-                    ca.Character.ClassOrType,
-                    ca.AssignedKingdom != null ? ca.AssignedKingdom.Name : null,
-                    ca.AssignedKingdomId,
-                    ca.LevelReached,
-                    ca.ContinuityStatus.ToString()))
+                .Where(r => r.Submission.GameId == id
+                    && r.Submission.Status == SubmissionStatus.Submitted
+                    && r.Status == RegistrationStatus.Active
+                    && r.AttendeeType == AttendeeType.Player
+                    && !r.Submission.IsDeleted
+                    && !r.Person.IsDeleted)
+                .Select(r => new
+                {
+                    Registration = r,
+                    Appearance = db.CharacterAppearances
+                        .Where(ca => ca.RegistrationId == r.Id && !ca.Character.IsDeleted)
+                        .Select(ca => new
+                        {
+                            ca.CharacterId,
+                            ca.Character.Race,
+                            ca.Character.ClassOrType,
+                            KingdomName = ca.AssignedKingdom != null ? ca.AssignedKingdom.Name : null,
+                            ca.AssignedKingdomId,
+                            ca.LevelReached,
+                            ContinuityStatus = ca.ContinuityStatus.ToString()
+                        })
+                        .FirstOrDefault()
+                })
+                .Select(x => new CharacterSeedDto(
+                    x.Appearance != null ? x.Appearance.CharacterId : 0,
+                    x.Registration.PersonId,
+                    x.Registration.Person.FirstName,
+                    x.Registration.Person.LastName,
+                    x.Registration.Person.BirthYear,
+                    x.Registration.CharacterName ?? (x.Registration.Person.FirstName + " " + x.Registration.Person.LastName),
+                    x.Appearance != null ? x.Appearance.Race : null,
+                    x.Appearance != null ? x.Appearance.ClassOrType : null,
+                    x.Appearance != null ? x.Appearance.KingdomName : null,
+                    x.Appearance != null ? x.Appearance.AssignedKingdomId : null,
+                    x.Appearance != null ? x.Appearance.LevelReached : null,
+                    x.Appearance != null ? x.Appearance.ContinuityStatus : "Unknown"))
                 .ToListAsync(ct);
 
             return Results.Ok(characters);
