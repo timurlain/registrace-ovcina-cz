@@ -161,6 +161,19 @@ public sealed class GameStatsService(IDbContextFactory<ApplicationDbContext> dbC
         var unpaidSubmissionCount = submittedSubmissions
             .Count(x => x.Payments.Sum(p => p.Amount) < x.ExpectedTotalAmount && x.ExpectedTotalAmount > 0);
 
+        // Named donor breakdown, sorted largest-first. Only submissions with an
+        // actual voluntary contribution are included.
+        var donors = submittedSubmissions
+            .Where(x => x.VoluntaryDonation > 0m)
+            .OrderByDescending(x => x.VoluntaryDonation)
+            .ThenBy(x => x.PrimaryContactName, StringComparer.CurrentCulture)
+            .Select(x => new DonorEntry(
+                x.Id,
+                string.IsNullOrWhiteSpace(x.PrimaryContactName) ? "(bez jména)" : x.PrimaryContactName,
+                x.PrimaryEmail,
+                x.VoluntaryDonation))
+            .ToList();
+
         // --- Food / Meals ---
         var allFoodOrders = registrations.SelectMany(x => x.FoodOrders).ToList();
         var meals = allFoodOrders
@@ -214,6 +227,7 @@ public sealed class GameStatsService(IDbContextFactory<ApplicationDbContext> dbC
             ExpectedTotal = expectedTotal,
             PaidTotal = paidTotal,
             DonationTotal = donationTotal,
+            Donors = donors,
             UnpaidSubmissionCount = unpaidSubmissionCount,
             Meals = meals,
             IndoorWithoutRoom = indoorWithoutRoom,
@@ -291,6 +305,7 @@ public sealed class GameStats
     public decimal ExpectedTotal { get; set; }
     public decimal PaidTotal { get; set; }
     public decimal DonationTotal { get; set; }
+    public List<DonorEntry> Donors { get; set; } = [];
     public int UnpaidSubmissionCount { get; set; }
 
     // Food
@@ -305,3 +320,4 @@ public sealed record AgeBracket(string Label, int Count, int MaxCount);
 public sealed record RoomOccupancy(string RoomName, int Assigned, int Capacity);
 public sealed record KingdomStat(string Name, string? Color, int Assigned, int Target, double AverageAge);
 public sealed record MealStat(string Day, string MealName, int ChildCount, int AdultCount);
+public sealed record DonorEntry(int SubmissionId, string ContactName, string? ContactEmail, decimal Amount);

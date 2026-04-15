@@ -3,6 +3,7 @@
 
 @inject PaymentService PaymentService
 @inject OrganizerSubmissionService OrganizerSubmissionService
+@inject NavigationManager Nav
 
 <PageTitle>Přehled plateb</PageTitle>
 
@@ -32,6 +33,20 @@
                 <option value="@((int)BalanceStatus.Balanced)" selected="@(selectedBalanceStatus == (int)BalanceStatus.Balanced)">Vyrovnáno</option>
                 <option value="@((int)BalanceStatus.Overpaid)" selected="@(selectedBalanceStatus == (int)BalanceStatus.Overpaid)">Přeplatek</option>
             </select>
+            <label class="form-label mb-0 text-nowrap" for="group-mode">Seskupit</label>
+            <select id="group-mode" name="group" class="form-select form-select-sm" style="min-width: 140px;" onchange="this.form.submit()">
+                <option value="" selected="@(string.IsNullOrEmpty(group))">Bez seskupení</option>
+                <option value="stav" selected="@(group == "stav")">Podle stavu</option>
+            </select>
+            @* Preserve current sort across filter changes *@
+            @if (!string.IsNullOrEmpty(sort))
+            {
+                <input type="hidden" name="sort" value="@sort" />
+            }
+            @if (!string.IsNullOrEmpty(dir))
+            {
+                <input type="hidden" name="dir" value="@dir" />
+            }
         </form>
     </div>
 </div>
@@ -50,18 +65,31 @@ else
         <table class="table align-middle">
             <thead>
                 <tr>
-                    <th>VS</th>
-                    <th>Kontakt</th>
+                    <th><a class="text-decoration-none text-body" href="@BuildSortLink("vs")">VS @RenderSortIndicator("vs")</a></th>
+                    <th><a class="text-decoration-none text-body" href="@BuildSortLink("kontakt")">Kontakt @RenderSortIndicator("kontakt")</a></th>
                     <th>Hra</th>
-                    <th class="text-end">Celkem</th>
-                    <th class="text-end">Uhrazeno</th>
-                    <th>Stav</th>
+                    <th class="text-end"><a class="text-decoration-none text-body" href="@BuildSortLink("celkem")">Celkem @RenderSortIndicator("celkem")</a></th>
+                    <th class="text-end"><a class="text-decoration-none text-body" href="@BuildSortLink("uhrazeno")">Uhrazeno @RenderSortIndicator("uhrazeno")</a></th>
+                    <th><a class="text-decoration-none text-body" href="@BuildSortLink("stav")">Stav @RenderSortIndicator("stav")</a></th>
                     <th>Akce</th>
                 </tr>
             </thead>
             <tbody>
+                @{
+                    BalanceStatus? currentGroup = null;
+                }
                 @foreach (var item in items)
                 {
+                    @if (group == "stav" && currentGroup != item.BalanceStatus)
+                    {
+                        currentGroup = item.BalanceStatus;
+                        <tr class="table-light">
+                            <td colspan="7" class="fw-semibold">
+                                <span class="badge @GetBalanceBadgeClass(item.BalanceStatus) me-2">@GetBalanceLabel(item.BalanceStatus)</span>
+                                <span class="text-muted small">@GetGroupCount(item.BalanceStatus) přihlášek · Celkem @GetGroupSum(item.BalanceStatus).ToString("N0") Kč</span>
+                            </td>
+                        </tr>
+                    }
                     <tr data-testid="@($"payment-row-{item.SubmissionId}")">
                         <td>@(item.VariableSymbol ?? "—")</td>
                         <td>
@@ -226,6 +254,15 @@ else
     [SupplyParameterFromQuery(Name = "balanceStatus")]
     private int? selectedBalanceStatus { get; set; }
 
+    [SupplyParameterFromQuery(Name = "sort")]
+    private string? sort { get; set; }
+
+    [SupplyParameterFromQuery(Name = "dir")]
+    private string? dir { get; set; }
+
+    [SupplyParameterFromQuery(Name = "group")]
+    private string? group { get; set; }
+
     [SupplyParameterFromQuery(Name = "recorded")]
     private int? recorded { get; set; }
 
@@ -250,20 +287,123 @@ else
             errorMessage = errorParam;
         }
 
+        gameFilters = await OrganizerSubmissionService.GetGameFilterListAsync();
+        await LoadAsync();
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        // Enhanced navigation changes query params without re-running OnInitializedAsync,
+        // so we reload on parameter-set once the initial game-filter list is available.
+        if (gameFilters is not null)
+        {
+            await LoadAsync();
+        }
+    }
+
+    private async Task LoadAsync()
+    {
         BalanceStatus? balanceFilter = selectedBalanceStatus.HasValue
             ? (BalanceStatus)selectedBalanceStatus.Value
             : null;
 
-        gameFilters = await OrganizerSubmissionService.GetGameFilterListAsync();
-
         // Default to the most recent game when no filter is selected
-        if (!selectedGameId.HasValue && gameFilters.Count > 0)
+        if (!selectedGameId.HasValue && gameFilters!.Count > 0)
         {
             selectedGameId = gameFilters[0].Id;
         }
 
-        items = await PaymentService.GetPaymentOverviewAsync(selectedGameId, balanceFilter);
+        var raw = await PaymentService.GetPaymentOverviewAsync(selectedGameId, balanceFilter);
+        items = ApplySortAndGrouping(raw, EffectiveSort, EffectiveDir, group);
     }
+
+    // When the URL has no explicit sort, we still want VS-asc to be "active" for the
+    // indicator and first-click toggle logic — otherwise clicking VS would keep asc
+    // instead of flipping to desc.
+    private string EffectiveSort => string.IsNullOrEmpty(sort) ? "vs" : sort!;
+    private string EffectiveDir => string.IsNullOrEmpty(dir) ? "asc" : dir!;
+
+    private static IReadOnlyList<PaymentOverviewItem> ApplySortAndGrouping(
+        IReadOnlyList<PaymentOverviewItem> source,
+        string? sort,
+        string? dir,
+        string? group)
+    {
+        var desc = string.Equals(dir, "desc", StringComparison.OrdinalIgnoreCase);
+
+        // Primary sort key: the user's column choice. VS is the default.
+        Func<IEnumerable<PaymentOverviewItem>, IOrderedEnumerable<PaymentOverviewItem>> orderBy = sort switch
+        {
+            "kontakt" => src => desc
+                ? src.OrderByDescending(x => x.ContactName, StringComparer.CurrentCultureIgnoreCase)
+                : src.OrderBy(x => x.ContactName, StringComparer.CurrentCultureIgnoreCase),
+            "celkem" => src => desc
+                ? src.OrderByDescending(x => x.ExpectedTotal)
+                : src.OrderBy(x => x.ExpectedTotal),
+            "uhrazeno" => src => desc
+                ? src.OrderByDescending(x => x.PaidAmount)
+                : src.OrderBy(x => x.PaidAmount),
+            "stav" => src => desc
+                ? src.OrderByDescending(x => x.BalanceStatus)
+                : src.OrderBy(x => x.BalanceStatus),
+            _ /* "vs" or default */ => src => desc
+                ? src.OrderByDescending(x => x.VariableSymbol, StringComparer.Ordinal)
+                : src.OrderBy(x => x.VariableSymbol, StringComparer.Ordinal),
+        };
+
+        // When grouping by state, sort by state first so rows with the same state
+        // land next to each other, then apply the user's chosen sort inside each group.
+        IEnumerable<PaymentOverviewItem> result;
+        if (group == "stav")
+        {
+            result = source
+                .GroupBy(x => x.BalanceStatus)
+                .OrderBy(g => g.Key)
+                .SelectMany(g => orderBy(g));
+        }
+        else
+        {
+            result = orderBy(source);
+        }
+
+        return result.ToList();
+    }
+
+    private string BuildSortLink(string field)
+    {
+        // Toggle direction if the user is clicking the currently active column;
+        // otherwise default to ascending. Uses the effective sort so the default
+        // VS column correctly flips to desc on first click.
+        var nextDir = (EffectiveSort == field && EffectiveDir == "asc") ? "desc" : "asc";
+
+        // Build the URL from a clean base path and only forward durable filters,
+        // dropping transient parameters like recorded/error so they don't stick
+        // in the URL after a header click.
+        var parameters = new Dictionary<string, object?>
+        {
+            ["sort"] = field,
+            ["dir"] = nextDir,
+            ["gameId"] = selectedGameId,
+            ["balanceStatus"] = selectedBalanceStatus,
+            ["group"] = string.IsNullOrEmpty(group) ? null : group
+        };
+        var query = string.Join("&", parameters
+            .Where(kvp => kvp.Value is not null)
+            .Select(kvp => $"{Uri.EscapeDataString(kvp.Key)}={Uri.EscapeDataString(kvp.Value!.ToString()!)}"));
+        return $"/organizace/platby?{query}";
+    }
+
+    private MarkupString RenderSortIndicator(string field)
+    {
+        if (EffectiveSort != field) return new MarkupString("");
+        return new MarkupString(EffectiveDir == "desc" ? "&#x25BC;" : "&#x25B2;");
+    }
+
+    private int GetGroupCount(BalanceStatus status)
+        => items?.Count(x => x.BalanceStatus == status) ?? 0;
+
+    private decimal GetGroupSum(BalanceStatus status)
+        => items?.Where(x => x.BalanceStatus == status).Sum(x => x.ExpectedTotal) ?? 0m;
 
     private void ExpandForm(int submissionId) => expandedSubmissionId = submissionId;
 
