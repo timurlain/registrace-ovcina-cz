@@ -181,6 +181,22 @@ public static class IntegrationApiEndpoints
             return Results.Ok(characters);
         }).AllowAnonymous();
 
+        // GET /api/v1/games/{id}/adults — active adult attendees with email + game roles
+        group.MapGet("/games/{id:int}/adults", async (
+            int id,
+            IDbContextFactory<ApplicationDbContext> dbFactory,
+            CancellationToken ct) =>
+        {
+            await using var db = await dbFactory.CreateDbContextAsync(ct);
+
+            var gameExists = await db.Games.AsNoTracking().AnyAsync(g => g.Id == id, ct);
+            if (!gameExists)
+                return Results.NotFound();
+
+            var adults = await LoadAdultsAsync(db, id, ct);
+            return Results.Ok(adults);
+        });
+
         // GET /api/v1/users/by-email?email=... — user existence check for OvčinaHra auth
         group.MapGet("/users/by-email", async (
             string email,
@@ -365,6 +381,71 @@ public static class IntegrationApiEndpoints
         });
 
         return app;
+    }
+
+    /// <summary>
+    /// Loads the distinct adult attendees for a game (active registrations on submitted,
+    /// non-deleted submissions) together with their email and any game-role assignments.
+    /// Factored out of the endpoint lambda so it can be unit-tested against an in-memory DB.
+    /// </summary>
+    internal static async Task<List<AdultDto>> LoadAdultsAsync(
+        ApplicationDbContext db,
+        int gameId,
+        CancellationToken ct)
+    {
+        var adults = await db.Registrations
+            .AsNoTracking()
+            .Where(r =>
+                r.Submission.GameId == gameId &&
+                r.Submission.Status == SubmissionStatus.Submitted &&
+                r.Status == RegistrationStatus.Active &&
+                !r.Submission.IsDeleted &&
+                r.AttendeeType == AttendeeType.Adult)
+            .Select(r => new
+            {
+                r.PersonId,
+                r.Person.FirstName,
+                r.Person.LastName,
+                r.Person.BirthYear,
+                r.Person.Email
+            })
+            .ToListAsync(ct);
+
+        // An adult may appear in several submissions — collapse to one row per PersonId,
+        // keeping the first email we see (Person.Email is already the canonical contact).
+        var distinctAdults = adults
+            .GroupBy(a => a.PersonId)
+            .Select(g => g.First())
+            .ToList();
+
+        if (distinctAdults.Count == 0)
+            return [];
+
+        var personIds = distinctAdults.Select(a => a.PersonId).ToList();
+
+        var roleRows = await db.GameRoles
+            .AsNoTracking()
+            .Where(gr => gr.GameId == gameId && gr.User.PersonId != null && personIds.Contains(gr.User.PersonId!.Value))
+            .Select(gr => new { PersonId = gr.User.PersonId!.Value, gr.RoleName })
+            .ToListAsync(ct);
+
+        var rolesByPerson = roleRows
+            .GroupBy(x => x.PersonId)
+            .ToDictionary(
+                g => g.Key,
+                g => g.Select(x => x.RoleName).Distinct(StringComparer.Ordinal).OrderBy(n => n, StringComparer.Ordinal).ToList());
+
+        return distinctAdults
+            .OrderBy(a => a.LastName, StringComparer.Ordinal)
+            .ThenBy(a => a.FirstName, StringComparer.Ordinal)
+            .Select(a => new AdultDto(
+                a.PersonId,
+                a.FirstName,
+                a.LastName,
+                a.BirthYear,
+                a.Email,
+                rolesByPerson.TryGetValue(a.PersonId, out var roles) ? roles : []))
+            .ToList();
     }
 
     private static async Task<UserGameInfoDto> LoadUserGameInfoAsync(

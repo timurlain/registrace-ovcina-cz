@@ -80,6 +80,15 @@ public sealed record UserGameInfoDto(
     UserLodgingDto? Lodging,
     List<string> GameRoles);
 
+/// <summary>Adult registered for a game, with optional game-role assignments.</summary>
+public sealed record AdultDto(
+    int PersonId,
+    string FirstName,
+    string LastName,
+    int BirthYear,
+    string? Email,
+    List<string> Roles);
+
 /// <summary>Character seed data for hra import.</summary>
 public sealed record CharacterSeedDto(
     int CharacterId,
