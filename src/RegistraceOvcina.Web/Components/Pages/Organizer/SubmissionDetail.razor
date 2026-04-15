@@ -15,8 +15,13 @@ else
         <a href="/organizace/prihlasky" class="text-decoration-none">&larr; Zpět na přihlášky</a>
     </div>
 
-    <h1 class="h3 mb-1">Přihláška #@detail.Id</h1>
-    <p class="text-secondary mb-4">@detail.GameName</p>
+    <div class="d-flex justify-content-between align-items-start mb-4 flex-wrap gap-2">
+        <div>
+            <h1 class="h3 mb-1">Přihláška #@detail.Id</h1>
+            <p class="text-secondary mb-0">@detail.GameName</p>
+        </div>
+        <a href="/prihlasky/@detail.Id" class="btn btn-primary">Upravit přihlášku</a>
+    </div>
 
     @if (!string.IsNullOrWhiteSpace(statusMessage))
     {

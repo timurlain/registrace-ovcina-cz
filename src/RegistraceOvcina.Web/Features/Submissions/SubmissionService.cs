@@ -108,6 +108,7 @@ public sealed class SubmissionService(
     public async Task<SubmissionEditorViewModel?> GetSubmissionAsync(
         int submissionId,
         string userId,
+        bool isStaff = false,
         CancellationToken cancellationToken = default)
     {
         await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
@@ -121,7 +122,7 @@ public sealed class SubmissionService(
             .Include(x => x.Registrations)
                 .ThenInclude(x => x.FoodOrders)
             .Include(x => x.Payments)
-            .FirstOrDefaultAsync(x => x.Id == submissionId && x.RegistrantUserId == userId, cancellationToken);
+            .FirstOrDefaultAsync(x => x.Id == submissionId && (isStaff || x.RegistrantUserId == userId), cancellationToken);
 
         if (submission is null)
         {
@@ -174,10 +175,16 @@ public sealed class SubmissionService(
             RegistrationClosesAtUtc = submission.Game.RegistrationClosesAtUtc,
             MealOrderingClosesAtUtc = submission.Game.MealOrderingClosesAtUtc,
             PaymentDueAtUtc = submission.Game.PaymentDueAtUtc,
+            // Staff (Admin/Organizer) can keep editing attendee details, food and
+            // lodging after the deadline has passed; CanAddAttendees stays gated by
+            // the real deadline so nobody (user or staff) can grow the submission.
             CanEditRegistration = submission.Status != SubmissionStatus.Cancelled
-                && nowUtc <= submission.Game.RegistrationClosesAtUtc,
+                && (isStaff || nowUtc <= submission.Game.RegistrationClosesAtUtc),
             CanEditMeals = submission.Status != SubmissionStatus.Cancelled
-                && nowUtc <= submission.Game.MealOrderingClosesAtUtc,
+                && (isStaff || nowUtc <= submission.Game.MealOrderingClosesAtUtc),
+            CanAddAttendees = submission.Status != SubmissionStatus.Cancelled
+                && nowUtc <= submission.Game.RegistrationClosesAtUtc,
+            IsStaffView = isStaff && submission.RegistrantUserId != userId,
             BankAccount = submission.Game.BankAccount,
             BankAccountName = submission.Game.BankAccountName,
             LodgingIndoorPrice = submission.Game.LodgingIndoorPrice,
@@ -232,13 +239,14 @@ public sealed class SubmissionService(
         int submissionId,
         string userId,
         ContactInput input,
+        bool isStaff = false,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(input);
 
         await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
         var submission = await db.RegistrationSubmissions
-            .FirstOrDefaultAsync(x => x.Id == submissionId && x.RegistrantUserId == userId, cancellationToken)
+            .FirstOrDefaultAsync(x => x.Id == submissionId && (isStaff || x.RegistrantUserId == userId), cancellationToken)
             ?? throw new ValidationException("Přihláška nebyla nalezena.");
         EnsureEditable(submission);
 
@@ -264,6 +272,7 @@ public sealed class SubmissionService(
         int submissionId,
         string userId,
         decimal amount,
+        bool isStaff = false,
         CancellationToken cancellationToken = default)
     {
         await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
@@ -272,7 +281,7 @@ public sealed class SubmissionService(
             .Include(x => x.Registrations).ThenInclude(r => r.Person)
             .Include(x => x.Registrations).ThenInclude(r => r.FoodOrders)
             .AsSplitQuery()
-            .FirstOrDefaultAsync(x => x.Id == submissionId && x.RegistrantUserId == userId, cancellationToken)
+            .FirstOrDefaultAsync(x => x.Id == submissionId && (isStaff || x.RegistrantUserId == userId), cancellationToken)
             ?? throw new ValidationException("Přihláška nebyla nalezena.");
         EnsureEditable(submission);
 
@@ -288,9 +297,15 @@ public sealed class SubmissionService(
         int submissionId,
         string userId,
         AttendeeInput input,
+        bool isStaff = false,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(input);
+
+        // NOTE: isStaff only bypasses the owner filter so staff can add an attendee
+        // to someone else's submission while registration is still open. It does
+        // NOT bypass the deadline — EnsureRegistrationOpen is called without
+        // isStaff so adding new people is blocked for everyone after the deadline.
 
         await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
         var submission = await db.RegistrationSubmissions
@@ -300,7 +315,7 @@ public sealed class SubmissionService(
                 .ThenInclude(x => x.Person)
             .Include(x => x.Registrations)
                 .ThenInclude(x => x.FoodOrders)
-            .FirstOrDefaultAsync(x => x.Id == submissionId && x.RegistrantUserId == userId, cancellationToken)
+            .FirstOrDefaultAsync(x => x.Id == submissionId && (isStaff || x.RegistrantUserId == userId), cancellationToken)
             ?? throw new ValidationException("Přihláška nebyla nalezena.");
 
         EnsureRegistrationOpen(submission);
@@ -461,6 +476,7 @@ public sealed class SubmissionService(
         int registrationId,
         string userId,
         AttendeeInput input,
+        bool isStaff = false,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(input);
@@ -473,9 +489,9 @@ public sealed class SubmissionService(
                 .ThenInclude(x => x.Person)
             .Include(x => x.Registrations)
                 .ThenInclude(x => x.FoodOrders)
-            .FirstOrDefaultAsync(x => x.Id == submissionId && x.RegistrantUserId == userId, cancellationToken)
+            .FirstOrDefaultAsync(x => x.Id == submissionId && (isStaff || x.RegistrantUserId == userId), cancellationToken)
             ?? throw new ValidationException("Přihláška nebyla nalezena.");
-        EnsureRegistrationOpen(submission);
+        EnsureRegistrationOpen(submission, isStaff);
 
         var registration = await db.Registrations
             .Include(x => x.Person)
@@ -596,6 +612,7 @@ public sealed class SubmissionService(
         int submissionId,
         int registrationId,
         string userId,
+        bool isStaff = false,
         CancellationToken cancellationToken = default)
     {
         await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
@@ -605,9 +622,11 @@ public sealed class SubmissionService(
                 .ThenInclude(x => x.Person)
             .Include(x => x.Registrations)
                 .ThenInclude(x => x.FoodOrders)
-            .FirstOrDefaultAsync(x => x.Id == submissionId && x.RegistrantUserId == userId, cancellationToken)
+            .FirstOrDefaultAsync(x => x.Id == submissionId && (isStaff || x.RegistrantUserId == userId), cancellationToken)
             ?? throw new ValidationException("Přihláška nebyla nalezena.");
-        EnsureRegistrationOpen(submission);
+        // Staff may remove attendees after the deadline (e.g. no-show clean up)
+        // even though no-one can add new people past the deadline.
+        EnsureRegistrationOpen(submission, isStaff);
 
         var registration = await db.Registrations
             .Include(x => x.Person)
@@ -634,16 +653,17 @@ public sealed class SubmissionService(
         int submissionId,
         string userId,
         List<FoodOrderInput> orders,
+        bool isStaff = false,
         CancellationToken cancellationToken = default)
     {
         await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
         var submission = await db.RegistrationSubmissions
             .Include(x => x.Registrations).ThenInclude(x => x.FoodOrders)
             .Include(x => x.Game).ThenInclude(x => x.MealOptions)
-            .FirstOrDefaultAsync(x => x.Id == submissionId && x.RegistrantUserId == userId, cancellationToken)
+            .FirstOrDefaultAsync(x => x.Id == submissionId && (isStaff || x.RegistrantUserId == userId), cancellationToken)
             ?? throw new ValidationException("Přihláška nebyla nalezena.");
 
-        EnsureMealOrderingOpen(submission);
+        EnsureMealOrderingOpen(submission, isStaff);
 
         var validRegistrationIds = submission.Registrations.Select(x => x.Id).ToHashSet();
         var validMealOptionIds = submission.Game.MealOptions.Where(x => x.IsActive).ToDictionary(x => x.Id);
@@ -828,17 +848,23 @@ public sealed class SubmissionService(
             throw new ValidationException("Zrušená přihláška nelze upravovat.");
     }
 
-    private void EnsureRegistrationOpen(RegistrationSubmission submission)
+    private void EnsureRegistrationOpen(RegistrationSubmission submission, bool isStaff = false)
     {
         EnsureEditable(submission);
+        // Staff (Admin/Organizer) can edit attendee data after the deadline has passed —
+        // they are explicitly allowed to adjust food, lodging, preferences etc. on
+        // behalf of registrants. Adding and removing attendees is still blocked for
+        // everyone once the deadline passes; those methods do not pass isStaff=true.
+        if (isStaff) return;
         var now = timeProvider.GetUtcNow().UtcDateTime;
         if (now > submission.Game.RegistrationClosesAtUtc)
             throw new ValidationException("Registrace pro tuto hru je už uzavřená.");
     }
 
-    private void EnsureMealOrderingOpen(RegistrationSubmission submission)
+    private void EnsureMealOrderingOpen(RegistrationSubmission submission, bool isStaff = false)
     {
         EnsureEditable(submission);
+        if (isStaff) return;
         var now = timeProvider.GetUtcNow().UtcDateTime;
         if (now > submission.Game.MealOrderingClosesAtUtc)
             throw new ValidationException("Objednávání jídel pro tuto hru je už uzavřené.");
@@ -1042,6 +1068,17 @@ public sealed class SubmissionEditorViewModel
     public DateTime PaymentDueAtUtc { get; init; }
     public bool CanEditRegistration { get; init; }
     public bool CanEditMeals { get; init; }
+    /// <summary>
+    /// True only while the game registration deadline has not passed. Used to
+    /// gate the "add attendee" UI — staff cannot add new people after the
+    /// deadline even when they can still edit the existing ones.
+    /// </summary>
+    public bool CanAddAttendees { get; init; }
+    /// <summary>
+    /// True when the editor was opened by a staff user acting on behalf of
+    /// another registrant. The UI can show a "viewing as organizer" banner.
+    /// </summary>
+    public bool IsStaffView { get; init; }
     public string BankAccount { get; init; } = "";
     public string BankAccountName { get; init; } = "";
     public decimal LodgingIndoorPrice { get; init; }
