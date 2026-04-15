@@ -288,6 +288,44 @@ else
                             </tr>
                         </tbody>
                     </table>
+
+                    @if (stats.Donors.Count > 0)
+                    {
+                        <hr class="my-3" />
+                        <h6 class="mb-2 text-muted">Dobrovolné příspěvky — přehled</h6>
+                        <div class="table-responsive">
+                            <table class="table table-sm mb-0">
+                                <thead>
+                                    <tr>
+                                        <th>Kontakt</th>
+                                        <th class="text-end">Částka</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var donor in stats.Donors)
+                                    {
+                                        <tr>
+                                            <td>
+                                                <a href="/organizace/prihlasky/@donor.SubmissionId" class="text-decoration-none">@donor.ContactName</a>
+                                                @if (!string.IsNullOrWhiteSpace(donor.ContactEmail))
+                                                {
+                                                    <br />
+                                                    <small class="text-secondary">@donor.ContactEmail</small>
+                                                }
+                                            </td>
+                                            <td class="text-end fw-semibold">@donor.Amount.ToString("N0") Kč</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                                <tfoot>
+                                    <tr class="fw-semibold border-top">
+                                        <td>Celkem</td>
+                                        <td class="text-end">@stats.DonationTotal.ToString("N0") Kč</td>
+                                    </tr>
+                                </tfoot>
+                            </table>
+                        </div>
+                    }
                 </div>
             </div>
         </div>
