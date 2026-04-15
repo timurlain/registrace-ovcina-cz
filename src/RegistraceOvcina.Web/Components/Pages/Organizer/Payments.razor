@@ -287,21 +287,41 @@ else
             errorMessage = errorParam;
         }
 
+        gameFilters = await OrganizerSubmissionService.GetGameFilterListAsync();
+        await LoadAsync();
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        // Enhanced navigation changes query params without re-running OnInitializedAsync,
+        // so we reload on parameter-set once the initial game-filter list is available.
+        if (gameFilters is not null)
+        {
+            await LoadAsync();
+        }
+    }
+
+    private async Task LoadAsync()
+    {
         BalanceStatus? balanceFilter = selectedBalanceStatus.HasValue
             ? (BalanceStatus)selectedBalanceStatus.Value
             : null;
 
-        gameFilters = await OrganizerSubmissionService.GetGameFilterListAsync();
-
         // Default to the most recent game when no filter is selected
-        if (!selectedGameId.HasValue && gameFilters.Count > 0)
+        if (!selectedGameId.HasValue && gameFilters!.Count > 0)
         {
             selectedGameId = gameFilters[0].Id;
         }
 
         var raw = await PaymentService.GetPaymentOverviewAsync(selectedGameId, balanceFilter);
-        items = ApplySortAndGrouping(raw, sort, dir, group);
+        items = ApplySortAndGrouping(raw, EffectiveSort, EffectiveDir, group);
     }
+
+    // When the URL has no explicit sort, we still want VS-asc to be "active" for the
+    // indicator and first-click toggle logic — otherwise clicking VS would keep asc
+    // instead of flipping to desc.
+    private string EffectiveSort => string.IsNullOrEmpty(sort) ? "vs" : sort!;
+    private string EffectiveDir => string.IsNullOrEmpty(dir) ? "asc" : dir!;
 
     private static IReadOnlyList<PaymentOverviewItem> ApplySortAndGrouping(
         IReadOnlyList<PaymentOverviewItem> source,
@@ -352,19 +372,31 @@ else
     private string BuildSortLink(string field)
     {
         // Toggle direction if the user is clicking the currently active column;
-        // otherwise default to ascending.
-        var nextDir = (sort == field && dir == "asc") ? "desc" : "asc";
-        return Nav.GetUriWithQueryParameters(new Dictionary<string, object?>
+        // otherwise default to ascending. Uses the effective sort so the default
+        // VS column correctly flips to desc on first click.
+        var nextDir = (EffectiveSort == field && EffectiveDir == "asc") ? "desc" : "asc";
+
+        // Build the URL from a clean base path and only forward durable filters,
+        // dropping transient parameters like recorded/error so they don't stick
+        // in the URL after a header click.
+        var parameters = new Dictionary<string, object?>
         {
             ["sort"] = field,
-            ["dir"] = nextDir
-        });
+            ["dir"] = nextDir,
+            ["gameId"] = selectedGameId,
+            ["balanceStatus"] = selectedBalanceStatus,
+            ["group"] = string.IsNullOrEmpty(group) ? null : group
+        };
+        var query = string.Join("&", parameters
+            .Where(kvp => kvp.Value is not null)
+            .Select(kvp => $"{Uri.EscapeDataString(kvp.Key)}={Uri.EscapeDataString(kvp.Value!.ToString()!)}"));
+        return $"/organizace/platby?{query}";
     }
 
     private MarkupString RenderSortIndicator(string field)
     {
-        if (sort != field) return new MarkupString("");
-        return new MarkupString(dir == "desc" ? "&#x25BC;" : "&#x25B2;");
+        if (EffectiveSort != field) return new MarkupString("");
+        return new MarkupString(EffectiveDir == "desc" ? "&#x25BC;" : "&#x25B2;");
     }
 
     private int GetGroupCount(BalanceStatus status)
