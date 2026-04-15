@@ -158,8 +158,10 @@ public sealed class AdultsEndpointTests
         var game = CreateGame(1);
         var otherGame = CreateGame(2);
 
-        // Registrants (parents/organizers) — all adults
-        var jana = CreatePerson(10, "Jana", "Nováková", 1987, "jana@example.cz");
+        // Registrants (parents/organizers) — all adults.
+        // Jana's Person.Email is intentionally null so the assertion below verifies the
+        // ApplicationUser.Email → Person.Email fallback; Petr has both set.
+        var jana = CreatePerson(10, "Jana", "Nováková", 1987, email: null);
         var petr = CreatePerson(11, "Petr", "Dvořák", 1980, "petr@example.cz");
         var eva = CreatePerson(12, "Eva", "Bílá", 1991, null);
         // Kid — must be filtered out
@@ -173,8 +175,8 @@ public sealed class AdultsEndpointTests
 
         var submission1 = CreateSubmission(100, game.Id, janaUser.Id);
         var submission2 = CreateSubmission(101, game.Id, petrUser.Id);
-        var cancelledSubmission = CreateSubmission(102, game.Id, evaUser.Id);
-        cancelledSubmission.Status = SubmissionStatus.Draft; // must be ignored — not Submitted
+        var draftSubmission = CreateSubmission(102, game.Id, evaUser.Id);
+        draftSubmission.Status = SubmissionStatus.Draft; // must be ignored — not Submitted
         var otherGameSubmission = CreateSubmission(103, otherGame.Id, janaUser.Id);
 
         await using (var db = new ApplicationDbContext(options))
@@ -182,7 +184,7 @@ public sealed class AdultsEndpointTests
             db.Games.AddRange(game, otherGame);
             db.People.AddRange(jana, petr, eva, kid, outsider);
             db.Users.AddRange(janaUser, petrUser, evaUser);
-            db.RegistrationSubmissions.AddRange(submission1, submission2, cancelledSubmission, otherGameSubmission);
+            db.RegistrationSubmissions.AddRange(submission1, submission2, draftSubmission, otherGameSubmission);
 
             // game 1: Jana (adult) + Kuba (kid) in submission1 — kid must be filtered out
             db.Registrations.Add(new Registration
@@ -197,7 +199,7 @@ public sealed class AdultsEndpointTests
                 AttendeeType = AttendeeType.Player, Status = RegistrationStatus.Active,
                 CreatedAtUtc = FixedUtc, UpdatedAtUtc = FixedUtc
             });
-            // game 1: Petr (adult) in submission2, but also a CancelledRegistration that must not show up
+            // game 1: Petr (adult) in submission2 — active registration on a submitted submission
             db.Registrations.Add(new Registration
             {
                 Id = 3, SubmissionId = submission2.Id, PersonId = petr.Id,
@@ -207,7 +209,7 @@ public sealed class AdultsEndpointTests
             // game 1: Eva (adult) but her submission is in Draft, must be excluded
             db.Registrations.Add(new Registration
             {
-                Id = 4, SubmissionId = cancelledSubmission.Id, PersonId = eva.Id,
+                Id = 4, SubmissionId = draftSubmission.Id, PersonId = eva.Id,
                 AttendeeType = AttendeeType.Adult, Status = RegistrationStatus.Active,
                 CreatedAtUtc = FixedUtc, UpdatedAtUtc = FixedUtc
             });

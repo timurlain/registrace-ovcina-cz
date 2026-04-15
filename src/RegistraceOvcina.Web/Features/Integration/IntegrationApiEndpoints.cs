@@ -163,6 +163,10 @@ public static class IntegrationApiEndpoints
         {
             await using var db = await dbFactory.CreateDbContextAsync(ct);
 
+            var gameExists = await db.Games.AsNoTracking().AnyAsync(g => g.Id == id && g.IsPublished, ct);
+            if (!gameExists)
+                return Results.NotFound();
+
             var characters = await db.Registrations
                 .AsNoTracking()
                 .Where(r => r.Submission.GameId == id
@@ -174,8 +178,14 @@ public static class IntegrationApiEndpoints
                 .Select(r => new
                 {
                     Registration = r,
+                    // Scoped to this game and deterministically ordered so the selected
+                    // appearance is stable when multiple rows exist for a registration.
                     Appearance = db.CharacterAppearances
-                        .Where(ca => ca.RegistrationId == r.Id && !ca.Character.IsDeleted)
+                        .Where(ca => ca.RegistrationId == r.Id
+                            && ca.GameId == id
+                            && !ca.Character.IsDeleted)
+                        .OrderBy(ca => ca.CharacterId)
+                        .ThenBy(ca => ca.Id)
                         .Select(ca => new
                         {
                             ca.CharacterId,
@@ -189,7 +199,7 @@ public static class IntegrationApiEndpoints
                         .FirstOrDefault()
                 })
                 .Select(x => new CharacterSeedDto(
-                    x.Appearance != null ? x.Appearance.CharacterId : 0,
+                    x.Appearance != null ? (int?)x.Appearance.CharacterId : null,
                     x.Registration.PersonId,
                     x.Registration.Person.FirstName,
                     x.Registration.Person.LastName,
@@ -410,15 +420,22 @@ public static class IntegrationApiEndpoints
 
     /// <summary>
     /// Loads the distinct adult attendees for a game (active registrations on submitted,
-    /// non-deleted submissions) together with their email and any game-role assignments.
-    /// Factored out of the endpoint lambda so it can be unit-tested against an in-memory DB.
+    /// non-deleted submissions) together with their contact email and any game-role
+    /// assignments. Dedup is pushed to the database so we only materialize one row per
+    /// <c>PersonId</c>. Email is taken from the linked <see cref="ApplicationUser"/>
+    /// when present and falls back to <see cref="Person.Email"/>, because
+    /// <c>Person.Email</c> is intentionally left null when the contact email matches the
+    /// submission's primary email. Factored out of the endpoint lambda so it can be
+    /// unit-tested against an in-memory DB.
     /// </summary>
     internal static async Task<List<AdultDto>> LoadAdultsAsync(
         ApplicationDbContext db,
         int gameId,
         CancellationToken ct)
     {
-        var adults = await db.Registrations
+        // Distinct adults from the DB — group by PersonId so an adult listed in several
+        // submissions is materialized as a single row.
+        var distinctAdults = await db.Registrations
             .AsNoTracking()
             .Where(r =>
                 r.Submission.GameId == gameId &&
@@ -426,27 +443,32 @@ public static class IntegrationApiEndpoints
                 r.Status == RegistrationStatus.Active &&
                 !r.Submission.IsDeleted &&
                 r.AttendeeType == AttendeeType.Adult)
-            .Select(r => new
+            .GroupBy(r => r.PersonId)
+            .Select(g => new
             {
-                r.PersonId,
-                r.Person.FirstName,
-                r.Person.LastName,
-                r.Person.BirthYear,
-                r.Person.Email
+                PersonId = g.Key,
+                FirstName = g.Select(r => r.Person.FirstName).First(),
+                LastName = g.Select(r => r.Person.LastName).First(),
+                BirthYear = g.Select(r => r.Person.BirthYear).First(),
+                PersonEmail = g.Select(r => r.Person.Email).First()
             })
             .ToListAsync(ct);
-
-        // An adult may appear in several submissions — collapse to one row per PersonId,
-        // keeping the first email we see (Person.Email is already the canonical contact).
-        var distinctAdults = adults
-            .GroupBy(a => a.PersonId)
-            .Select(g => g.First())
-            .ToList();
 
         if (distinctAdults.Count == 0)
             return [];
 
         var personIds = distinctAdults.Select(a => a.PersonId).ToList();
+
+        // Email fallback: ApplicationUser.Email (linked via PersonId) takes precedence
+        // over Person.Email, which is often null because it's only set when it differs
+        // from the submission's primary contact email.
+        var userEmailByPerson = await db.Users
+            .AsNoTracking()
+            .Where(u => u.PersonId != null && personIds.Contains(u.PersonId!.Value) && u.IsActive)
+            .GroupBy(u => u.PersonId!.Value)
+            .Select(g => new { PersonId = g.Key, Email = g.Select(u => u.Email).First() })
+            .ToListAsync(ct);
+        var userEmailLookup = userEmailByPerson.ToDictionary(x => x.PersonId, x => x.Email);
 
         var roleRows = await db.GameRoles
             .AsNoTracking()
@@ -468,7 +490,9 @@ public static class IntegrationApiEndpoints
                 a.FirstName,
                 a.LastName,
                 a.BirthYear,
-                a.Email,
+                userEmailLookup.TryGetValue(a.PersonId, out var userEmail) && !string.IsNullOrWhiteSpace(userEmail)
+                    ? userEmail
+                    : a.PersonEmail,
                 rolesByPerson.TryGetValue(a.PersonId, out var roles) ? roles : []))
             .ToList();
     }

@@ -380,13 +380,16 @@ public sealed class PeopleReviewService(
             user.PersonId = canonicalPersonId;
         }
 
+        // Ordered by Id so "first one wins" in the lookup below is deterministic across runs.
         var canonicalCharacters = await db.Characters
             .Include(x => x.Appearances)
             .Where(x => x.PersonId == canonicalPersonId)
+            .OrderBy(x => x.Id)
             .ToListAsync(cancellationToken);
         var duplicateCharacters = await db.Characters
             .Include(x => x.Appearances)
             .Where(x => x.PersonId == duplicatePersonId)
+            .OrderBy(x => x.Id)
             .ToListAsync(cancellationToken);
 
         // Canonical person may already have multiple characters whose names normalize

@@ -91,7 +91,7 @@ public sealed record AdultDto(
 
 /// <summary>Character seed data for hra import.</summary>
 public sealed record CharacterSeedDto(
-    int CharacterId,
+    int? CharacterId,
     int PersonId,
     string PersonFirstName,
     string PersonLastName,
