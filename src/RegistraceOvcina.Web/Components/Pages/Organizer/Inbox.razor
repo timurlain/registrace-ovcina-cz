@@ -5,6 +5,7 @@
 @using RegistraceOvcina.Web.Features.Email
 
 @inject InboxService InboxService
+@inject MailboxSyncService MailboxSyncService
 @inject IOptions<MailboxEmailOptions> MailboxOptions
 
 <PageTitle>Pošta</PageTitle>
@@ -26,7 +27,10 @@
 }
 else if (result is null)
 {
-    <p class="text-secondary">Načítám zprávy...</p>
+    <p class="text-secondary">
+        <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+        Synchronizuji se schránkou a načítám zprávy...
+    </p>
 }
 else
 {
@@ -40,6 +44,10 @@ else
                             <p class="text-secondary mb-0">Zprávy ze sdílené poštovní schránky.</p>
                         </div>
                         <div class="d-flex gap-2">
+                            @if (autoSynced)
+                            {
+                                <span class="badge bg-success-subtle text-success-emphasis align-self-center">Automaticky synchronizováno</span>
+                            }
                             @if (synced == 1)
                             {
                                 <span class="badge bg-success align-self-center">Synchronizováno</span>
@@ -225,6 +233,7 @@ else
 
     private InboxPageResult? result;
     private bool showCompose;
+    private bool autoSynced;
 
     private void ToggleCompose()
     {
@@ -247,6 +256,11 @@ else
 
         if (page < 1) page = 1;
         if (string.IsNullOrWhiteSpace(tab)) tab = "inbox";
+
+        // Auto-sync on page open. Debounced in MailboxSyncService so repeated
+        // navigation within the cooldown window doesn't hammer the Graph API.
+        autoSynced = await MailboxSyncService.SyncIfStaleAsync();
+
         result = await InboxService.GetMessagesAsync(page, directionFilter: GetDirectionFilter());
     }
 }
