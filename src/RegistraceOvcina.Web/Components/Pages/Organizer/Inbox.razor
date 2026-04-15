@@ -5,7 +5,8 @@
 @using RegistraceOvcina.Web.Features.Email
 
 @inject InboxService InboxService
-@inject MailboxSyncService MailboxSyncService
+@* MailboxSyncService is only registered when the mailbox is configured, so inject it as optional. *@
+@inject IServiceProvider Services
 @inject IOptions<MailboxEmailOptions> MailboxOptions
 
 <PageTitle>Pošta</PageTitle>
@@ -259,7 +260,14 @@ else
 
         // Auto-sync on page open. Debounced in MailboxSyncService so repeated
         // navigation within the cooldown window doesn't hammer the Graph API.
-        autoSynced = await MailboxSyncService.SyncIfStaleAsync();
+        // Resolved lazily because the service is only registered when the
+        // mailbox is configured — resolving at injection time would break the
+        // "not configured" branch of this very page.
+        var syncService = Services.GetService<MailboxSyncService>();
+        if (syncService is not null)
+        {
+            autoSynced = await syncService.SyncIfStaleAsync();
+        }
 
         result = await InboxService.GetMessagesAsync(page, directionFilter: GetDirectionFilter());
     }
