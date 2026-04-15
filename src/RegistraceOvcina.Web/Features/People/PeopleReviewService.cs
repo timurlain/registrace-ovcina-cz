@@ -380,19 +380,27 @@ public sealed class PeopleReviewService(
             user.PersonId = canonicalPersonId;
         }
 
+        // Ordered by Id so "first one wins" in the lookup below is deterministic across runs.
         var canonicalCharacters = await db.Characters
             .Include(x => x.Appearances)
             .Where(x => x.PersonId == canonicalPersonId)
+            .OrderBy(x => x.Id)
             .ToListAsync(cancellationToken);
         var duplicateCharacters = await db.Characters
             .Include(x => x.Appearances)
             .Where(x => x.PersonId == duplicatePersonId)
+            .OrderBy(x => x.Id)
             .ToListAsync(cancellationToken);
 
-        var canonicalCharacterLookup = canonicalCharacters.ToDictionary(
-            x => PersonIdentityNormalizer.NormalizeComparisonText(x.Name),
-            x => x,
-            StringComparer.Ordinal);
+        // Canonical person may already have multiple characters whose names normalize
+        // to the same key (legacy duplicates). Keep the first one as the merge target
+        // and leave the rest untouched — this is pre-existing data we must not crash on.
+        var canonicalCharacterLookup = new Dictionary<string, Character>(StringComparer.Ordinal);
+        foreach (var canonicalCharacter in canonicalCharacters)
+        {
+            var canonicalKey = PersonIdentityNormalizer.NormalizeComparisonText(canonicalCharacter.Name);
+            canonicalCharacterLookup.TryAdd(canonicalKey, canonicalCharacter);
+        }
 
         foreach (var duplicateCharacter in duplicateCharacters)
         {

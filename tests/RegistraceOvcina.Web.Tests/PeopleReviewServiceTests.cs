@@ -269,6 +269,41 @@ public sealed class PeopleReviewServiceTests
         Assert.Equal("Obě osoby už mají účast ve stejné přihlášce. Sloučení by nebylo bezpečné.", ex.Message);
     }
 
+    [Fact]
+    public async Task MergeAsync_SucceedsWhenCanonicalHasMultipleCharactersWithSameNormalizedName()
+    {
+        var options = CreateOptions();
+        var actor = CreateUser("actor-id", "admin@example.cz");
+        var canonical = CreatePerson(1, "Tomáš", "Najvar", 1980, null, null);
+        var duplicate = CreatePerson(2, "Tomas", "Najvar", 1980, null, null);
+
+        await using (var db = new ApplicationDbContext(options))
+        {
+            db.Users.Add(actor);
+            db.People.AddRange(canonical, duplicate);
+            db.Characters.AddRange(
+                new Character { Id = 1, PersonId = canonical.Id, Name = "Tomáš" },
+                new Character { Id = 2, PersonId = canonical.Id, Name = "Tomas" },
+                new Character { Id = 3, PersonId = duplicate.Id, Name = "Tomáš" });
+            await db.SaveChangesAsync();
+        }
+
+        var service = new PeopleReviewService(new TestDbContextFactory(options), new FixedTimeProvider());
+
+        await service.MergeAsync(canonical.Id, duplicate.Id, actor.Id);
+
+        await using var verificationDb = new ApplicationDbContext(options);
+        var canonicalCharacters = await verificationDb.Characters
+            .Where(x => x.PersonId == canonical.Id)
+            .ToListAsync();
+        var deletedDuplicate = await verificationDb.People
+            .IgnoreQueryFilters()
+            .SingleAsync(x => x.Id == duplicate.Id);
+
+        Assert.Equal(2, canonicalCharacters.Count);
+        Assert.True(deletedDuplicate.IsDeleted);
+    }
+
     private static readonly DateTime FixedUtc = new(2026, 4, 5, 12, 0, 0, DateTimeKind.Utc);
 
     private static DbContextOptions<ApplicationDbContext> CreateOptions() =>

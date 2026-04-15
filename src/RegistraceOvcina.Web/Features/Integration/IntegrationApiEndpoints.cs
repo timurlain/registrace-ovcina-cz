@@ -153,6 +153,9 @@ public static class IntegrationApiEndpoints
         }).AllowAnonymous();
 
         // GET /api/v1/games/{id}/characters — character seeds for hra import
+        // Source of truth: Registrations table with the same filters as the QR stickers page.
+        // Only active player registrations are included. CharacterAppearance is joined
+        // for race/class/kingdom/level if it exists for this registration.
         group.MapGet("/games/{id:int}/characters", async (
             int id,
             IDbContextFactory<ApplicationDbContext> dbFactory,
@@ -160,26 +163,74 @@ public static class IntegrationApiEndpoints
         {
             await using var db = await dbFactory.CreateDbContextAsync(ct);
 
-            var characters = await db.CharacterAppearances
+            var gameExists = await db.Games.AsNoTracking().AnyAsync(g => g.Id == id && g.IsPublished, ct);
+            if (!gameExists)
+                return Results.NotFound();
+
+            var characters = await db.Registrations
                 .AsNoTracking()
-                .Where(ca => ca.GameId == id && !ca.Character.IsDeleted)
-                .Select(ca => new CharacterSeedDto(
-                    ca.CharacterId,
-                    ca.Character.PersonId,
-                    ca.Character.Person.FirstName,
-                    ca.Character.Person.LastName,
-                    ca.Character.Person.BirthYear,
-                    ca.Character.Name,
-                    ca.Character.Race,
-                    ca.Character.ClassOrType,
-                    ca.AssignedKingdom != null ? ca.AssignedKingdom.Name : null,
-                    ca.AssignedKingdomId,
-                    ca.LevelReached,
-                    ca.ContinuityStatus.ToString()))
+                .Where(r => r.Submission.GameId == id
+                    && r.Submission.Status == SubmissionStatus.Submitted
+                    && r.Status == RegistrationStatus.Active
+                    && r.AttendeeType == AttendeeType.Player
+                    && !r.Submission.IsDeleted
+                    && !r.Person.IsDeleted)
+                .Select(r => new
+                {
+                    Registration = r,
+                    // Scoped to this game and deterministically ordered so the selected
+                    // appearance is stable when multiple rows exist for a registration.
+                    Appearance = db.CharacterAppearances
+                        .Where(ca => ca.RegistrationId == r.Id
+                            && ca.GameId == id
+                            && !ca.Character.IsDeleted)
+                        .OrderBy(ca => ca.CharacterId)
+                        .ThenBy(ca => ca.Id)
+                        .Select(ca => new
+                        {
+                            ca.CharacterId,
+                            ca.Character.Race,
+                            ca.Character.ClassOrType,
+                            KingdomName = ca.AssignedKingdom != null ? ca.AssignedKingdom.Name : null,
+                            ca.AssignedKingdomId,
+                            ca.LevelReached,
+                            ContinuityStatus = ca.ContinuityStatus.ToString()
+                        })
+                        .FirstOrDefault()
+                })
+                .Select(x => new CharacterSeedDto(
+                    x.Appearance != null ? (int?)x.Appearance.CharacterId : null,
+                    x.Registration.PersonId,
+                    x.Registration.Person.FirstName,
+                    x.Registration.Person.LastName,
+                    x.Registration.Person.BirthYear,
+                    x.Registration.CharacterName ?? (x.Registration.Person.FirstName + " " + x.Registration.Person.LastName),
+                    x.Appearance != null ? x.Appearance.Race : null,
+                    x.Appearance != null ? x.Appearance.ClassOrType : null,
+                    x.Appearance != null ? x.Appearance.KingdomName : null,
+                    x.Appearance != null ? x.Appearance.AssignedKingdomId : null,
+                    x.Appearance != null ? x.Appearance.LevelReached : null,
+                    x.Appearance != null ? x.Appearance.ContinuityStatus : "Unknown"))
                 .ToListAsync(ct);
 
             return Results.Ok(characters);
         }).AllowAnonymous();
+
+        // GET /api/v1/games/{id}/adults — active adult attendees with email + game roles
+        group.MapGet("/games/{id:int}/adults", async (
+            int id,
+            IDbContextFactory<ApplicationDbContext> dbFactory,
+            CancellationToken ct) =>
+        {
+            await using var db = await dbFactory.CreateDbContextAsync(ct);
+
+            var gameExists = await db.Games.AsNoTracking().AnyAsync(g => g.Id == id, ct);
+            if (!gameExists)
+                return Results.NotFound();
+
+            var adults = await LoadAdultsAsync(db, id, ct);
+            return Results.Ok(adults);
+        });
 
         // GET /api/v1/users/by-email?email=... — user existence check for OvčinaHra auth
         group.MapGet("/users/by-email", async (
@@ -365,6 +416,85 @@ public static class IntegrationApiEndpoints
         });
 
         return app;
+    }
+
+    /// <summary>
+    /// Loads the distinct adult attendees for a game (active registrations on submitted,
+    /// non-deleted submissions) together with their contact email and any game-role
+    /// assignments. Dedup is pushed to the database so we only materialize one row per
+    /// <c>PersonId</c>. Email is taken from the linked <see cref="ApplicationUser"/>
+    /// when present and falls back to <see cref="Person.Email"/>, because
+    /// <c>Person.Email</c> is intentionally left null when the contact email matches the
+    /// submission's primary email. Factored out of the endpoint lambda so it can be
+    /// unit-tested against an in-memory DB.
+    /// </summary>
+    internal static async Task<List<AdultDto>> LoadAdultsAsync(
+        ApplicationDbContext db,
+        int gameId,
+        CancellationToken ct)
+    {
+        // Distinct adults from the DB — group by PersonId so an adult listed in several
+        // submissions is materialized as a single row.
+        var distinctAdults = await db.Registrations
+            .AsNoTracking()
+            .Where(r =>
+                r.Submission.GameId == gameId &&
+                r.Submission.Status == SubmissionStatus.Submitted &&
+                r.Status == RegistrationStatus.Active &&
+                !r.Submission.IsDeleted &&
+                r.AttendeeType == AttendeeType.Adult)
+            .GroupBy(r => r.PersonId)
+            .Select(g => new
+            {
+                PersonId = g.Key,
+                FirstName = g.Select(r => r.Person.FirstName).First(),
+                LastName = g.Select(r => r.Person.LastName).First(),
+                BirthYear = g.Select(r => r.Person.BirthYear).First(),
+                PersonEmail = g.Select(r => r.Person.Email).First()
+            })
+            .ToListAsync(ct);
+
+        if (distinctAdults.Count == 0)
+            return [];
+
+        var personIds = distinctAdults.Select(a => a.PersonId).ToList();
+
+        // Email fallback: ApplicationUser.Email (linked via PersonId) takes precedence
+        // over Person.Email, which is often null because it's only set when it differs
+        // from the submission's primary contact email.
+        var userEmailByPerson = await db.Users
+            .AsNoTracking()
+            .Where(u => u.PersonId != null && personIds.Contains(u.PersonId!.Value) && u.IsActive)
+            .GroupBy(u => u.PersonId!.Value)
+            .Select(g => new { PersonId = g.Key, Email = g.Select(u => u.Email).First() })
+            .ToListAsync(ct);
+        var userEmailLookup = userEmailByPerson.ToDictionary(x => x.PersonId, x => x.Email);
+
+        var roleRows = await db.GameRoles
+            .AsNoTracking()
+            .Where(gr => gr.GameId == gameId && gr.User.PersonId != null && personIds.Contains(gr.User.PersonId!.Value))
+            .Select(gr => new { PersonId = gr.User.PersonId!.Value, gr.RoleName })
+            .ToListAsync(ct);
+
+        var rolesByPerson = roleRows
+            .GroupBy(x => x.PersonId)
+            .ToDictionary(
+                g => g.Key,
+                g => g.Select(x => x.RoleName).Distinct(StringComparer.Ordinal).OrderBy(n => n, StringComparer.Ordinal).ToList());
+
+        return distinctAdults
+            .OrderBy(a => a.LastName, StringComparer.Ordinal)
+            .ThenBy(a => a.FirstName, StringComparer.Ordinal)
+            .Select(a => new AdultDto(
+                a.PersonId,
+                a.FirstName,
+                a.LastName,
+                a.BirthYear,
+                userEmailLookup.TryGetValue(a.PersonId, out var userEmail) && !string.IsNullOrWhiteSpace(userEmail)
+                    ? userEmail
+                    : a.PersonEmail,
+                rolesByPerson.TryGetValue(a.PersonId, out var roles) ? roles : []))
+            .ToList();
     }
 
     private static async Task<UserGameInfoDto> LoadUserGameInfoAsync(
