@@ -757,7 +757,8 @@ public class Program
 
                     try
                     {
-                        await submissionService.UpdateContactAsync(submissionId, user.Id, input);
+                        var isStaff = httpContext.User.IsInRole(RoleNames.Admin) || httpContext.User.IsInRole(RoleNames.Organizer);
+                        await submissionService.UpdateContactAsync(submissionId, user.Id, input, isStaff);
                         return Results.LocalRedirect($"/prihlasky/{submissionId}?contactSaved=1");
                     }
                     catch (ValidationException ex)
@@ -783,7 +784,8 @@ public class Program
 
                     try
                     {
-                        await submissionService.AddAttendeeAsync(submissionId, user.Id, input);
+                        var isStaff = httpContext.User.IsInRole(RoleNames.Admin) || httpContext.User.IsInRole(RoleNames.Organizer);
+                        await submissionService.AddAttendeeAsync(submissionId, user.Id, input, isStaff);
                         return Results.LocalRedirect($"/prihlasky/{submissionId}?attendeeAdded=1");
                     }
                     catch (ValidationException ex)
@@ -810,7 +812,8 @@ public class Program
 
                     try
                     {
-                        await submissionService.RemoveAttendeeAsync(submissionId, registrationId, user.Id);
+                        var isStaff = httpContext.User.IsInRole(RoleNames.Admin) || httpContext.User.IsInRole(RoleNames.Organizer);
+                        await submissionService.RemoveAttendeeAsync(submissionId, registrationId, user.Id, isStaff);
                         return Results.LocalRedirect($"/prihlasky/{submissionId}?attendeeRemoved=1");
                     }
                     catch (ValidationException ex)
@@ -836,7 +839,8 @@ public class Program
 
                     try
                     {
-                        await submissionService.UpdateAttendeeAsync(submissionId, registrationId, user.Id, input);
+                        var isStaff = httpContext.User.IsInRole(RoleNames.Admin) || httpContext.User.IsInRole(RoleNames.Organizer);
+                        await submissionService.UpdateAttendeeAsync(submissionId, registrationId, user.Id, input, isStaff);
                         return Results.LocalRedirect($"/prihlasky/{submissionId}?attendeeUpdated=1");
                     }
                     catch (ValidationException ex)
@@ -869,7 +873,8 @@ public class Program
                             orders.Add(new FoodOrderInput(regId, mealOptionId, new DateTime(dayTicks, DateTimeKind.Utc)));
                         }
 
-                        await submissionService.SaveFoodOrdersAsync(submissionId, user.Id, orders);
+                        var isStaff = httpContext.User.IsInRole(RoleNames.Admin) || httpContext.User.IsInRole(RoleNames.Organizer);
+                        await submissionService.SaveFoodOrdersAsync(submissionId, user.Id, orders, isStaff);
                         return Results.LocalRedirect($"/prihlasky/{submissionId}?foodSaved=1");
                     }
                     catch (ValidationException ex)

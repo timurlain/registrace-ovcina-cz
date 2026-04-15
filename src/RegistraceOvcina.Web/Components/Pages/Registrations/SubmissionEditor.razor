@@ -32,6 +32,15 @@ else
         </div>
     </section>
 
+    @if (submission.IsStaffView)
+    {
+        <div class="alert alert-warning mb-4" role="status">
+            <strong>Organizátorský režim.</strong> Upravujete přihlášku cizího uživatele.
+            Noví účastníci se přidávat nedají, ale stávající účastníky a jejich údaje
+            můžete měnit i po uzávěrce registrace.
+        </div>
+    }
+
     @if (!string.IsNullOrWhiteSpace(statusMessage))
     {
         <div class="toast-success" id="success-toast" role="status">@statusMessage</div>
@@ -212,6 +221,12 @@ else
                             </div>
                         }
 
+                        @* Staff after deadline can still edit existing attendees,
+                           but nobody can add new ones once the deadline has passed.
+                           The form doubles as add/edit, so gate it on CanAddAttendees
+                           unless we're already in the middle of editing someone. *@
+                        @if (submission.CanAddAttendees || editingRegistrationId is not null)
+                        {
                         <EditForm Model="attendeeInput" OnValidSubmit="SaveAttendeeAsync" OnInvalidSubmit="ScrollToErrors" FormName="attendee" id="attendee-form">
                             <DataAnnotationsValidator />
                             <h3 class="h5 mb-3">@(editingRegistrationId is not null ? "Upravit účastníka" : "Přidat účastníka")</h3>
@@ -489,6 +504,14 @@ else
                                 }
                             </div>
                         </EditForm>
+                        }
+                        else
+                        {
+                            <div class="alert alert-secondary mb-0">
+                                <strong>Registrace je uzavřená</strong> — noví účastníci se již nedají přidat.
+                                Stávající účastníky můžete nadále upravovat pomocí tlačítka <em>Upravit</em> u konkrétní karty.
+                            </div>
+                        }
                     </div>
                 </section>
 
@@ -828,6 +851,11 @@ function scrollToValidationErrors() {
         }
     }
 
+    // Cached per-load — staff (Admin/Organizer) can open any submission and edit
+    // existing data past the registration deadline. This flag is refreshed on
+    // every LoadAsync so a role change picked up in the same session is honored.
+    private bool isStaff;
+
     private async Task LoadAsync()
     {
         var user = await GetCurrentUserAsync();
@@ -838,7 +866,10 @@ function scrollToValidationErrors() {
             return;
         }
 
-        submission = await SubmissionService.GetSubmissionAsync(SubmissionId, user.Id);
+        var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        isStaff = authState.User.IsInRole(RoleNames.Admin) || authState.User.IsInRole(RoleNames.Organizer);
+
+        submission = await SubmissionService.GetSubmissionAsync(SubmissionId, user.Id, isStaff);
         if (submission is null)
         {
             return;
@@ -913,7 +944,7 @@ function scrollToValidationErrors() {
 
         try
         {
-            await SubmissionService.UpdateContactAsync(SubmissionId, user.Id, contactInput);
+            await SubmissionService.UpdateContactAsync(SubmissionId, user.Id, contactInput, isStaff);
             statusMessage = "Kontaktní údaje byly uložené.";
             await LoadAsync();
         }
@@ -951,7 +982,7 @@ function scrollToValidationErrors() {
 
         try
         {
-            await SubmissionService.UpdateDonationAsync(SubmissionId, user.Id, donationInput.Amount);
+            await SubmissionService.UpdateDonationAsync(SubmissionId, user.Id, donationInput.Amount, isStaff);
             statusMessage = "Příspěvek byl uložený.";
             await LoadAsync();
         }
@@ -980,13 +1011,13 @@ function scrollToValidationErrors() {
         {
             if (editingRegistrationId is not null)
             {
-                await SubmissionService.UpdateAttendeeAsync(SubmissionId, editingRegistrationId.Value, user.Id, attendeeInput);
+                await SubmissionService.UpdateAttendeeAsync(SubmissionId, editingRegistrationId.Value, user.Id, attendeeInput, isStaff);
                 statusMessage = "Účastník byl upraven.";
                 editingRegistrationId = null;
             }
             else
             {
-                await SubmissionService.AddAttendeeAsync(SubmissionId, user.Id, attendeeInput);
+                await SubmissionService.AddAttendeeAsync(SubmissionId, user.Id, attendeeInput, isStaff);
                 statusMessage = "Účastník byl přidán.";
             }
             attendeeInput = CreateDefaultAttendeeInput(null);
