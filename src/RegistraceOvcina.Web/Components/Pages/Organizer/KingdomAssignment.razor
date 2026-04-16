@@ -20,9 +20,12 @@ else
             <h1 class="h4 mb-1">Rozdělení &mdash; @board.GameName</h1>
             <p class="text-secondary small mb-0">Přetáhněte hráče mezi království. Celkem: @TotalPlayerCount</p>
         </div>
-        <div class="form-check form-switch">
-            <input class="form-check-input" type="checkbox" id="detail-toggle" checked="@showDetail" @onchange="ToggleDetail" />
-            <label class="form-check-label small" for="detail-toggle">Podrobnosti</label>
+        <div class="d-flex align-items-center gap-3">
+            <a href="/organizace/hry/@GameId/kralovstvi/export.xlsx" class="btn btn-sm btn-outline-success">Stáhnout Excel</a>
+            <div class="form-check form-switch mb-0">
+                <input class="form-check-input" type="checkbox" id="detail-toggle" checked="@showDetail" @onchange="ToggleDetail" />
+                <label class="form-check-label small" for="detail-toggle">Podrobnosti</label>
+            </div>
         </div>
     </div>
 
