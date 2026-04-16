@@ -853,8 +853,9 @@ public sealed class SubmissionService(
         EnsureEditable(submission);
         // Staff (Admin/Organizer) can edit attendee data after the deadline has passed —
         // they are explicitly allowed to adjust food, lodging, preferences etc. on
-        // behalf of registrants. Adding and removing attendees is still blocked for
-        // everyone once the deadline passes; those methods do not pass isStaff=true.
+        // behalf of registrants. Adding attendees is still blocked once the deadline
+        // passes; removing attendees may still be allowed for staff in call sites that
+        // explicitly pass isStaff=true.
         if (isStaff) return;
         var now = timeProvider.GetUtcNow().UtcDateTime;
         if (now > submission.Game.RegistrationClosesAtUtc)
