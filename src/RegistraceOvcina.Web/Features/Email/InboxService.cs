@@ -145,12 +145,19 @@ public sealed class InboxService(
         await db.SaveChangesAsync();
     }
 
-    public async Task<List<SubmissionLookupItem>> GetSubmissionLookupAsync()
+    public async Task<List<SubmissionLookupItem>> GetSubmissionLookupAsync(int? gameId = null)
     {
         await using var db = await dbContextFactory.CreateDbContextAsync();
 
-        return await db.RegistrationSubmissions
-            .Where(s => s.Status == SubmissionStatus.Submitted)
+        var query = db.RegistrationSubmissions
+            .Where(s => s.Status == SubmissionStatus.Submitted);
+
+        if (gameId.HasValue)
+        {
+            query = query.Where(s => s.GameId == gameId.Value);
+        }
+
+        return await query
             .OrderByDescending(s => s.SubmittedAtUtc)
             .Select(s => new SubmissionLookupItem(
                 s.Id,
@@ -159,18 +166,40 @@ public sealed class InboxService(
             .ToListAsync();
     }
 
-    public async Task<List<PersonLookupItem>> GetPersonLookupAsync()
+    public async Task<List<PersonLookupItem>> GetPersonLookupAsync(string? searchTerm = null)
     {
         await using var db = await dbContextFactory.CreateDbContextAsync();
 
-        return await db.People
+        var query = db.People.AsQueryable();
+
+        if (!string.IsNullOrWhiteSpace(searchTerm))
+        {
+            var term = searchTerm.Trim();
+            query = query.Where(p =>
+                (p.FirstName + " " + p.LastName).Contains(term)
+                || (p.LastName + " " + p.FirstName).Contains(term)
+                || (p.Email != null && p.Email.Contains(term)));
+        }
+
+        return await query
             .OrderBy(p => p.LastName)
             .ThenBy(p => p.FirstName)
+            .Take(50)
             .Select(p => new PersonLookupItem(
                 p.Id,
-                $"{p.LastName} {p.FirstName}"))
+                $"{p.LastName} {p.FirstName}" + (p.Email != null ? $" ({p.Email})" : "")))
             .AsNoTracking()
             .ToListAsync();
+    }
+
+    public async Task<int?> GetMostRecentGameIdAsync(CancellationToken ct = default)
+    {
+        await using var db = await dbContextFactory.CreateDbContextAsync(ct);
+        return await db.Games
+            .AsNoTracking()
+            .OrderByDescending(g => g.StartsAtUtc)
+            .Select(g => (int?)g.Id)
+            .FirstOrDefaultAsync(ct);
     }
 
     public bool CanReply => mailboxOptions.Value.IsConfigured

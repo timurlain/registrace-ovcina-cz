@@ -242,6 +242,7 @@ public class Program
         builder.Services.AddScoped<InboxService>();
         builder.Services.AddScoped<KingdomService>();
         builder.Services.AddScoped<KingdomAssignmentService>();
+        builder.Services.AddSingleton<KingdomExportService>();
         builder.Services.AddScoped<LodgingAssignmentService>();
         builder.Services.AddScoped<PeopleReviewService>();
         builder.Services.AddScoped<SubmissionService>();
@@ -1239,6 +1240,22 @@ public class Program
                     {
                         return Results.LocalRedirect($"/organizace/hry/{gameId}/kralovstvi?error={Uri.EscapeDataString(ex.Message)}");
                     }
+                })
+            .RequireAuthorization(AuthorizationPolicies.StaffOnly);
+        app.MapGet(
+                "/organizace/hry/{gameId:int}/kralovstvi/export.xlsx",
+                async (int gameId, KingdomAssignmentService assignmentService, KingdomExportService exportService, CancellationToken ct) =>
+                {
+                    var board = await assignmentService.GetAssignmentBoardAsync(gameId, ct);
+                    if (board is null)
+                    {
+                        return Results.NotFound();
+                    }
+
+                    var xlsx = exportService.BuildXlsx(board);
+                    return Results.File(xlsx,
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        $"kralovstvi-{board.GameName.Replace(' ', '-')}.xlsx");
                 })
             .RequireAuthorization(AuthorizationPolicies.StaffOnly);
         app.MapPost(

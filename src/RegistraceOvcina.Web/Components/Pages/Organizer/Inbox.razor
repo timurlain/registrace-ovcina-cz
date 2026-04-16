@@ -132,7 +132,7 @@ else
                                     <tr>
                                         <th>Datum</th>
                                         <th>Směr</th>
-                                        <th>Od</th>
+                                        <th>@(tab == "sent" ? "Komu" : "Od / Komu")</th>
                                         <th>Předmět</th>
                                         <th>Propojeno s</th>
                                         <th>Akce</th>
@@ -157,7 +157,7 @@ else
                                                     <span class="badge bg-success-subtle text-success-emphasis">Odesláno</span>
                                                 }
                                             </td>
-                                            <td>@msg.From</td>
+                                            <td>@(msg.Direction == EmailDirection.Outbound ? msg.To : msg.From)</td>
                                             <td>
                                                 <a href="/organizace/posta/@msg.Id" data-testid="@($"inbox-subject-{msg.Id}")">
                                                     @(string.IsNullOrWhiteSpace(msg.Subject) ? "(bez předmětu)" : msg.Subject)

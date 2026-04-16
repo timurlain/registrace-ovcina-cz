@@ -124,36 +124,48 @@ else
                             <div class="col-12 col-md-6">
                                 <form method="post" action="/organizace/posta/@messageId/propojit-prihlasku">
                                     <AntiforgeryToken />
-                                    <label class="form-label" for="submission-select">Propojit s přihláškou</label>
+                                    <label class="form-label" for="submission-input">Propojit s přihláškou (aktuální hra)</label>
                                     <div class="d-flex gap-2">
-                                        <select id="submission-select" name="submissionId" class="form-select" data-testid="link-submission-select">
+                                        <input id="submission-input" list="submission-list" class="form-control"
+                                               placeholder="Hledejte jménem nebo číslem..."
+                                               autocomplete="off"
+                                               data-testid="link-submission-select"
+                                               @onchange="OnSubmissionSelected" />
+                                        <input type="hidden" name="submissionId" value="@selectedSubmissionId" />
+                                        <datalist id="submission-list">
                                             @if (submissions is not null)
                                             {
                                                 @foreach (var s in submissions)
                                                 {
-                                                    <option value="@s.Id">@s.Label</option>
+                                                    <option value="@s.Label" data-id="@s.Id"></option>
                                                 }
                                             }
-                                        </select>
-                                        <button type="submit" class="btn btn-outline-primary" data-testid="link-submission-button">Propojit</button>
+                                        </datalist>
+                                        <button type="submit" class="btn btn-outline-primary" disabled="@(selectedSubmissionId is null)" data-testid="link-submission-button">Propojit</button>
                                     </div>
                                 </form>
                             </div>
                             <div class="col-12 col-md-6">
                                 <form method="post" action="/organizace/posta/@messageId/propojit-osobu">
                                     <AntiforgeryToken />
-                                    <label class="form-label" for="person-select">Propojit s osobou</label>
+                                    <label class="form-label" for="person-input">Propojit s osobou</label>
                                     <div class="d-flex gap-2">
-                                        <select id="person-select" name="personId" class="form-select" data-testid="link-person-select">
+                                        <input id="person-input" list="person-list" class="form-control"
+                                               placeholder="Hledejte jménem nebo e-mailem..."
+                                               autocomplete="off"
+                                               data-testid="link-person-select"
+                                               @onchange="OnPersonSelected" />
+                                        <input type="hidden" name="personId" value="@selectedPersonId" />
+                                        <datalist id="person-list">
                                             @if (people is not null)
                                             {
                                                 @foreach (var p in people)
                                                 {
-                                                    <option value="@p.Id">@p.Name</option>
+                                                    <option value="@p.Name" data-id="@p.Id"></option>
                                                 }
                                             }
-                                        </select>
-                                        <button type="submit" class="btn btn-outline-primary" data-testid="link-person-button">Propojit</button>
+                                        </datalist>
+                                        <button type="submit" class="btn btn-outline-primary" disabled="@(selectedPersonId is null)" data-testid="link-person-button">Propojit</button>
                                     </div>
                                 </form>
                             </div>
@@ -184,6 +196,8 @@ else
     private EmailMessage? message;
     private List<SubmissionLookupItem>? submissions;
     private List<PersonLookupItem>? people;
+    private int? selectedSubmissionId;
+    private int? selectedPersonId;
 
     protected override async Task OnParametersSetAsync()
     {
@@ -191,8 +205,21 @@ else
 
         if (message is not null && message.LinkedSubmissionId is null && message.LinkedPersonId is null)
         {
-            submissions = await InboxService.GetSubmissionLookupAsync();
+            var gameId = await InboxService.GetMostRecentGameIdAsync();
+            submissions = await InboxService.GetSubmissionLookupAsync(gameId);
             people = await InboxService.GetPersonLookupAsync();
         }
+    }
+
+    private void OnSubmissionSelected(ChangeEventArgs e)
+    {
+        var text = e.Value?.ToString();
+        selectedSubmissionId = submissions?.FirstOrDefault(s => s.Label == text)?.Id;
+    }
+
+    private void OnPersonSelected(ChangeEventArgs e)
+    {
+        var text = e.Value?.ToString();
+        selectedPersonId = people?.FirstOrDefault(p => p.Name == text)?.Id;
     }
 }
