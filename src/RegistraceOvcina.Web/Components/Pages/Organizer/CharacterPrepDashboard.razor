@@ -31,7 +31,7 @@ else
         <div class="col-md-3">
             <div class="card shadow-sm border-start border-4 border-primary">
                 <div class="card-body">
-                    <h2 class="mb-0">@stats.TotalHouseholds</h2>
+                    <h2 class="mb-0" data-testid="prep-stat-total-households">@stats.TotalHouseholds</h2>
                     <span class="text-secondary">domácností s hráči</span>
                 </div>
             </div>
@@ -39,7 +39,7 @@ else
         <div class="col-md-3">
             <div class="card shadow-sm border-start border-4 border-info">
                 <div class="card-body">
-                    <h2 class="mb-0">@stats.Invited</h2>
+                    <h2 class="mb-0" data-testid="prep-stat-invited">@stats.Invited</h2>
                     <span class="text-secondary">pozváno</span>
                 </div>
             </div>
@@ -52,7 +52,7 @@ else
             }
             <div class="card shadow-sm border-start border-4 @filledBorder">
                 <div class="card-body">
-                    <h2 class="mb-0">@stats.FullyFilled</h2>
+                    <h2 class="mb-0" data-testid="prep-stat-fully-filled">@stats.FullyFilled</h2>
                     <span class="text-secondary">kompletně vyplněno</span>
                 </div>
             </div>
@@ -63,7 +63,7 @@ else
             }
             <div class="card shadow-sm border-start border-4 @pendingBorder">
                 <div class="card-body">
-                    <h2 class="mb-0">@stats.Pending</h2>
+                    <h2 class="mb-0" data-testid="prep-stat-pending">@stats.Pending</h2>
                     <span class="text-secondary">čeká na vyplnění</span>
                 </div>
             </div>
@@ -143,7 +143,7 @@ else
                 <tbody>
                     @foreach (var row in rowsPage.Rows)
                     {
-                        <tr>
+                        <tr data-testid="@($"prep-row-{row.RegistrationId}")">
                             <td>
                                 <a class="text-decoration-none"
                                    href="/organizace/prihlaska/@row.SubmissionId">
@@ -155,7 +155,7 @@ else
                             <td>@(row.EquipmentDisplayName ?? "—")</td>
                             <td class="small text-muted" style="max-width: 240px;">@Truncate(row.CharacterPrepNote, 60)</td>
                             <td>
-                                <span class="badge @StatusBadgeClass(row.Status)">@StatusLabel(row.Status)</span>
+                                <span class="badge @StatusBadgeClass(row.Status)" data-testid="@($"prep-status-{row.RegistrationId}")">@StatusLabel(row.Status)</span>
                             </td>
                             <td class="small text-muted">
                                 @(row.UpdatedAtUtc.HasValue
