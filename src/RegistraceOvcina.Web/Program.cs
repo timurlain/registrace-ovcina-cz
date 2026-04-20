@@ -249,6 +249,7 @@ public class Program
         builder.Services.AddScoped<SubmissionService>();
         builder.Services.AddScoped<CharacterPrepTokenService>();
         builder.Services.AddScoped<CharacterPrepService>();
+        builder.Services.AddScoped<CharacterPrepOptionsService>();
         builder.Services.AddOptions<CharacterPrepOptions>()
             .Bind(builder.Configuration.GetSection(CharacterPrepOptions.SectionName))
             .ValidateDataAnnotations()

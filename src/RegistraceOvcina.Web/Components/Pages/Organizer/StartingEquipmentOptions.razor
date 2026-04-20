@@ -1,0 +1,441 @@
+@page "/organizace/hry/{GameId:int}/priprava-postav/vybava"
+@attribute [Authorize(Policy = AuthorizationPolicies.StaffOnly)]
+@rendermode InteractiveServer
+
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.EntityFrameworkCore
+@using RegistraceOvcina.Web.Data
+@using RegistraceOvcina.Web.Features.CharacterPrep
+@using RegistraceOvcina.Web.Security
+
+@inject CharacterPrepOptionsService OptionsService
+@inject IDbContextFactory<ApplicationDbContext> DbContextFactory
+
+<PageTitle>Startovní výbava — @(gameName ?? "Načítání…")</PageTitle>
+
+@if (gameName is null || options is null)
+{
+    <div class="text-center py-5">
+        <div class="spinner-border text-primary" role="status">
+            <span class="visually-hidden">Načítání…</span>
+        </div>
+    </div>
+}
+else
+{
+    <nav aria-label="breadcrumb" class="mb-2">
+        <ol class="breadcrumb small mb-0">
+            <li class="breadcrumb-item">
+                <a href="/organizace/hry/@GameId/priprava-postav">Příprava postav</a>
+            </li>
+            <li class="breadcrumb-item active" aria-current="page">Startovní výbava</li>
+        </ol>
+    </nav>
+
+    <h2 class="mb-1">Startovní výbava pro @gameName</h2>
+    <p class="text-secondary mb-4">
+        Seznam výbav, které rodiče vybírají při přípravě postav.
+        Klíč (<code>Key</code>) je neměnný identifikátor; DisplayName, popis a
+        pořadí lze kdykoliv upravit.
+    </p>
+
+    @if (!string.IsNullOrEmpty(statusMessage))
+    {
+        <div class="alert alert-success" role="alert">@statusMessage</div>
+    }
+    @if (!string.IsNullOrEmpty(errorMessage))
+    {
+        <div class="alert alert-danger" role="alert">@errorMessage</div>
+    }
+
+    <div class="mb-3">
+        @if (!showAddForm)
+        {
+            <button type="button" class="btn btn-primary" @onclick="ShowAddForm" disabled="@isBusy">
+                + Přidat novou výbavu
+            </button>
+        }
+        else
+        {
+            <div class="card">
+                <div class="card-header">Nová výbava</div>
+                <div class="card-body">
+                    <div class="row g-3">
+                        <div class="col-md-3">
+                            <label class="form-label" for="add-key">Klíč (neměnný)</label>
+                            <input id="add-key" class="form-control" maxlength="50"
+                                   @bind="addKey" placeholder="napr. tesak" />
+                            <div class="form-text">Malá písmena bez mezer, max. 50 znaků.</div>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label" for="add-displayName">Název pro rodiče</label>
+                            <input id="add-displayName" class="form-control" maxlength="100"
+                                   @bind="addDisplayName" placeholder="Tesák" />
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label" for="add-description">Popis (volitelný)</label>
+                            <input id="add-description" class="form-control" maxlength="500"
+                                   @bind="addDescription" placeholder="útok/obrana 3/1" />
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label" for="add-sortOrder">Pořadí</label>
+                            <input id="add-sortOrder" type="number" min="0" class="form-control"
+                                   @bind="addSortOrder" />
+                        </div>
+                    </div>
+                    <div class="mt-3 d-flex gap-2">
+                        <button type="button" class="btn btn-primary"
+                                @onclick="SaveNewAsync" disabled="@isBusy">
+                            Uložit
+                        </button>
+                        <button type="button" class="btn btn-outline-secondary"
+                                @onclick="CancelAdd" disabled="@isBusy">
+                            Zrušit
+                        </button>
+                    </div>
+                </div>
+            </div>
+        }
+    </div>
+
+    @if (options.Count == 0)
+    {
+        <div class="empty-state text-secondary py-4">
+            Zatím žádné výbavy. Přidejte první nahoře nebo zkopírujte z jiné hry (viz dole).
+        </div>
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table class="table table-hover align-middle">
+                <thead>
+                    <tr>
+                        <th style="width: 15%;">Klíč</th>
+                        <th style="width: 25%;">Název pro rodiče</th>
+                        <th style="width: 35%;">Popis</th>
+                        <th style="width: 10%;">Pořadí</th>
+                        <th style="width: 15%;" class="text-end">Akce</th>
+                    </tr>
+                </thead>
+                <tbody>
+                @foreach (var opt in options)
+                {
+                    <tr>
+                        <td><code>@opt.Key</code></td>
+                        <td>@opt.DisplayName</td>
+                        <td class="text-secondary">@(opt.Description ?? "—")</td>
+                        <td>@opt.SortOrder</td>
+                        <td class="text-end">
+                            <button type="button" class="btn btn-sm btn-outline-primary me-1"
+                                    @onclick="() => BeginEdit(opt)"
+                                    disabled="@(isBusy || editOptionId == opt.Id)">
+                                Upravit
+                            </button>
+                            <button type="button" class="btn btn-sm btn-outline-danger"
+                                    @onclick="() => DeleteAsync(opt.Id)"
+                                    disabled="@isBusy">
+                                Smazat
+                            </button>
+                        </td>
+                    </tr>
+                    @if (editOptionId == opt.Id)
+                    {
+                        <tr>
+                            <td colspan="5" class="bg-light">
+                                <div class="row g-3">
+                                    <div class="col-md-3">
+                                        <label class="form-label">Klíč</label>
+                                        <input class="form-control" value="@opt.Key" disabled />
+                                        <div class="form-text">Klíč se nedá změnit.</div>
+                                    </div>
+                                    <div class="col-md-4">
+                                        <label class="form-label" for="edit-displayName">Název pro rodiče</label>
+                                        <input id="edit-displayName" class="form-control" maxlength="100"
+                                               @bind="editDisplayName" />
+                                    </div>
+                                    <div class="col-md-3">
+                                        <label class="form-label" for="edit-description">Popis</label>
+                                        <input id="edit-description" class="form-control" maxlength="500"
+                                               @bind="editDescription" />
+                                    </div>
+                                    <div class="col-md-2">
+                                        <label class="form-label" for="edit-sortOrder">Pořadí</label>
+                                        <input id="edit-sortOrder" type="number" min="0" class="form-control"
+                                               @bind="editSortOrder" />
+                                    </div>
+                                </div>
+                                <div class="mt-3 d-flex gap-2">
+                                    <button type="button" class="btn btn-primary"
+                                            @onclick="SaveEditAsync" disabled="@isBusy">
+                                        Uložit
+                                    </button>
+                                    <button type="button" class="btn btn-outline-secondary"
+                                            @onclick="CancelEdit" disabled="@isBusy">
+                                        Zrušit
+                                    </button>
+                                </div>
+                            </td>
+                        </tr>
+                    }
+                }
+                </tbody>
+            </table>
+        </div>
+    }
+
+    <hr class="my-4" />
+
+    <section>
+        <h4>Zkopírovat výbavu z jiné hry</h4>
+        <p class="text-secondary">
+            Zkopíruje všechny výbavy z vybrané hry. Klíče, které už v této hře existují,
+            se přeskočí (stávající hodnoty zůstanou nedotčené).
+        </p>
+
+        @if (otherGames is not null && otherGames.Count > 0)
+        {
+            <div class="row g-2 align-items-end">
+                <div class="col-md-6">
+                    <label class="form-label" for="copy-source">Zdrojová hra</label>
+                    <select id="copy-source" class="form-select"
+                            @bind="copySourceGameId" disabled="@isBusy">
+                        <option value="0">— Vyberte hru —</option>
+                        @foreach (var g in otherGames)
+                        {
+                            <option value="@g.Id">@g.Name</option>
+                        }
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <button type="button" class="btn btn-outline-primary"
+                            @onclick="CopyFromAsync"
+                            disabled="@(isBusy || copySourceGameId <= 0)">
+                        Zkopírovat
+                    </button>
+                </div>
+            </div>
+        }
+        else
+        {
+            <p class="text-secondary fst-italic">Žádné další hry k dispozici.</p>
+        }
+    </section>
+}
+
+@code {
+    [Parameter] public int GameId { get; set; }
+
+    private string? gameName;
+    private List<StartingEquipmentOptionDto>? options;
+    private List<GameOption>? otherGames;
+    private bool isBusy;
+    private string? statusMessage;
+    private string? errorMessage;
+
+    // Add form state
+    private bool showAddForm;
+    private string addKey = "";
+    private string addDisplayName = "";
+    private string addDescription = "";
+    private int addSortOrder;
+
+    // Edit form state
+    private int? editOptionId;
+    private string editDisplayName = "";
+    private string editDescription = "";
+    private int editSortOrder;
+
+    // Copy-from state
+    private int copySourceGameId;
+
+    private sealed record GameOption(int Id, string Name);
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadGameNameAsync();
+        await ReloadOptionsAsync();
+        await LoadOtherGamesAsync();
+    }
+
+    private async Task LoadGameNameAsync()
+    {
+        await using var db = await DbContextFactory.CreateDbContextAsync();
+        var game = await db.Games.AsNoTracking()
+            .Where(x => x.Id == GameId)
+            .Select(x => new { x.Name })
+            .FirstOrDefaultAsync();
+        gameName = game?.Name ?? "(neznámá hra)";
+    }
+
+    private async Task ReloadOptionsAsync()
+    {
+        var list = await OptionsService.ListAsync(GameId, CancellationToken.None);
+        options = list.ToList();
+    }
+
+    private async Task LoadOtherGamesAsync()
+    {
+        await using var db = await DbContextFactory.CreateDbContextAsync();
+        otherGames = await db.Games.AsNoTracking()
+            .Where(x => x.Id != GameId)
+            .OrderByDescending(x => x.StartsAtUtc)
+            .Select(x => new GameOption(x.Id, x.Name))
+            .ToListAsync();
+    }
+
+    private void ShowAddForm()
+    {
+        ClearMessages();
+        showAddForm = true;
+        addKey = "";
+        addDisplayName = "";
+        addDescription = "";
+        addSortOrder = 0;
+    }
+
+    private void CancelAdd()
+    {
+        showAddForm = false;
+        ClearMessages();
+    }
+
+    private async Task SaveNewAsync()
+    {
+        if (isBusy) return;
+        isBusy = true;
+        ClearMessages();
+        try
+        {
+            await OptionsService.CreateAsync(
+                GameId, addKey, addDisplayName,
+                string.IsNullOrWhiteSpace(addDescription) ? null : addDescription,
+                addSortOrder, CancellationToken.None);
+            statusMessage = $"Výbava přidána: {addDisplayName}.";
+            showAddForm = false;
+            await ReloadOptionsAsync();
+        }
+        catch (ArgumentException ex)
+        {
+            errorMessage = "Neplatná data: " + ex.Message;
+        }
+        catch (InvalidOperationException ex)
+        {
+            errorMessage = ex.Message;
+        }
+        catch (Exception ex)
+        {
+            errorMessage = "Uložení selhalo: " + ex.Message;
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    private void BeginEdit(StartingEquipmentOptionDto opt)
+    {
+        ClearMessages();
+        editOptionId = opt.Id;
+        editDisplayName = opt.DisplayName;
+        editDescription = opt.Description ?? "";
+        editSortOrder = opt.SortOrder;
+    }
+
+    private void CancelEdit()
+    {
+        editOptionId = null;
+        ClearMessages();
+    }
+
+    private async Task SaveEditAsync()
+    {
+        if (isBusy || editOptionId is null) return;
+        isBusy = true;
+        ClearMessages();
+        try
+        {
+            await OptionsService.UpdateAsync(
+                editOptionId.Value,
+                editDisplayName,
+                string.IsNullOrWhiteSpace(editDescription) ? null : editDescription,
+                editSortOrder,
+                CancellationToken.None);
+            statusMessage = "Výbava uložena.";
+            editOptionId = null;
+            await ReloadOptionsAsync();
+        }
+        catch (ArgumentException ex)
+        {
+            errorMessage = "Neplatná data: " + ex.Message;
+        }
+        catch (InvalidOperationException ex)
+        {
+            errorMessage = ex.Message;
+        }
+        catch (Exception ex)
+        {
+            errorMessage = "Uložení selhalo: " + ex.Message;
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    private async Task DeleteAsync(int optionId)
+    {
+        if (isBusy) return;
+        isBusy = true;
+        ClearMessages();
+        try
+        {
+            var deleted = await OptionsService.TryDeleteAsync(optionId, CancellationToken.None);
+            if (deleted)
+            {
+                statusMessage = "Výbava smazána.";
+                await ReloadOptionsAsync();
+            }
+            else
+            {
+                errorMessage = "Nelze smazat: výbava je použita u některých přihlášek.";
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = "Smazání selhalo: " + ex.Message;
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    private async Task CopyFromAsync()
+    {
+        if (isBusy || copySourceGameId <= 0) return;
+        isBusy = true;
+        ClearMessages();
+        try
+        {
+            await OptionsService.CopyFromGameAsync(
+                copySourceGameId, GameId, CancellationToken.None);
+            statusMessage = "Výbava zkopírována (existující klíče byly přeskočeny).";
+            copySourceGameId = 0;
+            await ReloadOptionsAsync();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = "Kopírování selhalo: " + ex.Message;
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    private void ClearMessages()
+    {
+        statusMessage = null;
+        errorMessage = null;
+    }
+}
