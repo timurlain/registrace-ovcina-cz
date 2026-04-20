@@ -149,8 +149,8 @@ public sealed class CharacterPrepEmailRendererTests
         Assert.DoesNotContain("mailto:\"", rendered.HtmlBody);
         Assert.DoesNotContain("href=\"mailto:\"", rendered.HtmlBody);
         Assert.DoesNotContain("<a href=\"\"", rendered.HtmlBody);
-        Assert.DoesNotContain("napiš nám", rendered.HtmlBody);
-        Assert.DoesNotContain("napiš nám", rendered.PlainTextBody);
+        Assert.DoesNotContain("napište nám", rendered.HtmlBody);
+        Assert.DoesNotContain("napište nám", rendered.PlainTextBody);
     }
 
     [Fact]

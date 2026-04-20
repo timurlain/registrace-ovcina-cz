@@ -100,8 +100,8 @@ public sealed class CharacterPrepEmailRenderer : ICharacterPrepEmailRenderer
         sb.Append("<div style=\"font-family:Segoe UI,Arial,sans-serif;font-size:14px;line-height:1.5;color:#222;\">");
 
         sb.Append("<p>Vážený přihlášený na <b>").Append(encodedGame).Append("</b>,</p>");
-        sb.Append("<p>chystáme se. Těšíme se na Vás. Jsme také poučeni z minula a rádi bychom zrychlili začátek a připravili první volbu postav.</p>");
-        sb.Append("<p>Potřebujem od Vás kliknout na odkaz a vyplnit nám u každé postavy herní jméno a počáteční vybavení. Prosím zeptejte se dětí.</p>");
+        sb.Append("<p>Chystáme se. Těšíme se na Vás. Jsme také poučeni z minula a rádi bychom zrychlili začátek a připravili první volbu postav.</p>");
+        sb.Append("<p>Potřebujeme od Vás kliknout na odkaz a vyplnit nám u každé postavy herní jméno a počáteční vybavení. Prosím zeptejte se dětí.</p>");
         sb.Append("<p>Výběr už nachystáme přímo dětem do glejtu a tak se na začátku nemusí nikdo zdržovat.</p>");
         sb.Append("<p>Kdo si nic nevybere, dostane 5 měďáků a může si koupit co potřebuje na začátku hry, jen se tím pak trochu zdrží.</p>");
         sb.Append("<p>Jméno postavy bychom rádi zapsali do kronik a bude pokračovat v dalších hrách.</p>");
@@ -165,9 +165,9 @@ public sealed class CharacterPrepEmailRenderer : ICharacterPrepEmailRenderer
 
         sb.Append("Vážený přihlášený na ").Append(model.GameName).AppendLine(",");
         sb.AppendLine();
-        sb.AppendLine("chystáme se. Těšíme se na Vás. Jsme také poučeni z minula a rádi bychom zrychlili začátek a připravili první volbu postav.");
+        sb.AppendLine("Chystáme se. Těšíme se na Vás. Jsme také poučeni z minula a rádi bychom zrychlili začátek a připravili první volbu postav.");
         sb.AppendLine();
-        sb.AppendLine("Potřebujem od Vás kliknout na odkaz a vyplnit nám u každé postavy herní jméno a počáteční vybavení. Prosím zeptejte se dětí.");
+        sb.AppendLine("Potřebujeme od Vás kliknout na odkaz a vyplnit nám u každé postavy herní jméno a počáteční vybavení. Prosím zeptejte se dětí.");
         sb.AppendLine();
         sb.AppendLine("Výběr už nachystáme přímo dětem do glejtu a tak se na začátku nemusí nikdo zdržovat.");
         sb.AppendLine();
