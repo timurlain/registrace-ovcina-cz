@@ -12,6 +12,7 @@ using Microsoft.EntityFrameworkCore.Diagnostics;
 using RegistraceOvcina.Web.Components;
 using RegistraceOvcina.Web.Components.Account;
 using RegistraceOvcina.Web.Data;
+using RegistraceOvcina.Web.Features.CharacterPrep;
 using RegistraceOvcina.Web.Features.Email;
 using RegistraceOvcina.Web.Features.Food;
 using RegistraceOvcina.Web.Features.Games;
@@ -246,6 +247,8 @@ public class Program
         builder.Services.AddScoped<LodgingAssignmentService>();
         builder.Services.AddScoped<PeopleReviewService>();
         builder.Services.AddScoped<SubmissionService>();
+        builder.Services.AddScoped<CharacterPrepTokenService>();
+        builder.Services.AddScoped<CharacterPrepService>();
         builder.Services.AddScoped<OrganizerSubmissionService>();
         builder.Services.AddScoped<PaymentService>();
         builder.Services.Configure<AcsEmailOptions>(builder.Configuration.GetSection(AcsEmailOptions.SectionName));
