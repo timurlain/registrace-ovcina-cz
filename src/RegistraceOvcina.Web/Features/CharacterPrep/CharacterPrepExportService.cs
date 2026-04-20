@@ -17,15 +17,8 @@ public sealed class CharacterPrepExportService(
     {
         await using var db = await dbContextFactory.CreateDbContextAsync(ct);
 
-        // Game is loaded primarily so the caller (endpoint) can use Name for
-        // the filename slug; keeping it out of the sheet keeps the layout
-        // simple and focused on one household per row.
-        _ = await db.Games
-            .AsNoTracking()
-            .Where(x => x.Id == gameId)
-            .Select(x => x.Name)
-            .FirstOrDefaultAsync(ct);
-
+        // Note: the game name is loaded by the HTTP endpoint (Program.cs) for the
+        // filename slug. This service focuses purely on building the sheet bytes.
         var rows = await db.Registrations
             .AsNoTracking()
             .Where(x => x.Submission.GameId == gameId && x.AttendeeType == AttendeeType.Player)

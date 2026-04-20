@@ -26,12 +26,20 @@ On the morning of the LARP, 40 kids are handed a list of starting-equipment opti
 
 ## 3. Data model & migration
 
+> **Note (updated post-implementation 2026-04-21):** this section was revised to
+> match the shipped schema. `StartingEquipmentOptions.Id` and
+> `Registrations.StartingEquipmentOptionId` use **`int` identity PKs/FKs** (not
+> `Guid`), matching the existing `int` PK convention used by `Game`,
+> `Registration`, and `RegistrationSubmission`. The FK from
+> `StartingEquipmentOptions → Games` is `OnDelete(Restrict)`, not `Cascade`,
+> matching the project convention for per-game reference tables.
+
 ### 3.1 New table `StartingEquipmentOptions`
 
 | Column | Type | Notes |
 |---|---|---|
-| `Id` | `Guid` PK | |
-| `GameId` | `Guid` FK → `Games` | `OnDelete(Cascade)` |
+| `Id` | `int` PK (identity) | |
+| `GameId` | `int` FK → `Games` | `OnDelete(Restrict)` — matches project convention for per-game reference tables |
 | `Key` | `string(50)` | Stable identifier (e.g. `tesak`, `dyka-svitky`, `mince`). Unique per `GameId`. |
 | `DisplayName` | `string(100)` | Rendered verbatim to parent (`Tesák (3/1)`) |
 | `Description` | `string(500)?` | Nullable muted subtext |
@@ -43,7 +51,7 @@ Unique filtered index on `(GameId, Key)`.
 
 | Column | Type | Notes |
 |---|---|---|
-| `StartingEquipmentOptionId` | `Guid?` FK → `StartingEquipmentOptions` | `OnDelete(Restrict)` — dropping an option must be deliberate |
+| `StartingEquipmentOptionId` | `int?` FK → `StartingEquipmentOptions` | `OnDelete(Restrict)` — dropping an option must be deliberate |
 | `CharacterPrepNote` | `string(4000)?` | Distinct from `RegistrantNote` (parent's note); never overwritten by parent edits to the submission editor |
 | `CharacterPrepUpdatedAtUtc` | `DateTimeOffset?` | Stamped on every successful prep-page save |
 

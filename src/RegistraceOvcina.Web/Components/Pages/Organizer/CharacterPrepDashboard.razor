@@ -91,7 +91,7 @@ else
 
         <div class="ms-auto d-flex gap-2 align-items-center">
             <select class="form-select form-select-sm" style="min-width: 180px;"
-                    @bind="selectedStatus" @bind:after="ReloadRowsAsync">
+                    @bind="selectedStatus" @bind:after="OnStatusFilterChangedAsync">
                 <option value="">Všichni</option>
                 <option value="NotInvited">Nezvaní</option>
                 <option value="Waiting">Čekající</option>
@@ -99,8 +99,8 @@ else
             </select>
             <input type="text" class="form-control form-control-sm" style="min-width: 200px;"
                    placeholder="Jméno nebo postava…"
-                   @bind="searchText" @bind:event="oninput" @onkeyup="OnSearchKeyUp" />
-            <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="ReloadRowsAsync">
+                   @bind="searchText" @bind:event="oninput" @bind:after="OnSearchTextChangedAsync" @onkeyup="OnSearchKeyUp" />
+            <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="OnSearchClickedAsync">
                 Hledat
             </button>
         </div>
@@ -146,7 +146,7 @@ else
                         <tr data-testid="@($"prep-row-{row.RegistrationId}")">
                             <td>
                                 <a class="text-decoration-none"
-                                   href="/organizace/prihlaska/@row.SubmissionId">
+                                   href="/organizace/prihlasky/@row.SubmissionId">
                                     @row.HouseholdName
                                 </a>
                             </td>
@@ -276,6 +276,33 @@ else
     private async Task OnSearchKeyUp(KeyboardEventArgs e)
     {
         if (e.Key == "Enter")
+        {
+            currentPage = 1;
+            await ReloadRowsAsync();
+        }
+    }
+
+    // Filter/search handlers below reset pagination before reloading so a user
+    // on page N with the previous filter doesn't land on an empty table after
+    // the result set shrinks.
+    private async Task OnStatusFilterChangedAsync()
+    {
+        currentPage = 1;
+        await ReloadRowsAsync();
+    }
+
+    private async Task OnSearchClickedAsync()
+    {
+        currentPage = 1;
+        await ReloadRowsAsync();
+    }
+
+    private async Task OnSearchTextChangedAsync()
+    {
+        // Live-update pagination only when the textbox is cleared. Non-empty
+        // typing waits for Enter or the Hledat button so we don't hammer the DB
+        // on every keystroke.
+        if (string.IsNullOrWhiteSpace(searchText))
         {
             currentPage = 1;
             await ReloadRowsAsync();
