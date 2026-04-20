@@ -283,6 +283,118 @@ public sealed class CharacterPrepService(
         return new CharacterPrepStats(total, invited, fullyFilled, pending);
     }
 
+    /// <summary>
+    /// Paginated, filterable, one-row-per-Player projection for the organizer dashboard.
+    /// Status is derived from (submission.CharacterPrepInvitedAtUtc, registration.CharacterName,
+    /// registration.StartingEquipmentOptionId):
+    ///   NotInvited → no invite sent
+    ///   Done       → invited AND CharacterName non-blank AND StartingEquipmentOptionId != null
+    ///   Waiting    → everything else
+    /// Results are sorted Status ascending (NotInvited first), then HouseholdName
+    /// (case-insensitive), then PersonFullName to keep the ordering stable.
+    /// </summary>
+    public async Task<PagedResult<CharacterPrepDashboardRow>> GetDashboardRowsAsync(
+        int gameId,
+        DashboardFilter filter,
+        int page = 1,
+        int pageSize = 20,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(filter);
+        if (page < 1) page = 1;
+        if (pageSize < 1) pageSize = 20;
+
+        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+
+        // Pull all Player rows for this game. A LARP-scale dashboard tops out at a few
+        // hundred kids so an in-memory pass keeps the LINQ legible and lets us push a
+        // three-valued derived Status into the order clause without fighting the
+        // provider.
+        var raw = await db.Registrations
+            .AsNoTracking()
+            .Where(x => x.Submission.GameId == gameId
+                && x.AttendeeType == AttendeeType.Player
+                && !x.Submission.IsDeleted)
+            .Select(x => new
+            {
+                x.Id,
+                x.SubmissionId,
+                HouseholdName = x.Submission.PrimaryContactName,
+                PersonFirst = x.Person.FirstName,
+                PersonLast = x.Person.LastName,
+                x.CharacterName,
+                x.StartingEquipmentOptionId,
+                EquipmentDisplayName = x.StartingEquipmentOption != null
+                    ? x.StartingEquipmentOption.DisplayName
+                    : null,
+                x.CharacterPrepNote,
+                x.CharacterPrepUpdatedAtUtc,
+                InvitedAtUtc = x.Submission.CharacterPrepInvitedAtUtc,
+                SubmissionToken = x.Submission.CharacterPrepToken,
+            })
+            .ToListAsync(cancellationToken);
+
+        var rows = raw
+            .Select(r => new CharacterPrepDashboardRow(
+                r.SubmissionId,
+                r.HouseholdName,
+                r.Id,
+                (r.PersonFirst + " " + r.PersonLast).Trim(),
+                r.CharacterName,
+                r.EquipmentDisplayName,
+                r.CharacterPrepNote,
+                DeriveStatus(r.InvitedAtUtc, r.CharacterName, r.StartingEquipmentOptionId),
+                r.CharacterPrepUpdatedAtUtc,
+                r.SubmissionToken))
+            .ToList();
+
+        if (filter.Status is CharacterPrepStatus wanted)
+        {
+            rows = rows.Where(r => r.Status == wanted).ToList();
+        }
+
+        if (!string.IsNullOrWhiteSpace(filter.Search))
+        {
+            var needle = filter.Search.Trim();
+            rows = rows
+                .Where(r =>
+                    (!string.IsNullOrEmpty(r.PersonFullName)
+                        && r.PersonFullName.Contains(needle, StringComparison.OrdinalIgnoreCase))
+                    || (!string.IsNullOrEmpty(r.CharacterName)
+                        && r.CharacterName!.Contains(needle, StringComparison.OrdinalIgnoreCase)))
+                .ToList();
+        }
+
+        var total = rows.Count;
+
+        var ordered = rows
+            .OrderBy(r => (int)r.Status)
+            .ThenBy(r => r.HouseholdName, StringComparer.CurrentCultureIgnoreCase)
+            .ThenBy(r => r.PersonFullName, StringComparer.CurrentCultureIgnoreCase)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToList();
+
+        return new PagedResult<CharacterPrepDashboardRow>(ordered, total, page, pageSize);
+    }
+
+    private static CharacterPrepStatus DeriveStatus(
+        DateTimeOffset? invitedAtUtc,
+        string? characterName,
+        int? startingEquipmentOptionId)
+    {
+        if (invitedAtUtc is null)
+        {
+            return CharacterPrepStatus.NotInvited;
+        }
+
+        var nameFilled = !string.IsNullOrWhiteSpace(characterName);
+        var equipmentFilled = startingEquipmentOptionId.HasValue;
+        return nameFilled && equipmentFilled
+            ? CharacterPrepStatus.Done
+            : CharacterPrepStatus.Waiting;
+    }
+
     private static string? NormalizeOptional(string? value)
     {
         if (string.IsNullOrWhiteSpace(value))
