@@ -16,10 +16,10 @@ public sealed class CharacterPrepServiceGetViewTests
         var submissionId = await SeedMixedAttendeesAsync(options);
 
         var service = new CharacterPrepService(new TestDbContextFactory(options));
-        var submission = await LoadSubmissionAsync(options, submissionId);
 
-        var view = await service.GetPrepViewAsync(submission, NowUtc, CancellationToken.None);
+        var view = await service.GetPrepViewAsync(submissionId, NowUtc, CancellationToken.None);
 
+        Assert.NotNull(view);
         Assert.All(view.Rows, r => Assert.DoesNotContain("Adult", r.PersonFullName));
         Assert.Equal(2, view.Rows.Count);
         Assert.Contains(view.Rows, r => r.PersonFullName == "Adam Player");
@@ -33,10 +33,10 @@ public sealed class CharacterPrepServiceGetViewTests
         var submissionId = await SeedUnsortedPlayersAsync(options);
 
         var service = new CharacterPrepService(new TestDbContextFactory(options));
-        var submission = await LoadSubmissionAsync(options, submissionId);
 
-        var view = await service.GetPrepViewAsync(submission, NowUtc, CancellationToken.None);
+        var view = await service.GetPrepViewAsync(submissionId, NowUtc, CancellationToken.None);
 
+        Assert.NotNull(view);
         var names = view.Rows.Select(r => r.PersonFullName).ToList();
         Assert.Equal(new[] { "Anna Adamová", "Bořek Adamů", "Cyril Bárta" }, names);
     }
@@ -48,10 +48,10 @@ public sealed class CharacterPrepServiceGetViewTests
         var submissionId = await SeedSimplePlayerAsync(options, gameStartOffsetDays: -1);
 
         var service = new CharacterPrepService(new TestDbContextFactory(options));
-        var submission = await LoadSubmissionAsync(options, submissionId);
 
-        var view = await service.GetPrepViewAsync(submission, NowUtc, CancellationToken.None);
+        var view = await service.GetPrepViewAsync(submissionId, NowUtc, CancellationToken.None);
 
+        Assert.NotNull(view);
         Assert.True(view.IsReadOnly);
     }
 
@@ -71,10 +71,10 @@ public sealed class CharacterPrepServiceGetViewTests
         }
 
         var service = new CharacterPrepService(new TestDbContextFactory(options));
-        var submission = await LoadSubmissionAsync(options, submissionId);
 
-        var view = await service.GetPrepViewAsync(submission, NowUtc, CancellationToken.None);
+        var view = await service.GetPrepViewAsync(submissionId, NowUtc, CancellationToken.None);
 
+        Assert.NotNull(view);
         Assert.Equal(new[] { "A", "M", "Z" }, view.Options.Select(x => x.DisplayName));
     }
 
@@ -100,10 +100,10 @@ public sealed class CharacterPrepServiceGetViewTests
         }
 
         var service = new CharacterPrepService(new TestDbContextFactory(options));
-        var submission = await LoadSubmissionAsync(options, submissionId);
 
-        var view = await service.GetPrepViewAsync(submission, NowUtc, CancellationToken.None);
+        var view = await service.GetPrepViewAsync(submissionId, NowUtc, CancellationToken.None);
 
+        Assert.NotNull(view);
         var row = Assert.Single(view.Rows);
         Assert.Equal("Elrond", row.CharacterName);
         Assert.Equal(10, row.StartingEquipmentOptionId);
@@ -111,12 +111,18 @@ public sealed class CharacterPrepServiceGetViewTests
         Assert.NotNull(row.UpdatedAtUtc);
     }
 
-    private static async Task<RegistrationSubmission> LoadSubmissionAsync(
-        DbContextOptions<ApplicationDbContext> options,
-        int submissionId)
+    [Fact]
+    public async Task GetPrepViewAsync_returns_null_for_unknown_submission_id()
     {
-        await using var db = new ApplicationDbContext(options);
-        return await db.RegistrationSubmissions.SingleAsync(x => x.Id == submissionId);
+        var options = CreateOptions();
+        // Seed a submission with Id=1 so the database has unrelated data.
+        await SeedSimplePlayerAsync(options, gameStartOffsetDays: 30);
+
+        var service = new CharacterPrepService(new TestDbContextFactory(options));
+
+        var view = await service.GetPrepViewAsync(submissionId: 9999, NowUtc, CancellationToken.None);
+
+        Assert.Null(view);
     }
 
     private static DbContextOptions<ApplicationDbContext> CreateOptions() =>

@@ -8,14 +8,21 @@ public sealed class CharacterPrepService(
     IDbContextFactory<ApplicationDbContext> dbContextFactory,
     ILogger<CharacterPrepService>? logger = null)
 {
-    public async Task<CharacterPrepView> GetPrepViewAsync(
-        RegistrationSubmission submission,
+    public async Task<CharacterPrepView?> GetPrepViewAsync(
+        int submissionId,
         DateTimeOffset nowUtc,
         CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(submission);
-
         await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+
+        var submission = await db.RegistrationSubmissions
+            .AsNoTracking()
+            .FirstOrDefaultAsync(x => x.Id == submissionId, cancellationToken);
+
+        if (submission is null)
+        {
+            return null;
+        }
 
         var game = await db.Games
             .AsNoTracking()
