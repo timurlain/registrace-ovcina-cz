@@ -100,7 +100,7 @@ public sealed class CharacterPrepEmailRenderer : ICharacterPrepEmailRenderer
         sb.Append("<div style=\"font-family:Segoe UI,Arial,sans-serif;font-size:14px;line-height:1.5;color:#222;\">");
 
         sb.Append("<p>Vážení rodiče,</p>");
-        sb.Append("<p>Chystáme<b>").Append(encodedGame).Append("</b> a těšíme se na Vás. Poučeni z minulých let bychom rádi zrychlili začátek hry — první volbu postav můžeme připravit s Vámi předem.</p>");
+        sb.Append("<p>Chystáme <b>").Append(encodedGame).Append("</b> a těšíme se na Vás. Poučeni z minulých let bychom rádi zrychlili začátek hry — první volbu postav můžeme připravit s Vámi předem.</p>");
         sb.Append("<p>Prosíme Vás, abyste na odkazu níže vyplnili u každé postavy její herní jméno a počáteční výbavu. S dětmi si o tom, prosíme, promluvte.</p>");
         sb.Append("<p>Výběr pak předem připravíme přímo dětem do glejtu, takže se na začátku hry nikdo nemusí zdržovat.</p>");
         sb.Append("<p>Pokud si někdo nic nevybere, dostane 5 měďáků a může si potřebné vybavení koupit na začátku hry — jen se tím o něco zdrží.</p>");
@@ -165,7 +165,7 @@ public sealed class CharacterPrepEmailRenderer : ICharacterPrepEmailRenderer
 
         sb.AppendLine("Vážení rodiče,");
         sb.AppendLine();
-        sb.Append("Chystáme").Append(model.GameName).AppendLine(" a těšíme se na Vás. Poučeni z minulých let bychom rádi zrychlili začátek hry — první volbu postav můžeme připravit s Vámi předem.");
+        sb.Append("Chystáme ").Append(model.GameName).AppendLine(" a těšíme se na Vás. Poučeni z minulých let bychom rádi zrychlili začátek hry — první volbu postav můžeme připravit s Vámi předem.");
         sb.AppendLine();
         sb.AppendLine("Prosíme Vás, abyste na odkazu níže vyplnili u každé postavy její herní jméno a počáteční výbavu. S dětmi si o tom, prosíme, promluvte.");
         sb.AppendLine();
