@@ -1,0 +1,264 @@
+@page "/postavy/{Token}"
+@attribute [AllowAnonymous]
+@rendermode InteractiveServer
+
+@using System.Globalization
+@using RegistraceOvcina.Web.Features.CharacterPrep
+@using RegistraceOvcina.Web.Security
+@inject CharacterPrepTokenService TokenService
+@inject CharacterPrepService PrepService
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject ILogger<CharacterPrep> Logger
+
+<PageTitle>Příprava postavy — Ovčina</PageTitle>
+
+@if (_loading)
+{
+    <p class="text-secondary">Načítám…</p>
+}
+else if (_view is null)
+{
+    <section class="empty-state" data-testid="character-prep-not-found">
+        <h1 class="h3 mb-3">Odkaz není platný</h1>
+        <p class="mb-0">Odkaz již neplatí nebo je neznámý, kontaktujte organizátory.</p>
+    </section>
+}
+else
+{
+    <section class="mb-4">
+        <h1 class="h3 mb-1">Příprava postav — @_view.GameName</h1>
+        <p class="text-secondary mb-0">
+            Vyplňte jméno postavy a startovní výbavu pro každé dítě. Uložit můžete postupně,
+            údaje se zpracují při startu hry.
+        </p>
+    </section>
+
+    @if (IsLocked)
+    {
+        <div class="alert alert-warning" role="alert" data-testid="character-prep-readonly-banner">
+            Hra již začala, změny nelze provést.
+        </div>
+    }
+    else if (_view.IsReadOnly && _staffOverride)
+    {
+        <div class="alert alert-info" role="alert" data-testid="character-prep-staff-override">
+            Hra již začala — úpravy jsou povoleny pouze organizátorům.
+        </div>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(_statusMessage))
+    {
+        <div class="alert alert-success" role="status" data-testid="character-prep-status">@_statusMessage</div>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(_errorMessage))
+    {
+        <div class="alert alert-danger" role="alert" data-testid="character-prep-error">@_errorMessage</div>
+    }
+
+    <EditForm Model="this" OnValidSubmit="OnSave" FormName="character-prep">
+        <div class="d-flex flex-column gap-3">
+            @foreach (var row in _editRows)
+            {
+                <article class="card shadow-sm" data-testid="@($"prep-card-{row.RegistrationId}")">
+                    <div class="card-body p-4">
+                        <h2 class="h5 mb-3">@row.PersonFullName</h2>
+
+                        <div class="mb-3">
+                            <label class="form-label" for="@($"name-{row.RegistrationId}")">Jméno postavy</label>
+                            <InputText id="@($"name-{row.RegistrationId}")"
+                                       class="form-control"
+                                       maxlength="200"
+                                       @bind-Value="row.CharacterName"
+                                       disabled="@IsLocked"
+                                       data-testid="@($"character-name-{row.RegistrationId}")" />
+                        </div>
+
+                        <div class="mb-3">
+                            <span class="form-label d-block">Startovní výbava</span>
+                            <InputRadioGroup @bind-Value="row.StartingEquipmentOptionId"
+                                             Name="@($"equipment-{row.RegistrationId}")">
+                                @foreach (var option in _view.Options)
+                                {
+                                    var radioId = $"equip-{row.RegistrationId}-{option.Id}";
+                                    <div class="form-check">
+                                        <InputRadio class="form-check-input"
+                                                    id="@radioId"
+                                                    Value="@((int?)option.Id)"
+                                                    disabled="@IsLocked"
+                                                    data-testid="@radioId" />
+                                        <label class="form-check-label" for="@radioId">
+                                            <strong>@option.DisplayName</strong>
+                                            @if (!string.IsNullOrWhiteSpace(option.Description))
+                                            {
+                                                <span class="d-block small text-secondary">@option.Description</span>
+                                            }
+                                        </label>
+                                    </div>
+                                }
+                            </InputRadioGroup>
+                        </div>
+
+                        <div class="mb-2">
+                            <label class="form-label" for="@($"note-{row.RegistrationId}")">Poznámka</label>
+                            <InputTextArea id="@($"note-{row.RegistrationId}")"
+                                           class="form-control"
+                                           rows="4"
+                                           maxlength="4000"
+                                           placeholder="Cokoliv, co bychom měli vědět o postavě. Zvláštní schopnosti, alergie v roli, speciální přání…"
+                                           @bind-Value="row.CharacterPrepNote"
+                                           disabled="@IsLocked"
+                                           data-testid="@($"character-note-{row.RegistrationId}")" />
+                        </div>
+
+                        @if (row.UpdatedAtUtc.HasValue)
+                        {
+                            <div class="small text-secondary">
+                                Uloženo: @row.UpdatedAtUtc.Value.ToLocalTime().ToString("d. M. yyyy HH:mm", CzechCulture)
+                            </div>
+                        }
+                    </div>
+                </article>
+            }
+        </div>
+
+        @if (!IsLocked)
+        {
+            <div class="mt-4">
+                <button type="submit"
+                        class="btn btn-primary"
+                        disabled="@_saving"
+                        data-testid="character-prep-save">
+                    @(_saving ? "Ukládám…" : "Uložit")
+                </button>
+            </div>
+        }
+    </EditForm>
+}
+
+@code {
+    private static readonly CultureInfo CzechCulture = new("cs-CZ");
+
+    [Parameter]
+    public string Token { get; set; } = string.Empty;
+
+    private bool _loading = true;
+    private bool _saving;
+    private string? _statusMessage;
+    private string? _errorMessage;
+    private CharacterPrepView? _view;
+    private List<EditableRow> _editRows = [];
+    private int _submissionId;
+    private bool _staffOverride;
+
+    /// <summary>
+    /// True when the form must be presented in read-only mode: the game has
+    /// started AND the current request is NOT from a staff user.
+    /// </summary>
+    private bool IsLocked => _view is not null && _view.IsReadOnly && !_staffOverride;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _staffOverride = await ResolveStaffOverrideAsync();
+        await LoadViewAsync();
+        _loading = false;
+    }
+
+    private async Task LoadViewAsync()
+    {
+        var submission = await TokenService.FindBySubmissionTokenAsync(Token, CancellationToken.None);
+        if (submission is null)
+        {
+            _view = null;
+            _editRows = [];
+            return;
+        }
+
+        _submissionId = submission.Id;
+        _view = await PrepService.GetPrepViewAsync(submission.Id, DateTimeOffset.UtcNow, CancellationToken.None);
+        _editRows = _view?.Rows.Select(EditableRow.From).ToList() ?? [];
+    }
+
+    private async Task<bool> ResolveStaffOverrideAsync()
+    {
+        try
+        {
+            var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+            var user = authState.User;
+            if (user.Identity?.IsAuthenticated != true)
+            {
+                return false;
+            }
+            return user.IsInRole(RoleNames.Admin) || user.IsInRole(RoleNames.Organizer);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private async Task OnSave()
+    {
+        if (_view is null || IsLocked)
+        {
+            return;
+        }
+
+        _saving = true;
+        _statusMessage = null;
+        _errorMessage = null;
+
+        try
+        {
+            var saveRows = _editRows.Select(r => r.ToSaveRow()).ToList();
+            await PrepService.SaveAsync(_submissionId, saveRows, DateTimeOffset.UtcNow, CancellationToken.None);
+            await LoadViewAsync();
+            _statusMessage = "Uloženo, díky.";
+        }
+        catch (ArgumentException argEx)
+        {
+            Logger.LogWarning(argEx, "Character prep save rejected for submission {SubmissionId}.", _submissionId);
+            _errorMessage = "Některé hodnoty se nepodařilo uložit. Zkontrolujte prosím výběr startovní výbavy.";
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Character prep save failed for submission {SubmissionId}.", _submissionId);
+            _errorMessage = "Uložení se nepodařilo. Zkuste to prosím znovu později.";
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    /// <summary>
+    /// Mutable mirror of <see cref="CharacterPrepRow"/> — the record is immutable so Blazor
+    /// cannot two-way-bind into it. The page projects rows into this class on load and
+    /// back to <see cref="CharacterPrepSaveRow"/> on save.
+    /// </summary>
+    private sealed class EditableRow
+    {
+        public int RegistrationId { get; init; }
+        public string PersonFullName { get; init; } = string.Empty;
+        public string? CharacterName { get; set; }
+        public int? StartingEquipmentOptionId { get; set; }
+        public string? CharacterPrepNote { get; set; }
+        public DateTimeOffset? UpdatedAtUtc { get; init; }
+
+        public static EditableRow From(CharacterPrepRow source) => new()
+        {
+            RegistrationId = source.RegistrationId,
+            PersonFullName = source.PersonFullName,
+            CharacterName = source.CharacterName,
+            StartingEquipmentOptionId = source.StartingEquipmentOptionId,
+            CharacterPrepNote = source.CharacterPrepNote,
+            UpdatedAtUtc = source.UpdatedAtUtc
+        };
+
+        public CharacterPrepSaveRow ToSaveRow() => new(
+            RegistrationId,
+            CharacterName,
+            StartingEquipmentOptionId,
+            CharacterPrepNote);
+    }
+}

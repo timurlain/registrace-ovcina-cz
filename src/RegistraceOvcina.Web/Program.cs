@@ -12,6 +12,7 @@ using Microsoft.EntityFrameworkCore.Diagnostics;
 using RegistraceOvcina.Web.Components;
 using RegistraceOvcina.Web.Components.Account;
 using RegistraceOvcina.Web.Data;
+using RegistraceOvcina.Web.Features.CharacterPrep;
 using RegistraceOvcina.Web.Features.Email;
 using RegistraceOvcina.Web.Features.Food;
 using RegistraceOvcina.Web.Features.Games;
@@ -246,6 +247,16 @@ public class Program
         builder.Services.AddScoped<LodgingAssignmentService>();
         builder.Services.AddScoped<PeopleReviewService>();
         builder.Services.AddScoped<SubmissionService>();
+        builder.Services.AddScoped<CharacterPrepTokenService>();
+        builder.Services.AddScoped<CharacterPrepService>();
+        builder.Services.AddScoped<CharacterPrepOptionsService>();
+        builder.Services.AddScoped<CharacterPrepExportService>();
+        builder.Services.AddOptions<CharacterPrepOptions>()
+            .Bind(builder.Configuration.GetSection(CharacterPrepOptions.SectionName))
+            .ValidateDataAnnotations()
+            .ValidateOnStart();
+        builder.Services.AddScoped<ICharacterPrepEmailRenderer, CharacterPrepEmailRenderer>();
+        builder.Services.AddScoped<CharacterPrepMailService>();
         builder.Services.AddScoped<OrganizerSubmissionService>();
         builder.Services.AddScoped<PaymentService>();
         builder.Services.Configure<AcsEmailOptions>(builder.Configuration.GetSection(AcsEmailOptions.SectionName));
@@ -267,6 +278,13 @@ public class Program
             builder.Services.AddScoped<MailboxSyncService>();
             builder.Services.AddScoped<InvitationService>();
             builder.Services.AddScoped<ExternalContactService>();
+            builder.Services.AddScoped<ICharacterPrepEmailSender, GraphCharacterPrepEmailSender>();
+        }
+        else
+        {
+            // Dev / unconfigured environments: fail fast with a clear message rather than
+            // silently dropping mail. A no-op would hide integration issues during testing.
+            builder.Services.AddScoped<ICharacterPrepEmailSender, UnconfiguredCharacterPrepEmailSender>();
         }
 
         var app = builder.Build();
@@ -1256,6 +1274,59 @@ public class Program
                     return Results.File(xlsx,
                         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                         $"kralovstvi-{board.GameName.Replace(' ', '-')}.xlsx");
+                })
+            .RequireAuthorization(AuthorizationPolicies.StaffOnly);
+        app.MapGet(
+                "/organizace/hry/{gameId:int}/priprava-postav/export.xlsx",
+                async (int gameId, IDbContextFactory<ApplicationDbContext> dbFactory,
+                    CharacterPrepExportService exportService, CancellationToken ct) =>
+                {
+                    await using var db = await dbFactory.CreateDbContextAsync(ct);
+                    var gameName = await db.Games
+                        .AsNoTracking()
+                        .Where(x => x.Id == gameId)
+                        .Select(x => x.Name)
+                        .FirstOrDefaultAsync(ct);
+
+                    if (gameName is null)
+                    {
+                        return Results.NotFound();
+                    }
+
+                    var xlsx = await exportService.BuildAsync(gameId, ct);
+                    var slug = Slugify(gameName);
+                    var stamp = DateTime.UtcNow.ToString("yyyyMMdd");
+                    return Results.File(xlsx,
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        $"priprava-postav-{slug}-{stamp}.xlsx");
+
+                    static string Slugify(string value)
+                    {
+                        var normalized = value.Normalize(System.Text.NormalizationForm.FormD);
+                        var sb = new System.Text.StringBuilder(normalized.Length);
+                        foreach (var ch in normalized)
+                        {
+                            var cat = System.Globalization.CharUnicodeInfo.GetUnicodeCategory(ch);
+                            if (cat == System.Globalization.UnicodeCategory.NonSpacingMark)
+                            {
+                                continue;
+                            }
+                            if (char.IsLetterOrDigit(ch))
+                            {
+                                sb.Append(char.ToLowerInvariant(ch));
+                            }
+                            else if (char.IsWhiteSpace(ch) || ch == '-' || ch == '_')
+                            {
+                                sb.Append('-');
+                            }
+                        }
+                        var slug = sb.ToString();
+                        while (slug.Contains("--", StringComparison.Ordinal))
+                        {
+                            slug = slug.Replace("--", "-", StringComparison.Ordinal);
+                        }
+                        return slug.Trim('-');
+                    }
                 })
             .RequireAuthorization(AuthorizationPolicies.StaffOnly);
         app.MapPost(

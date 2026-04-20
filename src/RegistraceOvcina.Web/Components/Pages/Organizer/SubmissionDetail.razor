@@ -1,7 +1,18 @@
 @page "/organizace/prihlasky/{submissionId:int}"
 @attribute [Authorize(Policy = AuthorizationPolicies.StaffOnly)]
+@rendermode InteractiveServer
+
+@using Microsoft.EntityFrameworkCore
+@using RegistraceOvcina.Web.Features.CharacterPrep
 
 @inject OrganizerSubmissionService OrganizerSubmissionService
+@inject CharacterPrepService CharacterPrepService
+@inject CharacterPrepTokenService CharacterPrepTokenService
+@inject CharacterPrepMailService CharacterPrepMailService
+@inject IOptions<CharacterPrepOptions> CharacterPrepOptionsAccessor
+@inject IDbContextFactory<ApplicationDbContext> DbContextFactory
+@inject IJSRuntime JS
+@inject TimeProvider TimeProvider
 
 <PageTitle>Přihláška #@SubmissionId</PageTitle>
 
@@ -152,6 +163,98 @@ else
                     }
                 </div>
             </section>
+
+            @* Character prep section *@
+            <section class="card shadow-sm mb-4" data-testid="character-prep-section">
+                <div class="card-body p-4">
+                    <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+                        <h2 class="h5 mb-0">Příprava postav</h2>
+                        <span class="badge @GetPrepStatusBadgeClass(prepStatus) fs-6" data-testid="prep-status-badge">
+                            @GetPrepStatusLabel(prepStatus)
+                        </span>
+                    </div>
+
+                    @if (gameId.HasValue)
+                    {
+                        <a href="/organizace/hry/@gameId/priprava-postav" class="small text-decoration-none d-inline-block mb-3">
+                            Zobrazit přehled přípravy postav &rarr;
+                        </a>
+                    }
+
+                    @if (!string.IsNullOrWhiteSpace(prepMessage))
+                    {
+                        <div class="alert alert-success small py-2" role="status">@prepMessage</div>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(prepError))
+                    {
+                        <div class="alert alert-danger small py-2" role="alert">@prepError</div>
+                    }
+
+                    <div class="mb-3">
+                        <label class="form-label small text-secondary mb-1">Odkaz pro rodiče</label>
+                        @if (string.IsNullOrEmpty(prepToken))
+                        {
+                            <div class="d-flex gap-2 align-items-center">
+                                <span class="text-secondary small flex-grow-1">Odkaz zatím nebyl vygenerován.</span>
+                                <button type="button" class="btn btn-sm btn-outline-primary"
+                                        @onclick="GenerateLinkAsync" disabled="@prepBusy"
+                                        data-testid="generate-link-btn">
+                                    Vygenerovat odkaz
+                                </button>
+                            </div>
+                        }
+                        else
+                        {
+                            <div class="input-group input-group-sm">
+                                <input type="text" class="form-control" readonly value="@PrepUrl"
+                                       data-testid="prep-url-input" />
+                                <button type="button" class="btn btn-outline-secondary"
+                                        @onclick="CopyLinkAsync"
+                                        data-testid="copy-link-btn">
+                                    Kopírovat
+                                </button>
+                            </div>
+                        }
+                    </div>
+
+                    @if (prepInvitedAtUtc.HasValue || prepReminderAtUtc.HasValue)
+                    {
+                        <dl class="row small mb-3">
+                            @if (prepInvitedAtUtc.HasValue)
+                            {
+                                <dt class="col-sm-5 text-secondary">Pozvaná</dt>
+                                <dd class="col-sm-7">@CzechTime.Format(prepInvitedAtUtc.Value.UtcDateTime)</dd>
+                            }
+                            @if (prepReminderAtUtc.HasValue)
+                            {
+                                <dt class="col-sm-5 text-secondary">Naposledy připomenuta</dt>
+                                <dd class="col-sm-7">@CzechTime.Format(prepReminderAtUtc.Value.UtcDateTime)</dd>
+                            }
+                        </dl>
+                    }
+
+                    <div class="d-flex flex-wrap gap-2">
+                        <button type="button" class="btn btn-sm btn-primary"
+                                @onclick="SendInvitationAsync"
+                                disabled="@(prepBusy || prepInvitedAtUtc.HasValue || GameStarted)"
+                                data-testid="send-pozvanka-btn">
+                            Poslat pozvánku
+                        </button>
+                        <button type="button" class="btn btn-sm btn-outline-primary"
+                                @onclick="SendReminderAsync"
+                                disabled="@(prepBusy || !CanSendReminder)"
+                                data-testid="send-pripominka-btn">
+                            Poslat připomínku
+                        </button>
+                        <button type="button" class="btn btn-sm btn-outline-danger ms-auto"
+                                @onclick="RegenerateLinkAsync"
+                                disabled="@(prepBusy || string.IsNullOrEmpty(prepToken))"
+                                data-testid="rotate-link-btn">
+                            Vygenerovat nový odkaz
+                        </button>
+                    </div>
+                </div>
+            </section>
         </div>
 
         @* Right column — sidebar *@
@@ -292,10 +395,211 @@ else
     private string? statusMessage;
     private string? errorMessage;
 
+    // --- Character prep state ---
+    private int? gameId;
+    private DateTime? gameStartsAtUtc;
+    private string? prepToken;
+    private DateTimeOffset? prepInvitedAtUtc;
+    private DateTimeOffset? prepReminderAtUtc;
+    private CharacterPrepStatus? prepStatus;
+    private string? prepMessage;
+    private string? prepError;
+    private bool prepBusy;
+
+    private bool GameStarted =>
+        gameStartsAtUtc.HasValue && gameStartsAtUtc.Value <= TimeProvider.GetUtcNow().UtcDateTime;
+
+    private bool CanSendReminder
+    {
+        get
+        {
+            if (!prepInvitedAtUtc.HasValue || GameStarted)
+            {
+                return false;
+            }
+            if (prepReminderAtUtc is { } last)
+            {
+                var threshold = TimeProvider.GetUtcNow().AddHours(-24);
+                if (last >= threshold)
+                {
+                    return false;
+                }
+            }
+            return true;
+        }
+    }
+
+    private string PrepUrl
+    {
+        get
+        {
+            var baseUrl = (CharacterPrepOptionsAccessor.Value.PublicBaseUrl ?? "").TrimEnd('/');
+            return string.IsNullOrEmpty(prepToken) ? "" : $"{baseUrl}/postavy/{prepToken}";
+        }
+    }
+
     protected override async Task OnInitializedAsync()
     {
         detail = await OrganizerSubmissionService.GetSubmissionDetailAsync(SubmissionId);
+        await LoadCharacterPrepStateAsync();
     }
+
+    private async Task LoadCharacterPrepStateAsync()
+    {
+        await using var db = await DbContextFactory.CreateDbContextAsync();
+        var row = await db.RegistrationSubmissions
+            .AsNoTracking()
+            .Where(x => x.Id == SubmissionId)
+            .Select(x => new
+            {
+                x.GameId,
+                x.CharacterPrepToken,
+                x.CharacterPrepInvitedAtUtc,
+                x.CharacterPrepReminderLastSentAtUtc,
+                GameStartsAtUtc = x.Game.StartsAtUtc,
+            })
+            .FirstOrDefaultAsync();
+
+        if (row is null)
+        {
+            return;
+        }
+
+        gameId = row.GameId;
+        gameStartsAtUtc = row.GameStartsAtUtc;
+        prepToken = row.CharacterPrepToken;
+        prepInvitedAtUtc = row.CharacterPrepInvitedAtUtc;
+        prepReminderAtUtc = row.CharacterPrepReminderLastSentAtUtc;
+        prepStatus = await CharacterPrepService.GetSubmissionStatusAsync(SubmissionId, CancellationToken.None);
+    }
+
+    private async Task GenerateLinkAsync()
+    {
+        await RunPrepActionAsync(async () =>
+        {
+            prepToken = await CharacterPrepTokenService.EnsureTokenAsync(SubmissionId, CancellationToken.None);
+            prepMessage = "Odkaz byl vygenerován.";
+        });
+    }
+
+    private async Task CopyLinkAsync()
+    {
+        try
+        {
+            await JS.InvokeVoidAsync("navigator.clipboard.writeText", PrepUrl);
+            prepMessage = "Odkaz byl zkopírován do schránky.";
+            prepError = null;
+        }
+        catch (Exception ex)
+        {
+            prepError = $"Kopírování se nezdařilo: {ex.Message}";
+            prepMessage = null;
+        }
+    }
+
+    private async Task SendInvitationAsync()
+    {
+        await RunPrepActionAsync(async () =>
+        {
+            var result = await CharacterPrepMailService.SendPozvankaAsync(
+                SubmissionId,
+                TimeProvider.GetUtcNow(),
+                CancellationToken.None);
+            ApplySendResult(result, wasReminder: false);
+            await LoadCharacterPrepStateAsync();
+        });
+    }
+
+    private async Task SendReminderAsync()
+    {
+        await RunPrepActionAsync(async () =>
+        {
+            var result = await CharacterPrepMailService.SendPripominkaAsync(
+                SubmissionId,
+                TimeProvider.GetUtcNow(),
+                CancellationToken.None);
+            ApplySendResult(result, wasReminder: true);
+            await LoadCharacterPrepStateAsync();
+        });
+    }
+
+    private async Task RegenerateLinkAsync()
+    {
+        var confirmed = await JS.InvokeAsync<bool>("confirm",
+            "Tím zneplatníš stávající odkaz. Pokračovat?");
+        if (!confirmed)
+        {
+            return;
+        }
+
+        await RunPrepActionAsync(async () =>
+        {
+            prepToken = await CharacterPrepTokenService.RotateTokenAsync(SubmissionId, CancellationToken.None);
+            prepMessage = "Odkaz vygenerován, starý je neplatný.";
+        });
+    }
+
+    private async Task RunPrepActionAsync(Func<Task> action)
+    {
+        if (prepBusy)
+        {
+            return;
+        }
+        prepBusy = true;
+        prepMessage = null;
+        prepError = null;
+        try
+        {
+            await action();
+        }
+        catch (Exception ex)
+        {
+            prepError = $"Akci se nepodařilo dokončit: {ex.Message}";
+        }
+        finally
+        {
+            prepBusy = false;
+        }
+    }
+
+    private void ApplySendResult(SendSingleResult result, bool wasReminder)
+    {
+        switch (result)
+        {
+            case SendSingleResult.Sent:
+                prepMessage = wasReminder ? "Připomínka odeslána." : "Pozvánka odeslána.";
+                break;
+            case SendSingleResult.AlreadyInvited:
+                prepError = "Pozvánka již byla odeslána dříve.";
+                break;
+            case SendSingleResult.ThrottledSkipped:
+                prepError = "Připomínka byla odeslána v posledních 24 hodinách, počkej.";
+                break;
+            case SendSingleResult.MissingRecipient:
+                prepError = "Chybí e-mail příjemce — nelze odeslat.";
+                break;
+            case SendSingleResult.Error:
+            default:
+                prepError = "Odeslání se nezdařilo. Zkus to znovu nebo zkontroluj log.";
+                break;
+        }
+    }
+
+    private static string GetPrepStatusLabel(CharacterPrepStatus? status) => status switch
+    {
+        CharacterPrepStatus.NotInvited => "Nezváno",
+        CharacterPrepStatus.Waiting => "Čeká",
+        CharacterPrepStatus.Done => "Hotovo",
+        _ => "—"
+    };
+
+    private static string GetPrepStatusBadgeClass(CharacterPrepStatus? status) => status switch
+    {
+        CharacterPrepStatus.NotInvited => "text-bg-secondary",
+        CharacterPrepStatus.Waiting => "text-bg-warning",
+        CharacterPrepStatus.Done => "text-bg-success",
+        _ => "text-bg-light"
+    };
 
     protected override void OnParametersSet()
     {

@@ -157,12 +157,15 @@ internal sealed partial class MailboxSyncService(
             .ToDictionary(g => g.Key, g => g.First().Id, StringComparer.Ordinal);
 
         // Pre-load unreconciled local outbound rows (the ones created by InboxService
-        // with a "composed-*" / "reply-*" placeholder id). Sync will try to "claim"
-        // them by matching to+subject+body so Graph's next surfacing of the same
-        // message doesn't create a duplicate row.
+        // with a "composed-*" / "reply-*" placeholder id, or by CharacterPrepMailService
+        // with a "prep-*" placeholder id). Sync will try to "claim" them by matching
+        // to+subject+body so Graph's next surfacing of the same message doesn't create
+        // a duplicate row.
         var localPlaceholders = await dbContext.EmailMessages
             .Where(e => e.Direction == EmailDirection.Outbound
-                && (e.MailboxItemId.StartsWith("composed-") || e.MailboxItemId.StartsWith("reply-")))
+                && (e.MailboxItemId.StartsWith("composed-")
+                    || e.MailboxItemId.StartsWith("reply-")
+                    || e.MailboxItemId.StartsWith("prep-")))
             .OrderByDescending(e => e.SentAtUtc)
             .ToListAsync(cancellationToken);
 

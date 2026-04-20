@@ -197,6 +197,18 @@ public sealed class GameStatsService(IDbContextFactory<ApplicationDbContext> dbC
             .Count(x => x.LodgingPreference == LodgingPreference.Indoor && !x.AssignedGameRoomId.HasValue);
         var playersWithoutKingdom = Math.Max(0, kingdomUnassigned);
 
+        // --- Character prep widget ---
+        // Total = every Player row; Filled = Players with BOTH a non-blank character name
+        // AND a chosen StartingEquipmentOptionId. Matches the dashboard's "Done" state
+        // so the widget and dashboard can't disagree. Soft-deleted submissions are
+        // excluded by the Registration.HasQueryFilter(!Submission.IsDeleted) that
+        // propagates through the db.Registrations query above — locked in by
+        // GameStatsCharacterPrepWidgetTests.Widget_excludes_soft_deleted_submissions.
+        var characterPrepTotal = players.Count;
+        var characterPrepFilled = players.Count(p =>
+            !string.IsNullOrWhiteSpace(p.CharacterName)
+            && p.StartingEquipmentOptionId.HasValue);
+
         return new GameStats
         {
             GameName = game.Name,
@@ -231,7 +243,9 @@ public sealed class GameStatsService(IDbContextFactory<ApplicationDbContext> dbC
             UnpaidSubmissionCount = unpaidSubmissionCount,
             Meals = meals,
             IndoorWithoutRoom = indoorWithoutRoom,
-            PlayersWithoutKingdom = playersWithoutKingdom
+            PlayersWithoutKingdom = playersWithoutKingdom,
+            CharacterPrepFilled = characterPrepFilled,
+            CharacterPrepTotal = characterPrepTotal
         };
     }
 
@@ -314,6 +328,10 @@ public sealed class GameStats
     // Action items
     public int IndoorWithoutRoom { get; set; }
     public int PlayersWithoutKingdom { get; set; }
+
+    // Character prep progress (widget on /statistiky links to dashboard)
+    public int CharacterPrepFilled { get; set; }
+    public int CharacterPrepTotal { get; set; }
 }
 
 public sealed record AgeBracket(string Label, int Count, int MaxCount);

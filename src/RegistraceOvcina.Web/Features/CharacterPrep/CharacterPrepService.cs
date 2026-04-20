@@ -1,0 +1,465 @@
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
+using RegistraceOvcina.Web.Data;
+
+namespace RegistraceOvcina.Web.Features.CharacterPrep;
+
+public sealed class CharacterPrepService(
+    IDbContextFactory<ApplicationDbContext> dbContextFactory,
+    ILogger<CharacterPrepService>? logger = null)
+{
+    public async Task<CharacterPrepView?> GetPrepViewAsync(
+        int submissionId,
+        DateTimeOffset nowUtc,
+        CancellationToken cancellationToken)
+    {
+        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+
+        var submission = await db.RegistrationSubmissions
+            .AsNoTracking()
+            .FirstOrDefaultAsync(x => x.Id == submissionId, cancellationToken);
+
+        if (submission is null)
+        {
+            return null;
+        }
+
+        var game = await db.Games
+            .AsNoTracking()
+            .FirstOrDefaultAsync(x => x.Id == submission.GameId, cancellationToken)
+            ?? throw new InvalidOperationException(
+                $"Game {submission.GameId} for submission {submission.Id} not found.");
+
+        var gameStart = new DateTimeOffset(
+            DateTime.SpecifyKind(game.StartsAtUtc, DateTimeKind.Utc));
+
+        var rows = await db.Registrations
+            .AsNoTracking()
+            .Where(x => x.SubmissionId == submission.Id && x.AttendeeType == AttendeeType.Player)
+            .OrderBy(x => x.Person.LastName)
+            .ThenBy(x => x.Person.FirstName)
+            .Select(x => new CharacterPrepRow(
+                x.Id,
+                x.Person.FirstName + " " + x.Person.LastName,
+                x.CharacterName,
+                x.StartingEquipmentOptionId,
+                x.CharacterPrepNote,
+                x.CharacterPrepUpdatedAtUtc))
+            .ToListAsync(cancellationToken);
+
+        var options = await db.StartingEquipmentOptions
+            .AsNoTracking()
+            .Where(x => x.GameId == submission.GameId)
+            .OrderBy(x => x.SortOrder)
+            .ThenBy(x => x.DisplayName)
+            .Select(x => new StartingEquipmentOptionView(
+                x.Id,
+                x.Key,
+                x.DisplayName,
+                x.Description,
+                x.SortOrder))
+            .ToListAsync(cancellationToken);
+
+        var isReadOnly = gameStart <= nowUtc;
+
+        return new CharacterPrepView(
+            submission.Id,
+            submission.GameId,
+            game.Name,
+            gameStart,
+            isReadOnly,
+            rows,
+            options);
+    }
+
+    public async Task SaveAsync(
+        int submissionId,
+        IEnumerable<CharacterPrepSaveRow> rows,
+        DateTimeOffset nowUtc,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(rows);
+
+        // Materialize once — the caller may pass a lazy IEnumerable and we iterate twice.
+        var rowList = rows as IReadOnlyList<CharacterPrepSaveRow> ?? rows.ToList();
+
+        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+
+        var submission = await db.RegistrationSubmissions
+            .FirstOrDefaultAsync(x => x.Id == submissionId, cancellationToken)
+            ?? throw new InvalidOperationException(
+                $"RegistrationSubmission {submissionId} not found.");
+
+        var registrations = await db.Registrations
+            .Include(x => x.StartingEquipmentOption)
+            .Where(x => x.SubmissionId == submissionId)
+            .ToListAsync(cancellationToken);
+
+        var byId = registrations.ToDictionary(x => x.Id);
+
+        // Resolve all requested equipment options in one query so we can validate
+        // they belong to the submission's game (defense against cross-game spoofing).
+        var optionIds = rowList
+            .Where(r => r.StartingEquipmentOptionId.HasValue)
+            .Select(r => r.StartingEquipmentOptionId!.Value)
+            .Distinct()
+            .ToList();
+
+        var optionGameLookup = optionIds.Count == 0
+            ? new Dictionary<int, int>()
+            : await db.StartingEquipmentOptions
+                .AsNoTracking()
+                .Where(x => optionIds.Contains(x.Id))
+                .ToDictionaryAsync(x => x.Id, x => x.GameId, cancellationToken);
+
+        foreach (var row in rowList)
+        {
+            if (!byId.TryGetValue(row.RegistrationId, out var registration))
+            {
+                logger?.LogDebug(
+                    "Character prep save row for registration {RegistrationId} ignored: not part of submission {SubmissionId}.",
+                    row.RegistrationId, submissionId);
+                continue;
+            }
+
+            if (registration.SubmissionId != submissionId)
+            {
+                logger?.LogDebug(
+                    "Character prep save row for registration {RegistrationId} ignored: submission mismatch.",
+                    row.RegistrationId);
+                continue;
+            }
+
+            if (registration.AttendeeType != AttendeeType.Player)
+            {
+                logger?.LogDebug(
+                    "Character prep save row for registration {RegistrationId} ignored: not a Player.",
+                    row.RegistrationId);
+                continue;
+            }
+
+            if (row.StartingEquipmentOptionId.HasValue)
+            {
+                if (!optionGameLookup.TryGetValue(row.StartingEquipmentOptionId.Value, out var optionGameId))
+                {
+                    throw new ArgumentException(
+                        $"Starting equipment option {row.StartingEquipmentOptionId.Value} does not exist.",
+                        nameof(rows));
+                }
+
+                if (optionGameId != submission.GameId)
+                {
+                    throw new ArgumentException(
+                        $"Starting equipment option {row.StartingEquipmentOptionId.Value} belongs to game {optionGameId}, but submission {submissionId} is for game {submission.GameId}.",
+                        nameof(rows));
+                }
+            }
+
+            var newCharacterName = NormalizeOptional(row.CharacterName);
+            var newNote = NormalizeOptional(row.CharacterPrepNote);
+            var newOptionId = row.StartingEquipmentOptionId;
+
+            var changed = !string.Equals(registration.CharacterName, newCharacterName, StringComparison.Ordinal)
+                || registration.StartingEquipmentOptionId != newOptionId
+                || !string.Equals(registration.CharacterPrepNote, newNote, StringComparison.Ordinal);
+
+            if (!changed)
+            {
+                continue;
+            }
+
+            registration.CharacterName = newCharacterName;
+            registration.StartingEquipmentOptionId = newOptionId;
+            registration.CharacterPrepNote = newNote;
+            registration.CharacterPrepUpdatedAtUtc = nowUtc;
+        }
+
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<RegistrationSubmission>> ListInvitationTargetsAsync(
+        int gameId,
+        CancellationToken cancellationToken)
+    {
+        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+
+        // Soft-deleted submissions are excluded by the global HasQueryFilter
+        // (!IsDeleted) on RegistrationSubmission — see ApplicationDbContext and
+        // Soft_deleted_submission_is_excluded_* tests that lock this in.
+        return await db.RegistrationSubmissions
+            .AsNoTracking()
+            .Where(x => x.GameId == gameId
+                && x.CharacterPrepInvitedAtUtc == null
+                && x.Registrations.Any(r => r.AttendeeType == AttendeeType.Player))
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<RegistrationSubmission>> ListReminderTargetsAsync(
+        int gameId,
+        DateTimeOffset nowUtc,
+        CancellationToken cancellationToken)
+    {
+        var threshold = nowUtc.AddHours(-24);
+
+        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+
+        // Soft-deleted submissions are excluded by the global HasQueryFilter
+        // (!IsDeleted) on RegistrationSubmission, same as ListInvitationTargetsAsync.
+        return await db.RegistrationSubmissions
+            .AsNoTracking()
+            .Where(x => x.GameId == gameId
+                && x.CharacterPrepInvitedAtUtc != null
+                && x.Registrations.Any(r =>
+                    r.AttendeeType == AttendeeType.Player
+                    && r.StartingEquipmentOptionId == null)
+                && (x.CharacterPrepReminderLastSentAtUtc == null
+                    || x.CharacterPrepReminderLastSentAtUtc < threshold))
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task MarkInvitedAsync(
+        int submissionId,
+        DateTimeOffset nowUtc,
+        CancellationToken cancellationToken)
+    {
+        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+
+        var submission = await db.RegistrationSubmissions
+            .FirstOrDefaultAsync(x => x.Id == submissionId, cancellationToken)
+            ?? throw new InvalidOperationException(
+                $"RegistrationSubmission {submissionId} not found.");
+
+        if (submission.CharacterPrepInvitedAtUtc is null)
+        {
+            submission.CharacterPrepInvitedAtUtc = nowUtc;
+            await db.SaveChangesAsync(cancellationToken);
+        }
+    }
+
+    public async Task MarkReminderSentAsync(
+        int submissionId,
+        DateTimeOffset nowUtc,
+        CancellationToken cancellationToken)
+    {
+        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+
+        var submission = await db.RegistrationSubmissions
+            .FirstOrDefaultAsync(x => x.Id == submissionId, cancellationToken)
+            ?? throw new InvalidOperationException(
+                $"RegistrationSubmission {submissionId} not found.");
+
+        submission.CharacterPrepReminderLastSentAtUtc = nowUtc;
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Derived status of a single submission for the "Příprava postav" badge on the
+    /// organizer submission detail page. Reuses the same three-state truth table as the
+    /// dashboard so the badge the organizer sees on both pages always agrees:
+    ///   NotInvited → <see cref="RegistrationSubmission.CharacterPrepInvitedAtUtc"/> is null
+    ///   Done       → invited AND every Player registration has both CharacterName non-blank
+    ///                AND StartingEquipmentOptionId set
+    ///   Waiting    → invited but at least one Player row still missing name or equipment
+    /// A submission with zero Player rows still resolves to Done/NotInvited (Waiting
+    /// requires something to wait for), which matches the dashboard's "pending" notion.
+    /// Returns null if the submission does not exist (soft-deleted or unknown id).
+    /// </summary>
+    public async Task<CharacterPrepStatus?> GetSubmissionStatusAsync(
+        int submissionId,
+        CancellationToken cancellationToken)
+    {
+        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+
+        var projection = await db.RegistrationSubmissions
+            .AsNoTracking()
+            .Where(x => x.Id == submissionId)
+            .Select(x => new
+            {
+                x.CharacterPrepInvitedAtUtc,
+                PlayersMissingName = x.Registrations.Count(r =>
+                    r.AttendeeType == AttendeeType.Player
+                    && (r.CharacterName == null || r.CharacterName.Trim() == "")),
+                PlayersMissingEquipment = x.Registrations.Count(r =>
+                    r.AttendeeType == AttendeeType.Player
+                    && r.StartingEquipmentOptionId == null),
+            })
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (projection is null)
+        {
+            return null;
+        }
+
+        if (projection.CharacterPrepInvitedAtUtc is null)
+        {
+            return CharacterPrepStatus.NotInvited;
+        }
+
+        var fullyFilled = projection.PlayersMissingName == 0
+            && projection.PlayersMissingEquipment == 0;
+
+        return fullyFilled ? CharacterPrepStatus.Done : CharacterPrepStatus.Waiting;
+    }
+
+    public async Task<CharacterPrepStats> GetDashboardStatsAsync(
+        int gameId,
+        CancellationToken cancellationToken)
+    {
+        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+
+        // Fetch per-submission player aggregates in a single query so we can compute
+        // TotalHouseholds / Invited / FullyFilled without N round trips.
+        // Soft-deleted submissions are excluded by the global HasQueryFilter
+        // (!IsDeleted) on RegistrationSubmission — locked in by
+        // CharacterPrepServiceDashboardStatsTests.Soft_deleted_submission_is_excluded.
+        var aggregates = await db.RegistrationSubmissions
+            .AsNoTracking()
+            .Where(x => x.GameId == gameId)
+            .Select(x => new
+            {
+                x.Id,
+                x.CharacterPrepInvitedAtUtc,
+                PlayerCount = x.Registrations.Count(r => r.AttendeeType == AttendeeType.Player),
+                PlayersWithoutEquipment = x.Registrations.Count(r =>
+                    r.AttendeeType == AttendeeType.Player
+                    && r.StartingEquipmentOptionId == null),
+                PlayersWithoutCharacterName = x.Registrations.Count(r =>
+                    r.AttendeeType == AttendeeType.Player
+                    && (r.CharacterName == null || r.CharacterName.Trim() == ""))
+            })
+            .ToListAsync(cancellationToken);
+
+        var households = aggregates.Where(x => x.PlayerCount > 0).ToList();
+
+        var total = households.Count;
+        var invited = households.Count(x => x.CharacterPrepInvitedAtUtc is not null);
+        var fullyFilled = households.Count(x =>
+            x.PlayersWithoutEquipment == 0 && x.PlayersWithoutCharacterName == 0);
+        var pending = total - fullyFilled;
+
+        return new CharacterPrepStats(total, invited, fullyFilled, pending);
+    }
+
+    /// <summary>
+    /// Paginated, filterable, one-row-per-Player projection for the organizer dashboard.
+    /// Status is derived from (submission.CharacterPrepInvitedAtUtc, registration.CharacterName,
+    /// registration.StartingEquipmentOptionId):
+    ///   NotInvited → no invite sent
+    ///   Done       → invited AND CharacterName non-blank AND StartingEquipmentOptionId != null
+    ///   Waiting    → everything else
+    /// Results are sorted Status ascending (NotInvited first), then HouseholdName
+    /// (case-insensitive), then PersonFullName to keep the ordering stable.
+    /// </summary>
+    public async Task<PagedResult<CharacterPrepDashboardRow>> GetDashboardRowsAsync(
+        int gameId,
+        DashboardFilter filter,
+        int page = 1,
+        int pageSize = 20,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(filter);
+        if (page < 1) page = 1;
+        if (pageSize < 1) pageSize = 20;
+
+        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+
+        // Pull all Player rows for this game. A LARP-scale dashboard tops out at a few
+        // hundred kids so an in-memory pass keeps the LINQ legible and lets us push a
+        // three-valued derived Status into the order clause without fighting the
+        // provider.
+        var raw = await db.Registrations
+            .AsNoTracking()
+            .Where(x => x.Submission.GameId == gameId
+                && x.AttendeeType == AttendeeType.Player
+                && !x.Submission.IsDeleted)
+            .Select(x => new
+            {
+                x.Id,
+                x.SubmissionId,
+                HouseholdName = x.Submission.PrimaryContactName,
+                PersonFirst = x.Person.FirstName,
+                PersonLast = x.Person.LastName,
+                x.CharacterName,
+                x.StartingEquipmentOptionId,
+                EquipmentDisplayName = x.StartingEquipmentOption != null
+                    ? x.StartingEquipmentOption.DisplayName
+                    : null,
+                x.CharacterPrepNote,
+                x.CharacterPrepUpdatedAtUtc,
+                InvitedAtUtc = x.Submission.CharacterPrepInvitedAtUtc,
+                SubmissionToken = x.Submission.CharacterPrepToken,
+            })
+            .ToListAsync(cancellationToken);
+
+        var rows = raw
+            .Select(r => new CharacterPrepDashboardRow(
+                r.SubmissionId,
+                r.HouseholdName,
+                r.Id,
+                (r.PersonFirst + " " + r.PersonLast).Trim(),
+                r.CharacterName,
+                r.EquipmentDisplayName,
+                r.CharacterPrepNote,
+                DeriveStatus(r.InvitedAtUtc, r.CharacterName, r.StartingEquipmentOptionId),
+                r.CharacterPrepUpdatedAtUtc,
+                r.SubmissionToken))
+            .ToList();
+
+        if (filter.Status is CharacterPrepStatus wanted)
+        {
+            rows = rows.Where(r => r.Status == wanted).ToList();
+        }
+
+        if (!string.IsNullOrWhiteSpace(filter.Search))
+        {
+            var needle = filter.Search.Trim();
+            rows = rows
+                .Where(r =>
+                    (!string.IsNullOrEmpty(r.PersonFullName)
+                        && r.PersonFullName.Contains(needle, StringComparison.OrdinalIgnoreCase))
+                    || (!string.IsNullOrEmpty(r.CharacterName)
+                        && r.CharacterName!.Contains(needle, StringComparison.OrdinalIgnoreCase)))
+                .ToList();
+        }
+
+        var total = rows.Count;
+
+        var ordered = rows
+            .OrderBy(r => (int)r.Status)
+            .ThenBy(r => r.HouseholdName, StringComparer.CurrentCultureIgnoreCase)
+            .ThenBy(r => r.PersonFullName, StringComparer.CurrentCultureIgnoreCase)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToList();
+
+        return new PagedResult<CharacterPrepDashboardRow>(ordered, total, page, pageSize);
+    }
+
+    private static CharacterPrepStatus DeriveStatus(
+        DateTimeOffset? invitedAtUtc,
+        string? characterName,
+        int? startingEquipmentOptionId)
+    {
+        if (invitedAtUtc is null)
+        {
+            return CharacterPrepStatus.NotInvited;
+        }
+
+        var nameFilled = !string.IsNullOrWhiteSpace(characterName);
+        var equipmentFilled = startingEquipmentOptionId.HasValue;
+        return nameFilled && equipmentFilled
+            ? CharacterPrepStatus.Done
+            : CharacterPrepStatus.Waiting;
+    }
+
+    private static string? NormalizeOptional(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        var trimmed = value.Trim();
+        return trimmed.Length == 0 ? null : trimmed;
+    }
+}

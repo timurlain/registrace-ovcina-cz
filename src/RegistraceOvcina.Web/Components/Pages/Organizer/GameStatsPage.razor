@@ -80,6 +80,31 @@ else
         </div>
     </div>
 
+    @* ────────── Character Prep Widget ────────── *@
+    <div class="row g-3 mb-4">
+        <div class="col-md-6">
+            @{
+                var prepBorder = stats.CharacterPrepTotal > 0 && stats.CharacterPrepFilled == stats.CharacterPrepTotal
+                    ? "border-success"
+                    : stats.CharacterPrepFilled > 0 ? "border-warning" : "border-secondary";
+            }
+            <a class="text-decoration-none text-body"
+               href="/organizace/hry/@GameId/priprava-postav">
+                <div class="card shadow-sm border-start border-4 @prepBorder">
+                    <div class="card-body d-flex align-items-center">
+                        <div>
+                            <h5 class="mb-1">Příprava postav</h5>
+                            <div class="text-secondary">
+                                @stats.CharacterPrepFilled / @stats.CharacterPrepTotal vyplněno
+                            </div>
+                        </div>
+                        <span class="ms-auto text-muted small">Otevřít →</span>
+                    </div>
+                </div>
+            </a>
+        </div>
+    </div>
+
     @* ────────── Action Items ────────── *@
     @if (stats.UnpaidSubmissionCount > 0 || stats.PlayersWithoutKingdom > 0 || stats.IndoorWithoutRoom > 0)
     {

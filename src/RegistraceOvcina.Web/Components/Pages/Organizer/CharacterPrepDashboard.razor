@@ -1,0 +1,427 @@
+@page "/organizace/hry/{GameId:int}/priprava-postav"
+@attribute [Authorize(Policy = AuthorizationPolicies.StaffOnly)]
+@rendermode InteractiveServer
+
+@using Microsoft.EntityFrameworkCore
+@using RegistraceOvcina.Web.Data
+@using RegistraceOvcina.Web.Features.CharacterPrep
+@using RegistraceOvcina.Web.Security
+
+@inject CharacterPrepService PrepService
+@inject CharacterPrepMailService MailService
+@inject IDbContextFactory<ApplicationDbContext> DbContextFactory
+
+<PageTitle>Příprava postav — @(gameName ?? "Načítání…")</PageTitle>
+
+@if (stats is null || gameName is null)
+{
+    <div class="text-center py-5">
+        <div class="spinner-border text-primary" role="status">
+            <span class="visually-hidden">Načítání…</span>
+        </div>
+    </div>
+}
+else
+{
+    <h2 class="mb-1">Příprava postav — @gameName</h2>
+    <p class="text-secondary mb-4">Přehled, rozesílka pozvánek a připomínek.</p>
+
+    @* ────────── Stat tiles (mirror GameStatsPage style) ────────── *@
+    <div class="row g-3 mb-4">
+        <div class="col-md-3">
+            <div class="card shadow-sm border-start border-4 border-primary">
+                <div class="card-body">
+                    <h2 class="mb-0" data-testid="prep-stat-total-households">@stats.TotalHouseholds</h2>
+                    <span class="text-secondary">domácností s hráči</span>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card shadow-sm border-start border-4 border-info">
+                <div class="card-body">
+                    <h2 class="mb-0" data-testid="prep-stat-invited">@stats.Invited</h2>
+                    <span class="text-secondary">pozváno</span>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            @{
+                var filledBorder = stats.TotalHouseholds > 0 && stats.FullyFilled == stats.TotalHouseholds
+                    ? "border-success"
+                    : "border-warning";
+            }
+            <div class="card shadow-sm border-start border-4 @filledBorder">
+                <div class="card-body">
+                    <h2 class="mb-0" data-testid="prep-stat-fully-filled">@stats.FullyFilled</h2>
+                    <span class="text-secondary">kompletně vyplněno</span>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            @{
+                var pendingBorder = stats.Pending == 0 ? "border-success" : "border-danger";
+            }
+            <div class="card shadow-sm border-start border-4 @pendingBorder">
+                <div class="card-body">
+                    <h2 class="mb-0" data-testid="prep-stat-pending">@stats.Pending</h2>
+                    <span class="text-secondary">čeká na vyplnění</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    @* ────────── Action bar ────────── *@
+    <div class="d-flex flex-wrap gap-2 align-items-center mb-3">
+        <button type="button" class="btn btn-primary"
+                disabled="@(invitationCount == 0 || gameHasStarted || isBusy)"
+                @onclick="SendBulkPozvankaAsync">
+            Poslat pozvánku (@invitationCount)
+        </button>
+        <button type="button" class="btn btn-outline-primary"
+                disabled="@(reminderCount == 0 || gameHasStarted || isBusy)"
+                @onclick="SendBulkPripominkaAsync">
+            Poslat připomínku (@reminderCount)
+        </button>
+        <a class="btn btn-outline-secondary"
+           href="@($"/organizace/hry/{GameId}/priprava-postav/export.xlsx")">
+            Stáhnout Excel
+        </a>
+        <a class="btn btn-outline-secondary"
+           href="/organizace/hry/@GameId/priprava-postav/vybava">Konfigurovat výbavu</a>
+
+        <div class="ms-auto d-flex gap-2 align-items-center">
+            <select class="form-select form-select-sm" style="min-width: 180px;"
+                    @bind="selectedStatus" @bind:after="OnStatusFilterChangedAsync">
+                <option value="">Všichni</option>
+                <option value="NotInvited">Nezvaní</option>
+                <option value="Waiting">Čekající</option>
+                <option value="Done">Hotovo</option>
+            </select>
+            <input type="text" class="form-control form-control-sm" style="min-width: 200px;"
+                   placeholder="Jméno nebo postava…"
+                   @bind="searchText" @bind:event="oninput" @bind:after="OnSearchTextChangedAsync" @onkeyup="OnSearchKeyUp" />
+            <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="OnSearchClickedAsync">
+                Hledat
+            </button>
+        </div>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(statusMessage))
+    {
+        <div class="alert alert-success py-2 small" role="status">@statusMessage</div>
+    }
+    @if (!string.IsNullOrWhiteSpace(errorMessage))
+    {
+        <div class="alert alert-danger py-2 small" role="alert">@errorMessage</div>
+    }
+
+    @* ────────── Rows table ────────── *@
+    @if (rowsPage is null)
+    {
+        <p class="text-secondary">Načítám řádky…</p>
+    }
+    else if (rowsPage.Total == 0)
+    {
+        <div class="empty-state">Žádní hráči neodpovídají filtru.</div>
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table class="table align-middle">
+                <thead>
+                    <tr>
+                        <th>Domácnost</th>
+                        <th>Hráč</th>
+                        <th>Jméno postavy</th>
+                        <th>Výbava</th>
+                        <th>Poznámka</th>
+                        <th>Stav</th>
+                        <th>Naposledy upraveno</th>
+                        <th class="text-end">Akce</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var row in rowsPage.Rows)
+                    {
+                        <tr data-testid="@($"prep-row-{row.RegistrationId}")">
+                            <td>
+                                <a class="text-decoration-none"
+                                   href="/organizace/prihlasky/@row.SubmissionId">
+                                    @row.HouseholdName
+                                </a>
+                            </td>
+                            <td>@row.PersonFullName</td>
+                            <td>@(row.CharacterName ?? "—")</td>
+                            <td>@(row.EquipmentDisplayName ?? "—")</td>
+                            <td class="small text-muted" style="max-width: 240px;">@Truncate(row.CharacterPrepNote, 60)</td>
+                            <td>
+                                <span class="badge @StatusBadgeClass(row.Status)" data-testid="@($"prep-status-{row.RegistrationId}")">@StatusLabel(row.Status)</span>
+                            </td>
+                            <td class="small text-muted">
+                                @(row.UpdatedAtUtc.HasValue
+                                    ? row.UpdatedAtUtc.Value.UtcDateTime.ToString("dd.MM.yyyy HH:mm")
+                                    : "—")
+                            </td>
+                            <td class="text-end">
+                                @if (!string.IsNullOrEmpty(row.SubmissionToken))
+                                {
+                                    <a class="btn btn-sm btn-outline-secondary me-1"
+                                       href="/postavy/@row.SubmissionToken" target="_blank" rel="noopener">
+                                        Otevřít odkaz
+                                    </a>
+                                }
+                                @if (row.Status != CharacterPrepStatus.Done)
+                                {
+                                    <button type="button" class="btn btn-sm btn-outline-primary"
+                                            disabled="@(gameHasStarted || isBusy)"
+                                            @onclick="() => SendPerRowReminderAsync(row)">
+                                        @(row.Status == CharacterPrepStatus.NotInvited
+                                            ? "Poslat pozvánku"
+                                            : "Poslat připomínku")
+                                    </button>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+
+        var pageCount = (int)Math.Ceiling((double)rowsPage.Total / rowsPage.PageSize);
+        if (pageCount > 1)
+        {
+            <div class="d-flex align-items-center gap-2">
+                <button type="button" class="btn btn-sm btn-outline-secondary"
+                        disabled="@(currentPage <= 1 || isBusy)"
+                        @onclick="() => GoToPageAsync(currentPage - 1)">
+                    ← Předchozí
+                </button>
+                <span class="small text-muted">Strana @currentPage z @pageCount</span>
+                <button type="button" class="btn btn-sm btn-outline-secondary"
+                        disabled="@(currentPage >= pageCount || isBusy)"
+                        @onclick="() => GoToPageAsync(currentPage + 1)">
+                    Další →
+                </button>
+            </div>
+        }
+    }
+}
+
+@code {
+    [Parameter] public int GameId { get; set; }
+
+    private const int PageSize = 20;
+
+    private string? gameName;
+    private bool gameHasStarted;
+    private CharacterPrepStats? stats;
+    private PagedResult<CharacterPrepDashboardRow>? rowsPage;
+    private int currentPage = 1;
+    private string searchText = "";
+    private string selectedStatus = "";
+    private int invitationCount;
+    private int reminderCount;
+
+    private bool isBusy;
+    private string? statusMessage;
+    private string? errorMessage;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadGameMetaAsync();
+        await ReloadAllAsync();
+    }
+
+    private async Task LoadGameMetaAsync()
+    {
+        await using var db = await DbContextFactory.CreateDbContextAsync();
+        var game = await db.Games
+            .AsNoTracking()
+            .Where(x => x.Id == GameId)
+            .Select(x => new { x.Name, x.StartsAtUtc })
+            .FirstOrDefaultAsync();
+        gameName = game?.Name ?? "";
+        gameHasStarted = game is not null
+            && DateTime.SpecifyKind(game.StartsAtUtc, DateTimeKind.Utc) <= DateTime.UtcNow;
+    }
+
+    private async Task ReloadAllAsync()
+    {
+        var now = DateTimeOffset.UtcNow;
+        stats = await PrepService.GetDashboardStatsAsync(GameId, CancellationToken.None);
+        var invitationTargets = await PrepService.ListInvitationTargetsAsync(GameId, CancellationToken.None);
+        invitationCount = invitationTargets.Count;
+        var reminderTargets = await PrepService.ListReminderTargetsAsync(GameId, now, CancellationToken.None);
+        reminderCount = reminderTargets.Count;
+        await ReloadRowsAsync();
+    }
+
+    private async Task ReloadRowsAsync()
+    {
+        var status = ParseStatus(selectedStatus);
+        rowsPage = await PrepService.GetDashboardRowsAsync(
+            GameId,
+            new DashboardFilter(status, searchText),
+            currentPage,
+            PageSize,
+            CancellationToken.None);
+    }
+
+    private async Task GoToPageAsync(int page)
+    {
+        currentPage = Math.Max(1, page);
+        await ReloadRowsAsync();
+    }
+
+    private async Task OnSearchKeyUp(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            currentPage = 1;
+            await ReloadRowsAsync();
+        }
+    }
+
+    // Filter/search handlers below reset pagination before reloading so a user
+    // on page N with the previous filter doesn't land on an empty table after
+    // the result set shrinks.
+    private async Task OnStatusFilterChangedAsync()
+    {
+        currentPage = 1;
+        await ReloadRowsAsync();
+    }
+
+    private async Task OnSearchClickedAsync()
+    {
+        currentPage = 1;
+        await ReloadRowsAsync();
+    }
+
+    private async Task OnSearchTextChangedAsync()
+    {
+        // Live-update pagination only when the textbox is cleared. Non-empty
+        // typing waits for Enter or the Hledat button so we don't hammer the DB
+        // on every keystroke.
+        if (string.IsNullOrWhiteSpace(searchText))
+        {
+            currentPage = 1;
+            await ReloadRowsAsync();
+        }
+    }
+
+    private async Task SendBulkPozvankaAsync()
+    {
+        if (isBusy || gameHasStarted) return;
+        isBusy = true;
+        ClearMessages();
+        try
+        {
+            var result = await MailService.SendBulkPozvankaAsync(
+                GameId, DateTimeOffset.UtcNow, CancellationToken.None);
+            statusMessage = $"Posláno: {result.Sent} pozvánek, {result.Failed} chyb.";
+            if (result.Failed > 0 && !string.IsNullOrEmpty(result.FirstError))
+            {
+                statusMessage += $" První chyba: {result.FirstError}";
+            }
+            await ReloadAllAsync();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = "Odesílání pozvánek selhalo: " + ex.Message;
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    private async Task SendBulkPripominkaAsync()
+    {
+        if (isBusy || gameHasStarted) return;
+        isBusy = true;
+        ClearMessages();
+        try
+        {
+            var result = await MailService.SendBulkPripominkaAsync(
+                GameId, DateTimeOffset.UtcNow, CancellationToken.None);
+            statusMessage = $"Posláno: {result.Sent} připomínek, {result.Failed} chyb.";
+            if (result.Failed > 0 && !string.IsNullOrEmpty(result.FirstError))
+            {
+                statusMessage += $" První chyba: {result.FirstError}";
+            }
+            await ReloadAllAsync();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = "Odesílání připomínek selhalo: " + ex.Message;
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    private async Task SendPerRowReminderAsync(CharacterPrepDashboardRow row)
+    {
+        if (isBusy || gameHasStarted) return;
+        isBusy = true;
+        ClearMessages();
+        try
+        {
+            var now = DateTimeOffset.UtcNow;
+            var result = row.Status == CharacterPrepStatus.NotInvited
+                ? await MailService.SendPozvankaAsync(row.SubmissionId, now, CancellationToken.None)
+                : await MailService.SendPripominkaAsync(row.SubmissionId, now, CancellationToken.None);
+
+            statusMessage = result switch
+            {
+                SendSingleResult.Sent => $"Odesláno — {row.HouseholdName}.",
+                SendSingleResult.AlreadyInvited => $"{row.HouseholdName} už pozvánku dostal/a.",
+                SendSingleResult.ThrottledSkipped => $"Připomínka přeskočena (24h limit) — {row.HouseholdName}.",
+                SendSingleResult.MissingRecipient => $"Chybí e-mail — {row.HouseholdName}.",
+                SendSingleResult.Error => $"Chyba při odesílání — {row.HouseholdName}.",
+                _ => null
+            };
+            await ReloadAllAsync();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = "Odeslání selhalo: " + ex.Message;
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    private static CharacterPrepStatus? ParseStatus(string value) =>
+        Enum.TryParse<CharacterPrepStatus>(value, out var parsed) ? parsed : null;
+
+    private static string StatusBadgeClass(CharacterPrepStatus status) => status switch
+    {
+        CharacterPrepStatus.NotInvited => "bg-secondary",
+        CharacterPrepStatus.Waiting => "bg-warning text-dark",
+        CharacterPrepStatus.Done => "bg-success",
+        _ => "bg-secondary"
+    };
+
+    private static string StatusLabel(CharacterPrepStatus status) => status switch
+    {
+        CharacterPrepStatus.NotInvited => "Nezváno",
+        CharacterPrepStatus.Waiting => "Čeká",
+        CharacterPrepStatus.Done => "Hotovo",
+        _ => "—"
+    };
+
+    private static string? Truncate(string? value, int max)
+    {
+        if (string.IsNullOrEmpty(value)) return null;
+        return value.Length <= max ? value : value[..max] + "…";
+    }
+
+    private void ClearMessages()
+    {
+        statusMessage = null;
+        errorMessage = null;
+    }
+}
