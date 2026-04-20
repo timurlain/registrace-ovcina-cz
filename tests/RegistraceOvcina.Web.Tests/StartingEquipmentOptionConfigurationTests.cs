@@ -76,14 +76,14 @@ public sealed class StartingEquipmentOptionConfigurationTests
     }
 
     [Fact]
-    public void ForeignKey_ToGame_IsCascade()
+    public void ForeignKey_ToGame_IsRestrict()
     {
         using var db = CreateDb();
         var entityType = db.Model.FindEntityType(typeof(StartingEquipmentOption))!;
 
         var fk = entityType.GetForeignKeys().Single(f => f.PrincipalEntityType.ClrType == typeof(Game));
 
-        Assert.Equal(DeleteBehavior.Cascade, fk.DeleteBehavior);
+        Assert.Equal(DeleteBehavior.Restrict, fk.DeleteBehavior);
     }
 
     private static ApplicationDbContext CreateDb()

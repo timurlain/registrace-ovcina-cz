@@ -12,7 +12,7 @@ using RegistraceOvcina.Web.Data;
 namespace RegistraceOvcina.Web.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    [Migration("20260420143015_AddCharacterPrepAndStartingEquipment")]
+    [Migration("20260420144154_AddCharacterPrepAndStartingEquipment")]
     partial class AddCharacterPrepAndStartingEquipment
     {
         /// <inheritdoc />
@@ -2080,7 +2080,7 @@ namespace RegistraceOvcina.Web.Migrations
                     b.HasOne("RegistraceOvcina.Web.Data.Game", "Game")
                         .WithMany()
                         .HasForeignKey("GameId")
-                        .OnDelete(DeleteBehavior.Cascade)
+                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
                     b.Navigation("Game");

@@ -2077,7 +2077,7 @@ namespace RegistraceOvcina.Web.Migrations
                     b.HasOne("RegistraceOvcina.Web.Data.Game", "Game")
                         .WithMany()
                         .HasForeignKey("GameId")
-                        .OnDelete(DeleteBehavior.Cascade)
+                        .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
                     b.Navigation("Game");

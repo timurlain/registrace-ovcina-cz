@@ -461,7 +461,7 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
             entity.HasOne(x => x.Game)
                 .WithMany()
                 .HasForeignKey(x => x.GameId)
-                .OnDelete(DeleteBehavior.Cascade);
+                .OnDelete(DeleteBehavior.Restrict);
         });
     }
 }
