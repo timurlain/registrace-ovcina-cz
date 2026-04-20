@@ -99,14 +99,17 @@ public sealed class CharacterPrepEmailRenderer : ICharacterPrepEmailRenderer
 
         sb.Append("<div style=\"font-family:Segoe UI,Arial,sans-serif;font-size:14px;line-height:1.5;color:#222;\">");
 
-        sb.Append("<p>Ahoj,</p>");
-        sb.Append("<p>chystáme <b>").Append(encodedGame).Append("</b> a potřebujeme od tebe krátkou přípravu postav. ")
-          .Append("Díky tomu si u vstupu na hru nezdržíme 30 minut startovní výbavou a hra může začít včas.</p>");
+        sb.Append("<p>Vážený přihlášený na <b>").Append(encodedGame).Append("</b>,</p>");
+        sb.Append("<p>Chystáme se. Těšíme se na Vás. Jsme také poučeni z minula a rádi bychom zrychlili začátek a připravili první volbu postav.</p>");
+        sb.Append("<p>Potřebujeme od Vás kliknout na odkaz a vyplnit nám u každé postavy herní jméno a počáteční vybavení. Prosím zeptejte se dětí.</p>");
+        sb.Append("<p>Výběr už nachystáme přímo dětem do glejtu a tak se na začátku nemusí nikdo zdržovat.</p>");
+        sb.Append("<p>Kdo si nic nevybere, dostane 5 měďáků a může si koupit co potřebuje na začátku hry, jen se tím pak trochu zdrží.</p>");
+        sb.Append("<p>Jméno postavy bychom rádi zapsali do kronik a bude pokračovat v dalších hrách.</p>");
 
         // Household player list
         if (model.PlayerFullNames.Count > 0)
         {
-            sb.Append("<p>Píšeme ti o těchto dětech:</p>");
+            sb.Append("<p>Píšeme si o těchto dětech:</p>");
             sb.Append("<ul>");
             foreach (var name in model.PlayerFullNames)
             {
@@ -116,7 +119,7 @@ public sealed class CharacterPrepEmailRenderer : ICharacterPrepEmailRenderer
         }
 
         // Equipment options
-        sb.Append("<p>Vyber pro každé dítě jednu ze startovních výbav:</p>");
+        sb.Append("<p>Vyberte prosím každému dítěti jednu ze startovních výbav:</p>");
         sb.Append("<ul>");
         foreach (var option in model.Options)
         {
@@ -146,7 +149,7 @@ public sealed class CharacterPrepEmailRenderer : ICharacterPrepEmailRenderer
         // we'd emit <a href="mailto:"></a> which some clients render as a dead link.
         if (hasContact)
         {
-            sb.Append("<p>Když něco nefunguje, napiš nám na ")
+            sb.Append("<p>Když něco nefunguje, napište nám na ")
               .Append("<a href=\"mailto:").Append(encodedContact).Append("\">").Append(encodedContact).Append("</a>.</p>");
         }
 
@@ -160,15 +163,22 @@ public sealed class CharacterPrepEmailRenderer : ICharacterPrepEmailRenderer
     {
         var sb = new StringBuilder(1024);
 
-        sb.AppendLine("Ahoj,");
+        sb.Append("Vážený přihlášený na ").Append(model.GameName).AppendLine(",");
         sb.AppendLine();
-        sb.Append("chystáme ").Append(model.GameName).AppendLine(" a potřebujeme od tebe krátkou přípravu postav.");
-        sb.AppendLine("Díky tomu si u vstupu na hru nezdržíme 30 minut startovní výbavou a hra může začít včas.");
+        sb.AppendLine("Chystáme se. Těšíme se na Vás. Jsme také poučeni z minula a rádi bychom zrychlili začátek a připravili první volbu postav.");
+        sb.AppendLine();
+        sb.AppendLine("Potřebujeme od Vás kliknout na odkaz a vyplnit nám u každé postavy herní jméno a počáteční vybavení. Prosím zeptejte se dětí.");
+        sb.AppendLine();
+        sb.AppendLine("Výběr už nachystáme přímo dětem do glejtu a tak se na začátku nemusí nikdo zdržovat.");
+        sb.AppendLine();
+        sb.AppendLine("Kdo si nic nevybere, dostane 5 měďáků a může si koupit co potřebuje na začátku hry, jen se tím pak trochu zdrží.");
+        sb.AppendLine();
+        sb.AppendLine("Jméno postavy bychom rádi zapsali do kronik a bude pokračovat v dalších hrách.");
         sb.AppendLine();
 
         if (model.PlayerFullNames.Count > 0)
         {
-            sb.AppendLine("Píšeme ti o těchto dětech:");
+            sb.AppendLine("Píšeme si o těchto dětech:");
             foreach (var name in model.PlayerFullNames)
             {
                 sb.Append(" - ").AppendLine(name);
@@ -176,7 +186,7 @@ public sealed class CharacterPrepEmailRenderer : ICharacterPrepEmailRenderer
             sb.AppendLine();
         }
 
-        sb.AppendLine("Vyber pro každé dítě jednu ze startovních výbav:");
+        sb.AppendLine("Vyberte prosím každému dítěti jednu ze startovních výbav:");
         foreach (var option in model.Options)
         {
             sb.Append(" - ").Append(option.DisplayName);
@@ -194,7 +204,7 @@ public sealed class CharacterPrepEmailRenderer : ICharacterPrepEmailRenderer
         sb.AppendLine();
         if (!string.IsNullOrWhiteSpace(model.OrganizerContactEmail))
         {
-            sb.Append("Když něco nefunguje, napiš nám na ").Append(model.OrganizerContactEmail).AppendLine(".");
+            sb.Append("Když něco nefunguje, napište nám na ").Append(model.OrganizerContactEmail).AppendLine(".");
             sb.AppendLine();
         }
         sb.AppendLine("Díky!");
