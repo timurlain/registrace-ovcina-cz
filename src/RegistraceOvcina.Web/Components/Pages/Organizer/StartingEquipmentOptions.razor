@@ -4,12 +4,14 @@
 
 @using Microsoft.AspNetCore.Authorization
 @using Microsoft.EntityFrameworkCore
+@using Microsoft.JSInterop
 @using RegistraceOvcina.Web.Data
 @using RegistraceOvcina.Web.Features.CharacterPrep
 @using RegistraceOvcina.Web.Security
 
 @inject CharacterPrepOptionsService OptionsService
 @inject IDbContextFactory<ApplicationDbContext> DbContextFactory
+@inject IJSRuntime JS
 
 <PageTitle>Startovní výbava — @(gameName ?? "Načítání…")</PageTitle>
 
@@ -139,7 +141,7 @@ else
                                 Upravit
                             </button>
                             <button type="button" class="btn btn-sm btn-outline-danger"
-                                    @onclick="() => DeleteAsync(opt.Id)"
+                                    @onclick="() => DeleteAsync(opt)"
                                     disabled="@isBusy">
                                 Smazat
                             </button>
@@ -389,14 +391,17 @@ else
         }
     }
 
-    private async Task DeleteAsync(int optionId)
+    private async Task DeleteAsync(StartingEquipmentOptionDto opt)
     {
         if (isBusy) return;
+        var confirmed = await JS.InvokeAsync<bool>(
+            "confirm", $"Opravdu smazat výbavu \"{opt.DisplayName}\"?");
+        if (!confirmed) return;
         isBusy = true;
         ClearMessages();
         try
         {
-            var deleted = await OptionsService.TryDeleteAsync(optionId, CancellationToken.None);
+            var deleted = await OptionsService.TryDeleteAsync(opt.Id, CancellationToken.None);
             if (deleted)
             {
                 statusMessage = "Výbava smazána.";
