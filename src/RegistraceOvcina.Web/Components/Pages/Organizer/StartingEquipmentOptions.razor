@@ -54,6 +54,13 @@ else
             <button type="button" class="btn btn-primary" @onclick="ShowAddForm" disabled="@isBusy">
                 + Přidat novou výbavu
             </button>
+            @if (options.Count == 0)
+            {
+                <button type="button" class="btn btn-outline-primary ms-2"
+                        @onclick="SeedDefaultsAsync" disabled="@isBusy">
+                    Vložit výchozí výbavu
+                </button>
+            }
         }
         else
         {
@@ -403,6 +410,31 @@ else
         catch (Exception ex)
         {
             errorMessage = "Smazání selhalo: " + ex.Message;
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    private async Task SeedDefaultsAsync()
+    {
+        if (isBusy) return;
+        isBusy = true;
+        ClearMessages();
+        try
+        {
+            await OptionsService.SeedDefaultsAsync(GameId, CancellationToken.None);
+            statusMessage = "Výchozí výbava byla vložena (5 položek).";
+            await ReloadOptionsAsync();
+        }
+        catch (InvalidOperationException ex)
+        {
+            errorMessage = ex.Message;
+        }
+        catch (Exception ex)
+        {
+            errorMessage = "Vložení výchozí výbavy selhalo: " + ex.Message;
         }
         finally
         {

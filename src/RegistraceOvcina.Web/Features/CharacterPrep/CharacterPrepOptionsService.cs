@@ -278,6 +278,59 @@ public sealed class CharacterPrepOptionsService(
         }
     }
 
+    /// <summary>
+    /// Seeds the 5 canonical Ovčina equipment options (Tesák, Dlouhý nůž,
+    /// Vrhací nůž, Dýka+svitky, Mince) into <paramref name="gameId"/> in a
+    /// single <see cref="ApplicationDbContext.SaveChangesAsync(CancellationToken)"/>
+    /// call. Refuses to run if the game already has at least one option to
+    /// avoid silently duplicating or corrupting operator-authored rows; the
+    /// admin page also hides the trigger button in that case.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when the game already has ≥1 <see cref="StartingEquipmentOption"/>.
+    /// </exception>
+    public async Task SeedDefaultsAsync(int gameId, CancellationToken cancellationToken)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(cancellationToken);
+
+        var alreadyHasAny = await db.StartingEquipmentOptions
+            .AsNoTracking()
+            .AnyAsync(x => x.GameId == gameId, cancellationToken);
+        if (alreadyHasAny)
+        {
+            throw new InvalidOperationException(
+                "Hra již má nějakou výbavu — vlož nové ručně.");
+        }
+
+        // Exact Czech strings confirmed by the user — do not paraphrase.
+        var defaults = new (string Key, string DisplayName, string Description, int SortOrder)[]
+        {
+            ("tesak",        "Tesák (3/1)",                     "Útok 3, obrana 1",                  10),
+            ("dlouhy-nuz",   "Dlouhý nůž (2/2)",                "Útok 2, obrana 2",                  20),
+            ("vrhaci-nuz",   "Vrhací nůž (3/0)",                "Útok 3, obrana 0",                  30),
+            ("dyka-svitky",  "Dýka (1/2), 4 svitky kouzel",     "Útok 1, obrana 2 + 4 svitky kouzel", 40),
+            ("mince",        "5 měďáků / grošů",                "Žádná zbraň, 5 mincí do začátku",    50),
+        };
+
+        foreach (var row in defaults)
+        {
+            db.StartingEquipmentOptions.Add(new StartingEquipmentOption
+            {
+                GameId = gameId,
+                Key = row.Key,
+                DisplayName = row.DisplayName,
+                Description = row.Description,
+                SortOrder = row.SortOrder
+            });
+        }
+
+        await db.SaveChangesAsync(cancellationToken);
+
+        logger.LogInformation(
+            "Seeded {Count} default StartingEquipmentOption rows for game {GameId}.",
+            defaults.Length, gameId);
+    }
+
     private static string NormalizeKey(string? value)
     {
         if (string.IsNullOrWhiteSpace(value))

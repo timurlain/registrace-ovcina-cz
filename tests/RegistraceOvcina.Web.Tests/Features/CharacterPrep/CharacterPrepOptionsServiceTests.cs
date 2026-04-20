@@ -337,6 +337,108 @@ public sealed class CharacterPrepOptionsServiceTests
         Assert.Equal("Luk", target.Single(x => x.Key == "luk").DisplayName);
     }
 
+    [Fact]
+    public async Task SeedDefaultsAsync_inserts_exactly_5_rows_with_expected_keys()
+    {
+        var options = CreateOptions();
+        await SeedGameAsync(options, gameId: 1);
+
+        var service = new CharacterPrepOptionsService(new TestDbContextFactory(options), NullLogger());
+
+        await service.SeedDefaultsAsync(1, CancellationToken.None);
+
+        await using var verify = new ApplicationDbContext(options);
+        var rows = await verify.StartingEquipmentOptions
+            .Where(x => x.GameId == 1)
+            .OrderBy(x => x.SortOrder)
+            .ToListAsync();
+
+        Assert.Equal(5, rows.Count);
+        Assert.Equal(
+            new[] { "tesak", "dlouhy-nuz", "vrhaci-nuz", "dyka-svitky", "mince" },
+            rows.Select(x => x.Key).ToArray());
+    }
+
+    [Fact]
+    public async Task SeedDefaultsAsync_sets_correct_displayname_and_description_per_row()
+    {
+        var options = CreateOptions();
+        await SeedGameAsync(options, gameId: 1);
+
+        var service = new CharacterPrepOptionsService(new TestDbContextFactory(options), NullLogger());
+
+        await service.SeedDefaultsAsync(1, CancellationToken.None);
+
+        await using var verify = new ApplicationDbContext(options);
+        var byKey = (await verify.StartingEquipmentOptions
+            .Where(x => x.GameId == 1)
+            .ToListAsync())
+            .ToDictionary(x => x.Key, x => x);
+
+        Assert.Equal("Tesák (3/1)", byKey["tesak"].DisplayName);
+        Assert.Equal("Útok 3, obrana 1", byKey["tesak"].Description);
+
+        Assert.Equal("Dlouhý nůž (2/2)", byKey["dlouhy-nuz"].DisplayName);
+        Assert.Equal("Útok 2, obrana 2", byKey["dlouhy-nuz"].Description);
+
+        Assert.Equal("Vrhací nůž (3/0)", byKey["vrhaci-nuz"].DisplayName);
+        Assert.Equal("Útok 3, obrana 0", byKey["vrhaci-nuz"].Description);
+
+        Assert.Equal("Dýka (1/2), 4 svitky kouzel", byKey["dyka-svitky"].DisplayName);
+        Assert.Equal("Útok 1, obrana 2 + 4 svitky kouzel", byKey["dyka-svitky"].Description);
+
+        Assert.Equal("5 měďáků / grošů", byKey["mince"].DisplayName);
+        Assert.Equal("Žádná zbraň, 5 mincí do začátku", byKey["mince"].Description);
+    }
+
+    [Fact]
+    public async Task SeedDefaultsAsync_throws_when_game_already_has_options()
+    {
+        var options = CreateOptions();
+        await SeedGameAsync(options, gameId: 1);
+        await using (var db = new ApplicationDbContext(options))
+        {
+            db.StartingEquipmentOptions.Add(new StartingEquipmentOption
+            {
+                Id = 1, GameId = 1, Key = "existing", DisplayName = "Existing", SortOrder = 0
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var service = new CharacterPrepOptionsService(new TestDbContextFactory(options), NullLogger());
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            service.SeedDefaultsAsync(1, CancellationToken.None));
+        Assert.Equal("Hra již má nějakou výbavu — vlož nové ručně.", ex.Message);
+
+        // Confirm nothing was added beyond the pre-existing row.
+        await using var verify = new ApplicationDbContext(options);
+        var count = await verify.StartingEquipmentOptions
+            .Where(x => x.GameId == 1)
+            .CountAsync();
+        Assert.Equal(1, count);
+    }
+
+    [Fact]
+    public async Task SeedDefaultsAsync_rows_have_ascending_sort_order_starting_at_10()
+    {
+        var options = CreateOptions();
+        await SeedGameAsync(options, gameId: 1);
+
+        var service = new CharacterPrepOptionsService(new TestDbContextFactory(options), NullLogger());
+
+        await service.SeedDefaultsAsync(1, CancellationToken.None);
+
+        await using var verify = new ApplicationDbContext(options);
+        var sortOrders = await verify.StartingEquipmentOptions
+            .Where(x => x.GameId == 1)
+            .OrderBy(x => x.SortOrder)
+            .Select(x => x.SortOrder)
+            .ToListAsync();
+
+        Assert.Equal(new[] { 10, 20, 30, 40, 50 }, sortOrders.ToArray());
+    }
+
     // ---------- helpers ----------
 
     private static DbContextOptions<ApplicationDbContext> CreateOptions() =>
