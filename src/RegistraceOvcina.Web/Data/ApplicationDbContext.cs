@@ -31,6 +31,7 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
     public DbSet<Registration> Registrations => Set<Registration>();
     public DbSet<Room> Rooms => Set<Room>();
     public DbSet<RegistrationSubmission> RegistrationSubmissions => Set<RegistrationSubmission>();
+    public DbSet<StartingEquipmentOption> StartingEquipmentOptions => Set<StartingEquipmentOption>();
     public DbSet<Announcement> Announcements => Set<Announcement>();
     public DbSet<AnnouncementDismissal> AnnouncementDismissals => Set<AnnouncementDismissal>();
     public DbSet<ExternalContact> ExternalContacts => Set<ExternalContact>();
@@ -143,6 +144,10 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
                 .WithOne(x => x.Submission)
                 .HasForeignKey(x => x.SubmissionId)
                 .OnDelete(DeleteBehavior.Restrict);
+            entity.Property(x => x.CharacterPrepToken).HasMaxLength(64);
+            entity.HasIndex(x => x.CharacterPrepToken)
+                .IsUnique()
+                .HasFilter("\"CharacterPrepToken\" IS NOT NULL");
         });
 
         builder.Entity<Registration>(entity =>
@@ -174,6 +179,11 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
                 .WithOne(x => x.Registration)
                 .HasForeignKey(x => x.RegistrationId)
                 .OnDelete(DeleteBehavior.Cascade);
+            entity.Property(x => x.CharacterPrepNote).HasMaxLength(4000);
+            entity.HasOne(x => x.StartingEquipmentOption)
+                .WithMany()
+                .HasForeignKey(x => x.StartingEquipmentOptionId)
+                .OnDelete(DeleteBehavior.Restrict);
         });
 
         builder.Entity<Character>(entity =>
@@ -438,6 +448,19 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
             entity.HasOne(x => x.User)
                 .WithMany(x => x.AlternateEmails)
                 .HasForeignKey(x => x.UserId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        builder.Entity<StartingEquipmentOption>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.Property(x => x.Key).HasMaxLength(50).IsRequired();
+            entity.Property(x => x.DisplayName).HasMaxLength(100).IsRequired();
+            entity.Property(x => x.Description).HasMaxLength(500);
+            entity.HasIndex(x => new { x.GameId, x.Key }).IsUnique();
+            entity.HasOne(x => x.Game)
+                .WithMany()
+                .HasForeignKey(x => x.GameId)
                 .OnDelete(DeleteBehavior.Cascade);
         });
     }

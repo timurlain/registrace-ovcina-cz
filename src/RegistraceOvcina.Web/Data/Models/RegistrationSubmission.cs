@@ -17,6 +17,9 @@ public sealed class RegistrationSubmission
     public decimal VoluntaryDonation { get; set; }
     public bool IsDeleted { get; set; }
     public string? PaymentVariableSymbol { get; set; }
+    public string? CharacterPrepToken { get; set; }
+    public DateTimeOffset? CharacterPrepInvitedAtUtc { get; set; }
+    public DateTimeOffset? CharacterPrepReminderLastSentAtUtc { get; set; }
     public Game Game { get; set; } = default!;
     public List<Registration> Registrations { get; set; } = [];
     public List<Payment> Payments { get; set; } = [];

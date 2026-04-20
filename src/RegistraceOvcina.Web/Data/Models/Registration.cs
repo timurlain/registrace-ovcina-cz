@@ -25,5 +25,9 @@ public sealed class Registration
     public Kingdom? PreferredKingdom { get; set; }
     public int? AssignedGameRoomId { get; set; }
     public GameRoom? AssignedGameRoom { get; set; }
+    public int? StartingEquipmentOptionId { get; set; }
+    public StartingEquipmentOption? StartingEquipmentOption { get; set; }
+    public string? CharacterPrepNote { get; set; }
+    public DateTimeOffset? CharacterPrepUpdatedAtUtc { get; set; }
     public List<FoodOrder> FoodOrders { get; set; } = [];
 }
