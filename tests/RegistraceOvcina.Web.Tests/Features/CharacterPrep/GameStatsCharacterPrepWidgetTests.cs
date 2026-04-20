@@ -44,6 +44,34 @@ public sealed class GameStatsCharacterPrepWidgetTests
     }
 
     [Fact]
+    public async Task Widget_excludes_soft_deleted_submissions()
+    {
+        // GameStatsService reads Registrations via navigation through Submission.
+        // EF's HasQueryFilter on Registration (!x.Person.IsDeleted && !x.Submission.IsDeleted)
+        // should hide the soft-deleted submission's players from both
+        // CharacterPrepTotal and CharacterPrepFilled. This test locks that in so a
+        // future LINQ refactor cannot drift away from the dashboard stats/rows methods.
+        var options = CreateOptions();
+        await SeedGameAsync(options);
+
+        // Active submission: 1 fully-filled player.
+        await AddSubmissionAsync(options, submissionId: 1,
+            players: new[] { new PlayerSpec(hasName: true, hasEquipment: true) });
+
+        // Soft-deleted submission: 1 fully-filled player — must NOT appear in widget counts.
+        await AddSubmissionAsync(options, submissionId: 2,
+            players: new[] { new PlayerSpec(hasName: true, hasEquipment: true) },
+            isDeleted: true);
+
+        var service = new GameStatsService(new TestDbContextFactory(options));
+        var stats = await service.GetGameStatsAsync(GameId);
+
+        Assert.NotNull(stats);
+        Assert.Equal(1, stats!.CharacterPrepTotal);
+        Assert.Equal(1, stats.CharacterPrepFilled);
+    }
+
+    [Fact]
     public async Task Widget_shows_zero_over_zero_when_no_players()
     {
         var options = CreateOptions();
@@ -96,7 +124,8 @@ public sealed class GameStatsCharacterPrepWidgetTests
     private static async Task AddSubmissionAsync(
         DbContextOptions<ApplicationDbContext> options,
         int submissionId,
-        IReadOnlyList<PlayerSpec> players)
+        IReadOnlyList<PlayerSpec> players,
+        bool isDeleted = false)
     {
         await using var db = new ApplicationDbContext(options);
         var userId = "user-" + submissionId;
@@ -124,7 +153,8 @@ public sealed class GameStatsCharacterPrepWidgetTests
             Status = SubmissionStatus.Submitted,
             SubmittedAtUtc = FixedUtc,
             LastEditedAtUtc = FixedUtc,
-            ExpectedTotalAmount = 1200
+            ExpectedTotalAmount = 1200,
+            IsDeleted = isDeleted
         });
         await db.SaveChangesAsync();
 

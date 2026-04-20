@@ -200,7 +200,10 @@ public sealed class GameStatsService(IDbContextFactory<ApplicationDbContext> dbC
         // --- Character prep widget ---
         // Total = every Player row; Filled = Players with BOTH a non-blank character name
         // AND a chosen StartingEquipmentOptionId. Matches the dashboard's "Done" state
-        // so the widget and dashboard can't disagree.
+        // so the widget and dashboard can't disagree. Soft-deleted submissions are
+        // excluded by the Registration.HasQueryFilter(!Submission.IsDeleted) that
+        // propagates through the db.Registrations query above — locked in by
+        // GameStatsCharacterPrepWidgetTests.Widget_excludes_soft_deleted_submissions.
         var characterPrepTotal = players.Count;
         var characterPrepFilled = players.Count(p =>
             !string.IsNullOrWhiteSpace(p.CharacterName)

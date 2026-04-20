@@ -281,15 +281,46 @@ public sealed class CharacterPrepDashboardRowsTests
         await db.SaveChangesAsync();
     }
 
+    // --------------------------------------------------------------------- soft-delete
+
+    [Fact]
+    public async Task Soft_deleted_submission_is_excluded_from_rows()
+    {
+        // GetDashboardRowsAsync has an explicit .Where(x => !x.Submission.IsDeleted)
+        // filter on top of the global query filter. This test locks in that behaviour
+        // so a future refactor cannot regress it silently.
+        var options = CreateOptions();
+        await SeedGameAsync(options);
+
+        await AddSubmissionAsync(options, submissionId: 1, household: "Alive",
+            invitedAtUtc: NowUtc,
+            players: new[] { new PlayerSpec(hasName: true, hasEquipment: true) });
+
+        await AddSubmissionAsync(options, submissionId: 2, household: "Ghost",
+            invitedAtUtc: NowUtc,
+            players: new[] { new PlayerSpec(hasName: true, hasEquipment: true) },
+            isDeleted: true);
+
+        var service = new CharacterPrepService(new TestDbContextFactory(options));
+        var page = await service.GetDashboardRowsAsync(GameId, new DashboardFilter(null, null));
+
+        var row = Assert.Single(page.Rows);
+        Assert.Equal("Alive", row.HouseholdName);
+        Assert.Equal(1, page.Total);
+    }
+
+    // --------------------------------------------------------------------- helpers
+
     private static async Task AddSubmissionAsync(
         DbContextOptions<ApplicationDbContext> options,
         int submissionId,
         string household,
         DateTimeOffset? invitedAtUtc,
-        IReadOnlyList<PlayerSpec> players)
+        IReadOnlyList<PlayerSpec> players,
+        bool isDeleted = false)
     {
         await using var db = new ApplicationDbContext(options);
-        AddUserAndSubmission(db, submissionId, household, invitedAtUtc);
+        AddUserAndSubmission(db, submissionId, household, invitedAtUtc, isDeleted);
         await db.SaveChangesAsync();
 
         for (var i = 0; i < players.Count; i++)
@@ -345,7 +376,8 @@ public sealed class CharacterPrepDashboardRowsTests
 
     private static void AddUserAndSubmission(
         ApplicationDbContext db,
-        int submissionId, string household, DateTimeOffset? invitedAtUtc)
+        int submissionId, string household, DateTimeOffset? invitedAtUtc,
+        bool isDeleted = false)
     {
         var userId = "user-" + submissionId;
         db.Users.Add(new ApplicationUser
@@ -374,7 +406,8 @@ public sealed class CharacterPrepDashboardRowsTests
             SubmittedAtUtc = FixedUtc,
             LastEditedAtUtc = FixedUtc,
             ExpectedTotalAmount = 1200,
-            CharacterPrepInvitedAtUtc = invitedAtUtc
+            CharacterPrepInvitedAtUtc = invitedAtUtc,
+            IsDeleted = isDeleted
         });
     }
 

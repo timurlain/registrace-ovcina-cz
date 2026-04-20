@@ -183,6 +183,9 @@ public sealed class CharacterPrepService(
     {
         await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
 
+        // Soft-deleted submissions are excluded by the global HasQueryFilter
+        // (!IsDeleted) on RegistrationSubmission — see ApplicationDbContext and
+        // Soft_deleted_submission_is_excluded_* tests that lock this in.
         return await db.RegistrationSubmissions
             .AsNoTracking()
             .Where(x => x.GameId == gameId
@@ -200,6 +203,8 @@ public sealed class CharacterPrepService(
 
         await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
 
+        // Soft-deleted submissions are excluded by the global HasQueryFilter
+        // (!IsDeleted) on RegistrationSubmission, same as ListInvitationTargetsAsync.
         return await db.RegistrationSubmissions
             .AsNoTracking()
             .Where(x => x.GameId == gameId
@@ -255,6 +260,9 @@ public sealed class CharacterPrepService(
 
         // Fetch per-submission player aggregates in a single query so we can compute
         // TotalHouseholds / Invited / FullyFilled without N round trips.
+        // Soft-deleted submissions are excluded by the global HasQueryFilter
+        // (!IsDeleted) on RegistrationSubmission — locked in by
+        // CharacterPrepServiceDashboardStatsTests.Soft_deleted_submission_is_excluded.
         var aggregates = await db.RegistrationSubmissions
             .AsNoTracking()
             .Where(x => x.GameId == gameId)

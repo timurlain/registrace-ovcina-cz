@@ -156,6 +156,49 @@ public sealed class CharacterPrepServiceBulkFiltersTests
     }
 
     [Fact]
+    public async Task Invitation_targets_exclude_soft_deleted_submissions()
+    {
+        // Locks in that the global HasQueryFilter(x => !x.IsDeleted) on
+        // RegistrationSubmission hides soft-deleted rows from
+        // ListInvitationTargetsAsync. If this test ever fails, ListInvitationTargetsAsync
+        // must be updated with an explicit .Where(x => !x.IsDeleted).
+        var options = CreateOptions();
+        await SeedGameAsync(options);
+
+        await AddSubmissionAsync(options, submissionId: 1, invitedAtUtc: null, players: 1, adults: 0);
+        await AddSubmissionAsync(options, submissionId: 2, invitedAtUtc: null, players: 1, adults: 0,
+            isDeleted: true);
+
+        var service = new CharacterPrepService(new TestDbContextFactory(options));
+        var targets = await service.ListInvitationTargetsAsync(GameId, CancellationToken.None);
+
+        Assert.Single(targets);
+        Assert.Equal(1, targets[0].Id);
+    }
+
+    [Fact]
+    public async Task Reminder_targets_exclude_soft_deleted_submissions()
+    {
+        // Locks in the same soft-delete guarantee for ListReminderTargetsAsync.
+        var options = CreateOptions();
+        await SeedGameAsync(options);
+
+        await AddSubmissionAsync(
+            options, submissionId: 1,
+            invitedAtUtc: NowUtc.AddDays(-3), players: 1, adults: 0);
+        await AddSubmissionAsync(
+            options, submissionId: 2,
+            invitedAtUtc: NowUtc.AddDays(-3), players: 1, adults: 0,
+            isDeleted: true);
+
+        var service = new CharacterPrepService(new TestDbContextFactory(options));
+        var targets = await service.ListReminderTargetsAsync(GameId, NowUtc, CancellationToken.None);
+
+        Assert.Single(targets);
+        Assert.Equal(1, targets[0].Id);
+    }
+
+    [Fact]
     public async Task Dashboard_stats_count_correctly_across_mixed_statuses()
     {
         var options = CreateOptions();
@@ -219,7 +262,8 @@ public sealed class CharacterPrepServiceBulkFiltersTests
         int players,
         int adults,
         bool allPlayersEquipped = false,
-        DateTimeOffset? reminderLastSentAtUtc = null)
+        DateTimeOffset? reminderLastSentAtUtc = null,
+        bool isDeleted = false)
     {
         await using var db = new ApplicationDbContext(options);
         var userId = "user-" + submissionId;
@@ -250,7 +294,8 @@ public sealed class CharacterPrepServiceBulkFiltersTests
             LastEditedAtUtc = FixedUtc,
             ExpectedTotalAmount = 1200,
             CharacterPrepInvitedAtUtc = invitedAtUtc,
-            CharacterPrepReminderLastSentAtUtc = reminderLastSentAtUtc
+            CharacterPrepReminderLastSentAtUtc = reminderLastSentAtUtc,
+            IsDeleted = isDeleted
         });
         await db.SaveChangesAsync();
 
