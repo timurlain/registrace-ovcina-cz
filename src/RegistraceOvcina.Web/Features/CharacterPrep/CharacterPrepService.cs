@@ -252,6 +252,55 @@ public sealed class CharacterPrepService(
         await db.SaveChangesAsync(cancellationToken);
     }
 
+    /// <summary>
+    /// Derived status of a single submission for the "Příprava postav" badge on the
+    /// organizer submission detail page. Reuses the same three-state truth table as the
+    /// dashboard so the badge the organizer sees on both pages always agrees:
+    ///   NotInvited → <see cref="RegistrationSubmission.CharacterPrepInvitedAtUtc"/> is null
+    ///   Done       → invited AND every Player registration has both CharacterName non-blank
+    ///                AND StartingEquipmentOptionId set
+    ///   Waiting    → invited but at least one Player row still missing name or equipment
+    /// A submission with zero Player rows still resolves to Done/NotInvited (Waiting
+    /// requires something to wait for), which matches the dashboard's "pending" notion.
+    /// Returns null if the submission does not exist (soft-deleted or unknown id).
+    /// </summary>
+    public async Task<CharacterPrepStatus?> GetSubmissionStatusAsync(
+        int submissionId,
+        CancellationToken cancellationToken)
+    {
+        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+
+        var projection = await db.RegistrationSubmissions
+            .AsNoTracking()
+            .Where(x => x.Id == submissionId)
+            .Select(x => new
+            {
+                x.CharacterPrepInvitedAtUtc,
+                PlayersMissingName = x.Registrations.Count(r =>
+                    r.AttendeeType == AttendeeType.Player
+                    && (r.CharacterName == null || r.CharacterName.Trim() == "")),
+                PlayersMissingEquipment = x.Registrations.Count(r =>
+                    r.AttendeeType == AttendeeType.Player
+                    && r.StartingEquipmentOptionId == null),
+            })
+            .FirstOrDefaultAsync(cancellationToken);
+
+        if (projection is null)
+        {
+            return null;
+        }
+
+        if (projection.CharacterPrepInvitedAtUtc is null)
+        {
+            return CharacterPrepStatus.NotInvited;
+        }
+
+        var fullyFilled = projection.PlayersMissingName == 0
+            && projection.PlayersMissingEquipment == 0;
+
+        return fullyFilled ? CharacterPrepStatus.Done : CharacterPrepStatus.Waiting;
+    }
+
     public async Task<CharacterPrepStats> GetDashboardStatsAsync(
         int gameId,
         CancellationToken cancellationToken)
