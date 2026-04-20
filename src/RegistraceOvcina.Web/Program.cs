@@ -249,6 +249,10 @@ public class Program
         builder.Services.AddScoped<SubmissionService>();
         builder.Services.AddScoped<CharacterPrepTokenService>();
         builder.Services.AddScoped<CharacterPrepService>();
+        builder.Services.Configure<CharacterPrepOptions>(
+            builder.Configuration.GetSection(CharacterPrepOptions.SectionName));
+        builder.Services.AddScoped<ICharacterPrepEmailRenderer, CharacterPrepEmailRenderer>();
+        builder.Services.AddScoped<CharacterPrepMailService>();
         builder.Services.AddScoped<OrganizerSubmissionService>();
         builder.Services.AddScoped<PaymentService>();
         builder.Services.Configure<AcsEmailOptions>(builder.Configuration.GetSection(AcsEmailOptions.SectionName));
@@ -270,6 +274,13 @@ public class Program
             builder.Services.AddScoped<MailboxSyncService>();
             builder.Services.AddScoped<InvitationService>();
             builder.Services.AddScoped<ExternalContactService>();
+            builder.Services.AddScoped<ICharacterPrepEmailSender, GraphCharacterPrepEmailSender>();
+        }
+        else
+        {
+            // Dev / unconfigured environments: fail fast with a clear message rather than
+            // silently dropping mail. A no-op would hide integration issues during testing.
+            builder.Services.AddScoped<ICharacterPrepEmailSender, UnconfiguredCharacterPrepEmailSender>();
         }
 
         var app = builder.Build();
