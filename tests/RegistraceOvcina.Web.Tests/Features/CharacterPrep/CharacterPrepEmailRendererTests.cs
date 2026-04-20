@@ -136,6 +136,36 @@ public sealed class CharacterPrepEmailRendererTests
     }
 
     [Fact]
+    public void Pozvanka_with_blank_contact_email_omits_mailto_link_and_contact_sentence()
+    {
+        // When no OrganizerContactEmail is configured, the renderer must not
+        // emit a dead <a href="mailto:"></a> link. Cheapest insurance against
+        // the CharacterPrep options arriving empty in some dev environments.
+        var renderer = new CharacterPrepEmailRenderer();
+        var model = CreateModel(organizerContact: "");
+
+        var rendered = renderer.RenderPozvanka(model);
+
+        Assert.DoesNotContain("mailto:\"", rendered.HtmlBody);
+        Assert.DoesNotContain("href=\"mailto:\"", rendered.HtmlBody);
+        Assert.DoesNotContain("<a href=\"\"", rendered.HtmlBody);
+        Assert.DoesNotContain("napiš nám", rendered.HtmlBody);
+        Assert.DoesNotContain("napiš nám", rendered.PlainTextBody);
+    }
+
+    [Fact]
+    public void Pozvanka_with_whitespace_contact_email_omits_mailto_link()
+    {
+        var renderer = new CharacterPrepEmailRenderer();
+        var model = CreateModel(organizerContact: "   ");
+
+        var rendered = renderer.RenderPozvanka(model);
+
+        Assert.DoesNotContain("mailto:\"", rendered.HtmlBody);
+        Assert.DoesNotContain("href=\"mailto:", rendered.HtmlBody);
+    }
+
+    [Fact]
     public void Both_produce_nonempty_plaintext()
     {
         var renderer = new CharacterPrepEmailRenderer();

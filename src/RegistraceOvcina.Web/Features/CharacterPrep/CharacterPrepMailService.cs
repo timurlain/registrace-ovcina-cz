@@ -86,7 +86,7 @@ public sealed class CharacterPrepMailService(
 
             return SendSingleResult.Sent;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             logger.LogError(ex, "SendPozvankaAsync failed for submission {SubmissionId}", submissionId);
             return SendSingleResult.Error;
@@ -150,7 +150,7 @@ public sealed class CharacterPrepMailService(
 
             return SendSingleResult.Sent;
         }
-        catch (Exception ex)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             logger.LogError(ex, "SendPripominkaAsync failed for submission {SubmissionId}", submissionId);
             return SendSingleResult.Error;
@@ -265,9 +265,23 @@ public sealed class CharacterPrepMailService(
         }
 
         var prepUrl = $"{baseUrl}/postavy/{token}";
-        var organizerContact = options.OrganizerContactEmail
-            ?? mailboxOptions?.Value.SharedMailboxAddress
-            ?? "";
+
+        // OrganizerContactEmail is optional; fall back to the shared mailbox address.
+        // When both are blank, the renderer suppresses the contact sentence entirely
+        // so we never emit <a href="mailto:"> / empty mailto links in outbound mail.
+        var organizerContact =
+            !string.IsNullOrWhiteSpace(options.OrganizerContactEmail)
+                ? options.OrganizerContactEmail
+                : !string.IsNullOrWhiteSpace(mailboxOptions?.Value.SharedMailboxAddress)
+                    ? mailboxOptions.Value.SharedMailboxAddress
+                    : "";
+
+        if (string.IsNullOrWhiteSpace(organizerContact))
+        {
+            logger.LogWarning(
+                "CharacterPrep: no OrganizerContactEmail or SharedMailboxAddress configured; "
+                + "outbound mail will omit the organizer contact sentence.");
+        }
 
         return new CharacterPrepEmailModel(
             ctx.Game.Name,

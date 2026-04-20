@@ -88,7 +88,12 @@ public sealed class CharacterPrepEmailRenderer : ICharacterPrepEmailRenderer
     {
         var encodedUrl = UnicodeHtmlEncoder.Encode(model.PrepUrl);
         var encodedGame = UnicodeHtmlEncoder.Encode(model.GameName);
-        var encodedContact = UnicodeHtmlEncoder.Encode(model.OrganizerContactEmail);
+        // Contact is optional; when blank the "napiš nám" sentence is suppressed
+        // below so we never emit <a href="mailto:"></a>.
+        var hasContact = !string.IsNullOrWhiteSpace(model.OrganizerContactEmail);
+        var encodedContact = hasContact
+            ? UnicodeHtmlEncoder.Encode(model.OrganizerContactEmail)
+            : "";
 
         var sb = new StringBuilder(2048);
 
@@ -137,9 +142,13 @@ public sealed class CharacterPrepEmailRenderer : ICharacterPrepEmailRenderer
         // Deadline
         sb.Append("<p>Prosíme do <b>").Append(deadline).Append("</b>.</p>");
 
-        // Organizer contact
-        sb.Append("<p>Když něco nefunguje, napiš nám na ")
-          .Append("<a href=\"mailto:").Append(encodedContact).Append("\">").Append(encodedContact).Append("</a>.</p>");
+        // Organizer contact — only render when we actually have an address, otherwise
+        // we'd emit <a href="mailto:"></a> which some clients render as a dead link.
+        if (hasContact)
+        {
+            sb.Append("<p>Když něco nefunguje, napiš nám na ")
+              .Append("<a href=\"mailto:").Append(encodedContact).Append("\">").Append(encodedContact).Append("</a>.</p>");
+        }
 
         sb.Append("<p>Díky!<br/>—Organizátoři</p>");
         sb.Append("</div>");
@@ -183,8 +192,11 @@ public sealed class CharacterPrepEmailRenderer : ICharacterPrepEmailRenderer
         sb.AppendLine();
         sb.Append("Prosíme do ").Append(deadline).AppendLine(".");
         sb.AppendLine();
-        sb.Append("Když něco nefunguje, napiš nám na ").Append(model.OrganizerContactEmail).AppendLine(".");
-        sb.AppendLine();
+        if (!string.IsNullOrWhiteSpace(model.OrganizerContactEmail))
+        {
+            sb.Append("Když něco nefunguje, napiš nám na ").Append(model.OrganizerContactEmail).AppendLine(".");
+            sb.AppendLine();
+        }
         sb.AppendLine("Díky!");
         sb.Append("—Organizátoři");
 

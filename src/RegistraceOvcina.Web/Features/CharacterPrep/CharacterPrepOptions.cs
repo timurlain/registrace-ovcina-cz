@@ -1,3 +1,5 @@
+using System.ComponentModel.DataAnnotations;
+
 namespace RegistraceOvcina.Web.Features.CharacterPrep;
 
 /// <summary>
@@ -11,11 +13,16 @@ public sealed class CharacterPrepOptions
 
     /// <summary>
     /// Absolute base URL, no trailing slash — e.g. <c>https://registrace.ovcina.cz</c>.
+    /// Required: validated on startup so a missing value surfaces as a clear bind error
+    /// instead of an <see cref="InvalidOperationException"/> at the first send attempt.
     /// </summary>
+    [Required]
     public string? PublicBaseUrl { get; set; }
 
     /// <summary>
-    /// Address shown in email footers as "napiš nám". Usually the shared organizer inbox.
+    /// Address shown in email footers as "napiš nám". Optional — the mail service falls
+    /// back to the shared mailbox address, and the renderer omits the contact sentence
+    /// entirely when no address is available.
     /// </summary>
     public string? OrganizerContactEmail { get; set; }
 }

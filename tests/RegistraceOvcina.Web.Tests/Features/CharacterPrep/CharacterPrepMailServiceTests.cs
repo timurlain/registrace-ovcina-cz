@@ -204,6 +204,26 @@ public sealed class CharacterPrepMailServiceTests
         Assert.Equal("u2@example.cz", sender.Captured[0].To);
     }
 
+    [Fact]
+    public async Task SendPozvankaAsync_cancelled_token_propagates_OperationCanceledException()
+    {
+        // Cancellation must NOT be swallowed by the generic catch — if it were,
+        // a bulk send couldn't be aborted cleanly and callers couldn't honour
+        // shutdown requests.
+        var options = CreateOptions();
+        await SeedGameAsync(options);
+        await AddSubmissionAsync(options, submissionId: 1, invitedAtUtc: null, players: 1, adults: 0);
+
+        var (service, sender) = CreateService(options);
+        sender.ThrowCancelledOnSend = true;
+
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        await Assert.ThrowsAsync<OperationCanceledException>(
+            () => service.SendPozvankaAsync(1, NowUtc, cts.Token));
+    }
+
     // ------------------------------------------------------------ helpers
 
     private static DbContextOptions<ApplicationDbContext> CreateOptions() =>
@@ -378,9 +398,15 @@ public sealed class CharacterPrepMailServiceTests
     {
         public List<SentMessage> Captured { get; } = new();
         public string? FailForRecipient { get; set; }
+        public bool ThrowCancelledOnSend { get; set; }
 
         public Task SendAsync(string recipientEmail, string subject, string htmlBody, CancellationToken cancellationToken)
         {
+            if (ThrowCancelledOnSend)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                throw new OperationCanceledException("simulated cancelled send");
+            }
             if (FailForRecipient is not null
                 && string.Equals(FailForRecipient, recipientEmail, StringComparison.OrdinalIgnoreCase))
             {

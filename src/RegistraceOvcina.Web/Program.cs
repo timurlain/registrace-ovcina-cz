@@ -249,8 +249,10 @@ public class Program
         builder.Services.AddScoped<SubmissionService>();
         builder.Services.AddScoped<CharacterPrepTokenService>();
         builder.Services.AddScoped<CharacterPrepService>();
-        builder.Services.Configure<CharacterPrepOptions>(
-            builder.Configuration.GetSection(CharacterPrepOptions.SectionName));
+        builder.Services.AddOptions<CharacterPrepOptions>()
+            .Bind(builder.Configuration.GetSection(CharacterPrepOptions.SectionName))
+            .ValidateDataAnnotations()
+            .ValidateOnStart();
         builder.Services.AddScoped<ICharacterPrepEmailRenderer, CharacterPrepEmailRenderer>();
         builder.Services.AddScoped<CharacterPrepMailService>();
         builder.Services.AddScoped<OrganizerSubmissionService>();
