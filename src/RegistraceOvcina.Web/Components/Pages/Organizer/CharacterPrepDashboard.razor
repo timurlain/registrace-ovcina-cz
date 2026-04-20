@@ -82,9 +82,10 @@ else
                 @onclick="SendBulkPripominkaAsync">
             Poslat připomínku (@reminderCount)
         </button>
-        @* Phase 7 wires Excel export — dashboard link is stubbed for now. *@
-        <a class="btn btn-outline-secondary disabled" aria-disabled="true" href="#"
-           title="Bude doplněno v další fázi">Stáhnout Excel</a>
+        <a class="btn btn-outline-secondary"
+           href="@($"/organizace/hry/{GameId}/priprava-postav/export.xlsx")">
+            Stáhnout Excel
+        </a>
         <a class="btn btn-outline-secondary"
            href="/organizace/hry/@GameId/priprava-postav/vybava">Konfigurovat výbavu</a>
 

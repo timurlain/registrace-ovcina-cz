@@ -250,6 +250,7 @@ public class Program
         builder.Services.AddScoped<CharacterPrepTokenService>();
         builder.Services.AddScoped<CharacterPrepService>();
         builder.Services.AddScoped<CharacterPrepOptionsService>();
+        builder.Services.AddScoped<CharacterPrepExportService>();
         builder.Services.AddOptions<CharacterPrepOptions>()
             .Bind(builder.Configuration.GetSection(CharacterPrepOptions.SectionName))
             .ValidateDataAnnotations()
@@ -1273,6 +1274,59 @@ public class Program
                     return Results.File(xlsx,
                         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                         $"kralovstvi-{board.GameName.Replace(' ', '-')}.xlsx");
+                })
+            .RequireAuthorization(AuthorizationPolicies.StaffOnly);
+        app.MapGet(
+                "/organizace/hry/{gameId:int}/priprava-postav/export.xlsx",
+                async (int gameId, IDbContextFactory<ApplicationDbContext> dbFactory,
+                    CharacterPrepExportService exportService, CancellationToken ct) =>
+                {
+                    await using var db = await dbFactory.CreateDbContextAsync(ct);
+                    var gameName = await db.Games
+                        .AsNoTracking()
+                        .Where(x => x.Id == gameId)
+                        .Select(x => x.Name)
+                        .FirstOrDefaultAsync(ct);
+
+                    if (gameName is null)
+                    {
+                        return Results.NotFound();
+                    }
+
+                    var xlsx = await exportService.BuildAsync(gameId, ct);
+                    var slug = Slugify(gameName);
+                    var stamp = DateTime.UtcNow.ToString("yyyyMMdd");
+                    return Results.File(xlsx,
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        $"priprava-postav-{slug}-{stamp}.xlsx");
+
+                    static string Slugify(string value)
+                    {
+                        var normalized = value.Normalize(System.Text.NormalizationForm.FormD);
+                        var sb = new System.Text.StringBuilder(normalized.Length);
+                        foreach (var ch in normalized)
+                        {
+                            var cat = System.Globalization.CharUnicodeInfo.GetUnicodeCategory(ch);
+                            if (cat == System.Globalization.UnicodeCategory.NonSpacingMark)
+                            {
+                                continue;
+                            }
+                            if (char.IsLetterOrDigit(ch))
+                            {
+                                sb.Append(char.ToLowerInvariant(ch));
+                            }
+                            else if (char.IsWhiteSpace(ch) || ch == '-' || ch == '_')
+                            {
+                                sb.Append('-');
+                            }
+                        }
+                        var slug = sb.ToString();
+                        while (slug.Contains("--", StringComparison.Ordinal))
+                        {
+                            slug = slug.Replace("--", "-", StringComparison.Ordinal);
+                        }
+                        return slug.Trim('-');
+                    }
                 })
             .RequireAuthorization(AuthorizationPolicies.StaffOnly);
         app.MapPost(
