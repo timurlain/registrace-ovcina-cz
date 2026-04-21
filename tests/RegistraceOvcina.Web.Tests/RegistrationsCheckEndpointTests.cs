@@ -1,7 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using RegistraceOvcina.Web.Data;
 using RegistraceOvcina.Web.Features.Integration;
-using RegistraceOvcina.Web.Features.Users;
 
 namespace RegistraceOvcina.Web.Tests;
 
@@ -23,6 +22,12 @@ namespace RegistraceOvcina.Web.Tests;
 ///   8. Email matches a soft-deleted submission's row → false (respects IsDeleted filter).
 ///   9. Fallback via ApplicationUser / UserEmailService when Person.Email is null
 ///      (the dedup path) → still true.
+///  14. Submission.PrimaryContactName matches an Adult attendee's First+LastName
+///      with no ApplicationUser or Person.Email → not guardian-only (Lukáš case).
+///  15. Same but the matched attendee is a Player (child) → stays guardian-only.
+///  16. PrimaryContactName without diacritics matches Person name with diacritics
+///      (Lukas Heinz vs Lukáš Heinz) → not guardian-only.
+///  17. PrimaryContactName does not match any attendee → stays guardian-only.
 /// </summary>
 public sealed class RegistrationsCheckEndpointTests
 {
@@ -310,14 +315,124 @@ public sealed class RegistrationsCheckEndpointTests
         Assert.False(result.GuardianOnly);
     }
 
+    // ----- Scenario 14: Primary-contact-name matches an Adult attendee -----
+    // The real-data Lukáš Heinz case: Person.Email is null (dedup),
+    // no ApplicationUser links the email to PersonId, BUT the submission's
+    // PrimaryContactName matches an Adult attendee's First+LastName in the
+    // same submission. That should count as an own-registration, not guardian.
+    [Fact]
+    public async Task PrimaryContactNameMatchesAdultAttendee_ReturnsNotGuardianOnly()
+    {
+        await using var seeded = await SeedAsync(s =>
+        {
+            var game = s.AddGame(1);
+            var lukas = s.AddPerson(346, "Lukáš", "Heinz", 1984, email: null);
+            // No ApplicationUser, no UserEmails — the ONLY email signal
+            // is Submission.PrimaryEmail + PrimaryContactName.
+            var submission = s.AddSubmission(
+                id: 1000,
+                gameId: game.Id,
+                registrantUserId: "u-lukas",
+                primaryEmail: "lukas.heinz@seznam.cz",
+                primaryContactName: "Lukáš Heinz");
+            s.AddRegistration(1058, submission.Id, lukas.Id, AttendeeType.Adult);
+        });
+
+        var result = await Check(seeded, "lukas.heinz@seznam.cz", gameId: 1);
+
+        Assert.True(result.IsRegistered);
+        Assert.False(result.GuardianOnly);
+    }
+
+    // ----- Scenario 15: Primary-contact-name matches a Player (child), not adult -----
+    // A parent who happens to share a name with their child (or a typo) must
+    // NOT flip the guardianOnly flag — only Adult attendees qualify for this
+    // signal. The submission has the matching name, but AttendeeType=Player.
+    [Fact]
+    public async Task PrimaryContactNameMatchesNonAdultAttendee_StaysGuardianOnly()
+    {
+        await using var seeded = await SeedAsync(s =>
+        {
+            var game = s.AddGame(1);
+            var kidWithSameName = s.AddPerson(346, "Lukáš", "Heinz", 2014, email: null);
+            var submission = s.AddSubmission(
+                id: 1000,
+                gameId: game.Id,
+                registrantUserId: "u-lukas",
+                primaryEmail: "lukas.heinz@seznam.cz",
+                primaryContactName: "Lukáš Heinz");
+            s.AddRegistration(1058, submission.Id, kidWithSameName.Id, AttendeeType.Player);
+        });
+
+        var result = await Check(seeded, "lukas.heinz@seznam.cz", gameId: 1);
+
+        Assert.True(result.IsRegistered);
+        Assert.True(result.GuardianOnly);
+    }
+
+    // ----- Scenario 16: PrimaryContactName without diacritics matches Person with diacritics -----
+    // Primary contact typed "Lukas Heinz" (ASCII, no diacritics); the Person
+    // record has FirstName="Lukáš". The comparison is diacritic-normalized, so
+    // this must count as an adult attendee match.
+    [Fact]
+    public async Task PrimaryContactNameMatchWithDiacritics_Works()
+    {
+        await using var seeded = await SeedAsync(s =>
+        {
+            var game = s.AddGame(1);
+            var lukas = s.AddPerson(346, "Lukáš", "Heinz", 1984, email: null);
+            var submission = s.AddSubmission(
+                id: 1000,
+                gameId: game.Id,
+                registrantUserId: "u-lukas",
+                primaryEmail: "lukas.heinz@seznam.cz",
+                primaryContactName: "Lukas Heinz");
+            s.AddRegistration(1058, submission.Id, lukas.Id, AttendeeType.Adult);
+        });
+
+        var result = await Check(seeded, "lukas.heinz@seznam.cz", gameId: 1);
+
+        Assert.True(result.IsRegistered);
+        Assert.False(result.GuardianOnly);
+    }
+
+    // ----- Scenario 17: PrimaryContactName does NOT match any attendee -----
+    // Submission's PrimaryEmail matches but the PrimaryContactName is different
+    // from every attendee's name (and the attendees are Players — kids). Must
+    // stay guardianOnly=true to avoid over-matching. E.g., Klára Heinzová
+    // should not be treated as Lukáš Heinz's own-registration.
+    [Fact]
+    public async Task PrimaryContactNameNoMatch_SubmissionOnly_StaysGuardianOnly()
+    {
+        await using var seeded = await SeedAsync(s =>
+        {
+            var game = s.AddGame(1);
+            // A completely different person (different first AND last name)
+            // is the only Adult attendee in the submission. Primary contact
+            // name "Lukáš Heinz" does not match this adult.
+            var other = s.AddPerson(346, "Klára", "Heinzová", 1984, email: null);
+            var submission = s.AddSubmission(
+                id: 1000,
+                gameId: game.Id,
+                registrantUserId: "u-lukas",
+                primaryEmail: "lukas.heinz@seznam.cz",
+                primaryContactName: "Lukáš Heinz");
+            s.AddRegistration(1058, submission.Id, other.Id, AttendeeType.Adult);
+        });
+
+        var result = await Check(seeded, "lukas.heinz@seznam.cz", gameId: 1);
+
+        Assert.True(result.IsRegistered);
+        Assert.True(result.GuardianOnly);
+    }
+
     // ----- Helpers -----
 
     private static async Task<PresenceCheckDto> Check(SeededDb seeded, string email, int gameId)
     {
         await using var db = seeded.NewContext();
-        var userEmailService = new UserEmailService(seeded.Factory, new FixedTimeProvider(FixedUtc));
         return await IntegrationApiEndpoints.CheckRegistrationPresenceAsync(
-            db, userEmailService, email, gameId, CancellationToken.None);
+            db, email, gameId, CancellationToken.None);
     }
 
     private sealed class FixedTimeProvider(DateTime fixedUtc) : TimeProvider
@@ -417,14 +532,19 @@ public sealed class RegistrationsCheckEndpointTests
             return entity;
         }
 
-        public RegistrationSubmission AddSubmission(int id, int gameId, string registrantUserId, string primaryEmail)
+        public RegistrationSubmission AddSubmission(
+            int id,
+            int gameId,
+            string registrantUserId,
+            string primaryEmail,
+            string primaryContactName = "Test Contact")
         {
             var submission = new RegistrationSubmission
             {
                 Id = id,
                 GameId = gameId,
                 RegistrantUserId = registrantUserId,
-                PrimaryContactName = "Test Contact",
+                PrimaryContactName = primaryContactName,
                 PrimaryEmail = primaryEmail,
                 PrimaryPhone = "777111222",
                 Status = SubmissionStatus.Submitted,
