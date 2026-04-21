@@ -207,6 +207,109 @@ public sealed class RegistrationsCheckEndpointTests
         Assert.False(result.GuardianOnly);
     }
 
+    // ----- Scenario 10: Person.Email null, ApplicationUser primary email match,
+    // Submission.PrimaryEmail also matches, registration exists → NotGuardianOnly. -----
+    [Fact]
+    public async Task PersonEmailNulled_UserEmailLinked_WithOwnRegistration_ReturnsNotGuardianOnly()
+    {
+        // Targeted regression for the PrimaryEmail-wins-over-AppUserLink bug:
+        // Person.Email is null (dedup nulled it out), ApplicationUser carries the
+        // email and is linked via PersonId, and the attendee has their own active
+        // Registration in the game. The Submission.PrimaryEmail also matches
+        // (common for self-registering adults). The own-Registration signal MUST
+        // override the PrimaryEmail-only verdict.
+        await using var seeded = await SeedAsync(s =>
+        {
+            var game = s.AddGame(1);
+            var person = s.AddPerson(346, "Lukáš", "Heinz", 1984, email: null);
+            s.AddApplicationUser("u-346", "lukas.heinz@seznam.cz", personId: person.Id);
+            var submission = s.AddSubmission(1000, game.Id, registrantUserId: "u-346", primaryEmail: "lukas.heinz@seznam.cz");
+            s.AddRegistration(1058, submission.Id, person.Id, AttendeeType.Adult);
+        });
+
+        var result = await Check(seeded, "lukas.heinz@seznam.cz", gameId: 1);
+
+        Assert.True(result.IsRegistered);
+        Assert.False(result.GuardianOnly);
+    }
+
+    // ----- Scenario 11: Alternate UserEmails row (not the primary) linked to a
+    // Person who has their own Registration → NotGuardianOnly. -----
+    [Fact]
+    public async Task AlternateUserEmail_LinkedToPerson_WithOwnRegistration_ReturnsNotGuardianOnly()
+    {
+        // User's ApplicationUser.NormalizedEmail is a different address; the
+        // incoming email only matches an entry in UserEmails (alias). The link
+        // to Person still resolves via ApplicationUser.PersonId, and that Person
+        // has an active Adult Registration in this game. Must be NotGuardianOnly.
+        await using var seeded = await SeedAsync(s =>
+        {
+            var game = s.AddGame(1);
+            var person = s.AddPerson(400, "Alt", "User", 1990, email: null);
+            s.AddApplicationUser("u-alt", "primary@test.cz", personId: person.Id);
+            s.AddUserEmail("u-alt", "alias@test.cz");
+            var submission = s.AddSubmission(40, game.Id, registrantUserId: "u-alt", primaryEmail: "primary@test.cz");
+            s.AddRegistration(4000, submission.Id, person.Id, AttendeeType.Adult);
+        });
+
+        var result = await Check(seeded, "alias@test.cz", gameId: 1);
+
+        Assert.True(result.IsRegistered);
+        Assert.False(result.GuardianOnly);
+    }
+
+    // ----- Scenario 12: ApplicationUser links resolve email → Person, but that
+    // Person has NO Registration in the game. Only the submission's PrimaryEmail
+    // matches. → Stays guardianOnly=true. -----
+    [Fact]
+    public async Task UserLinkedButNoOwnRegistrationInGame_OnlyPrimaryContactMatch_StaysGuardianOnly()
+    {
+        // The classic guardian case: parent is the registrant + Submission's
+        // primary contact, has an ApplicationUser linked to a Person, but did
+        // not register themselves as an attendee — only their kids. The endpoint
+        // must keep guardianOnly=true here.
+        await using var seeded = await SeedAsync(s =>
+        {
+            var game = s.AddGame(1);
+            var parent = s.AddPerson(500, "Marek", "Štěpán", 1980, email: null);
+            s.AddApplicationUser("u-marek", "marek@test.cz", personId: parent.Id);
+            var kid = s.AddPerson(501, "Anna", "Štěpán", 2014, email: null);
+            var submission = s.AddSubmission(50, game.Id, registrantUserId: "u-marek", primaryEmail: "marek@test.cz");
+            s.AddRegistration(5001, submission.Id, kid.Id, AttendeeType.Player);
+            // Note: no Registration for parent.Id — only a kid.
+        });
+
+        var result = await Check(seeded, "marek@test.cz", gameId: 1);
+
+        Assert.True(result.IsRegistered);
+        Assert.True(result.GuardianOnly);
+    }
+
+    // ----- Scenario 13: Full Lukáš production snapshot. -----
+    [Fact]
+    public async Task LukasCaseSnapshot()
+    {
+        // Full reproduction of the production scenario that triggered this fix:
+        //   - Person.Email = null (dedup path).
+        //   - ApplicationUser linked to Person with Email populated.
+        //   - An active Adult Registration exists in the game.
+        //   - Submission.PrimaryEmail matches the same email (self-registrant).
+        // Expected: isRegistered=true, guardianOnly=false.
+        await using var seeded = await SeedAsync(s =>
+        {
+            var game = s.AddGame(1);
+            var lukas = s.AddPerson(346, "Lukáš", "Heinz", 1984, email: null);
+            s.AddApplicationUser("u-lukas-prod", "lukas.heinz@seznam.cz", personId: lukas.Id);
+            var submission = s.AddSubmission(1000, game.Id, registrantUserId: "u-lukas-prod", primaryEmail: "lukas.heinz@seznam.cz");
+            s.AddRegistration(1058, submission.Id, lukas.Id, AttendeeType.Adult);
+        });
+
+        var result = await Check(seeded, "lukas.heinz@seznam.cz", gameId: 1);
+
+        Assert.True(result.IsRegistered);
+        Assert.False(result.GuardianOnly);
+    }
+
     // ----- Helpers -----
 
     private static async Task<PresenceCheckDto> Check(SeededDb seeded, string email, int gameId)
@@ -299,6 +402,19 @@ public sealed class RegistrationsCheckEndpointTests
             };
             db.Users.Add(user);
             return user;
+        }
+
+        public UserEmail AddUserEmail(string userId, string email)
+        {
+            var entity = new UserEmail
+            {
+                UserId = userId,
+                Email = email,
+                NormalizedEmail = email.ToUpperInvariant(),
+                CreatedAtUtc = FixedUtc
+            };
+            db.UserEmails.Add(entity);
+            return entity;
         }
 
         public RegistrationSubmission AddSubmission(int id, int gameId, string registrantUserId, string primaryEmail)

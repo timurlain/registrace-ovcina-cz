@@ -428,10 +428,19 @@ public static class IntegrationApiEndpoints
         // whitespace introduced by import scripts.
         var normalizedEmail = email.Trim().ToUpperInvariant();
 
-        // 1) Attendee by Person.Email (any AttendeeType — Player and Adult both
-        // count as "registered"; the old code only filtered by email, which is
-        // equivalent, but make it explicit here for clarity and future-proofing
-        // against new attendee types).
+        // ---------------------------------------------------------------
+        // Signal A — own-Registration match (strongest): the email resolves
+        // to a Person who has their own active Registration in this game.
+        //
+        // This is computed ALWAYS (not gated behind Signal A.1 failing) and
+        // unions three email→Person paths, so we don't miss edge cases where
+        // one path fails (e.g. duplicate ApplicationUser rows with the same
+        // NormalizedEmail, or a dedup pass that nulled Person.Email but left
+        // UserEmails alone). Mirrors how LoadUserGameInfoAsync resolves the
+        // caller: email → ApplicationUser → PersonId → Registration.
+        // ---------------------------------------------------------------
+
+        // A.1 — direct Person.Email match on a Registration in this game.
         var attendeeByPersonEmail = await db.Registrations
             .AsNoTracking()
             .AnyAsync(r =>
@@ -443,43 +452,57 @@ public static class IntegrationApiEndpoints
                 r.Person.Email.Trim().ToUpper() == normalizedEmail,
                 ct);
 
-        // 2) Attendee by linked ApplicationUser (primary NormalizedEmail or
-        // alias UserEmails) → PersonId. This covers the case where
-        // Person.Email was cleared during dedup (see SubmissionService) but
-        // the user still has an account with the email.
-        var attendeeByUserLink = false;
-        if (!attendeeByPersonEmail)
-        {
-            var userId = await userEmailService.ResolveUserIdByEmailAsync(email, ct);
-            if (userId is not null)
-            {
-                var personId = await db.Users
-                    .AsNoTracking()
-                    .Where(u => u.Id == userId)
-                    .Select(u => u.PersonId)
-                    .FirstOrDefaultAsync(ct);
+        // A.2 — email resolves to any ApplicationUser (primary NormalizedEmail
+        // or an alias in UserEmails) whose PersonId has an active Registration
+        // in this game. We collect ALL matching user ids (defensive against
+        // duplicate rows from historic imports) and project through to
+        // PersonId values, so a single duplicate doesn't make us miss the link.
+        var matchingUserIds = await db.Users
+            .AsNoTracking()
+            .Where(u => u.NormalizedEmail == normalizedEmail)
+            .Select(u => u.Id)
+            .ToListAsync(ct);
 
-                if (personId.HasValue)
-                {
-                    attendeeByUserLink = await db.Registrations
-                        .AsNoTracking()
-                        .AnyAsync(r =>
-                            r.Submission.GameId == gameId &&
-                            r.Submission.Status == SubmissionStatus.Submitted &&
-                            r.Status == RegistrationStatus.Active &&
-                            !r.Submission.IsDeleted &&
-                            r.PersonId == personId.Value,
-                            ct);
-                }
-            }
-        }
+        var aliasUserIds = await db.UserEmails
+            .AsNoTracking()
+            .Where(ue => ue.NormalizedEmail == normalizedEmail)
+            .Select(ue => ue.UserId)
+            .ToListAsync(ct);
 
-        var hasAttendeeRegistration = attendeeByPersonEmail || attendeeByUserLink;
+        var candidateUserIds = matchingUserIds
+            .Concat(aliasUserIds)
+            .Distinct()
+            .ToList();
 
-        // 3) Household contact: email matches a submission's PrimaryEmail,
-        // even when the caller has no Registration of their own. This is the
-        // common case for parents who register their kids.
-        var hasSubmissionAsPrimaryContact = await db.RegistrationSubmissions
+        var personIdsFromUsers = candidateUserIds.Count == 0
+            ? new List<int>()
+            : await db.Users
+                .AsNoTracking()
+                .Where(u => candidateUserIds.Contains(u.Id) && u.PersonId != null)
+                .Select(u => u.PersonId!.Value)
+                .Distinct()
+                .ToListAsync(ct);
+
+        var attendeeByUserLink = personIdsFromUsers.Count > 0
+            && await db.Registrations
+                .AsNoTracking()
+                .AnyAsync(r =>
+                    r.Submission.GameId == gameId &&
+                    r.Submission.Status == SubmissionStatus.Submitted &&
+                    r.Status == RegistrationStatus.Active &&
+                    !r.Submission.IsDeleted &&
+                    personIdsFromUsers.Contains(r.PersonId),
+                    ct);
+
+        var hasOwnRegistrationForThisPerson = attendeeByPersonEmail || attendeeByUserLink;
+
+        // ---------------------------------------------------------------
+        // Signal B — primary-contact match: email matches a submission's
+        // PrimaryEmail on a submitted, non-deleted submission in this game.
+        // This lets parents who registered their kids but not themselves
+        // still show up as "registered", flagged guardianOnly.
+        // ---------------------------------------------------------------
+        var hasPrimaryContactMatch = await db.RegistrationSubmissions
             .AsNoTracking()
             .AnyAsync(s =>
                 s.GameId == gameId &&
@@ -488,8 +511,11 @@ public static class IntegrationApiEndpoints
                 s.PrimaryEmail.Trim().ToUpper() == normalizedEmail,
                 ct);
 
-        var isRegistered = hasAttendeeRegistration || hasSubmissionAsPrimaryContact;
-        var guardianOnly = !hasAttendeeRegistration && hasSubmissionAsPrimaryContact;
+        // ---------------------------------------------------------------
+        // Verdict — own-Registration ALWAYS wins over primary-contact-only.
+        // ---------------------------------------------------------------
+        var isRegistered = hasOwnRegistrationForThisPerson || hasPrimaryContactMatch;
+        var guardianOnly = !hasOwnRegistrationForThisPerson && hasPrimaryContactMatch;
 
         return new PresenceCheckDto(isRegistered, guardianOnly);
     }
