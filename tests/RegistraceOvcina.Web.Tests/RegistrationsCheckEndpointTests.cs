@@ -20,7 +20,7 @@ namespace RegistraceOvcina.Web.Tests;
 ///   6. Whitespace-trimmed input (" lukas@test.cz ") → true.
 ///   7. Email matches attendee in a DIFFERENT game → false for this game.
 ///   8. Email matches a soft-deleted submission's row → false (respects IsDeleted filter).
-///   9. Fallback via ApplicationUser / UserEmailService when Person.Email is null
+///   9. Fallback via ApplicationUser / Users / UserEmails lookup when Person.Email is null
 ///      (the dedup path) → still true.
 ///  14. Submission.PrimaryContactName matches an Adult attendee's First+LastName
 ///      with no ApplicationUser or Person.Email → not guardian-only (Lukáš case).
