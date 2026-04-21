@@ -302,48 +302,8 @@ public static class IntegrationApiEndpoints
                 return Results.BadRequest("email is required.");
 
             await using var db = await dbFactory.CreateDbContextAsync(ct);
-
-            var normalizedEmail = email.Trim().ToUpperInvariant();
-
-            var isRegistered = await db.Registrations
-                .AsNoTracking()
-                .AnyAsync(r =>
-                    r.Submission.GameId == gameId &&
-                    r.Submission.Status == SubmissionStatus.Submitted &&
-                    r.Status == RegistrationStatus.Active &&
-                    !r.Submission.IsDeleted &&
-                    r.Person.Email != null &&
-                    r.Person.Email.ToUpper() == normalizedEmail,
-                    ct);
-
-            if (!isRegistered)
-            {
-                // Fallback: resolve user by primary + alternate emails, then check by PersonId
-                var userId = await userEmailService.ResolveUserIdByEmailAsync(email, ct);
-                if (userId is not null)
-                {
-                    var personId = await db.Users
-                        .AsNoTracking()
-                        .Where(u => u.Id == userId)
-                        .Select(u => u.PersonId)
-                        .FirstOrDefaultAsync(ct);
-
-                    if (personId.HasValue)
-                    {
-                        isRegistered = await db.Registrations
-                            .AsNoTracking()
-                            .AnyAsync(r =>
-                                r.Submission.GameId == gameId &&
-                                r.Submission.Status == SubmissionStatus.Submitted &&
-                                r.Status == RegistrationStatus.Active &&
-                                !r.Submission.IsDeleted &&
-                                r.PersonId == personId.Value,
-                                ct);
-                    }
-                }
-            }
-
-            return Results.Ok(new PresenceCheckDto(isRegistered));
+            var result = await CheckRegistrationPresenceAsync(db, userEmailService, email, gameId, ct);
+            return Results.Ok(result);
         }).AllowAnonymous();
 
         // GET /api/v1/users/{email}/roles?gameId={gameId} — game roles for a user
@@ -416,6 +376,122 @@ public static class IntegrationApiEndpoints
         });
 
         return app;
+    }
+
+    /// <summary>
+    /// Presence check for GET /api/v1/registrations/check. Returns
+    /// <see cref="PresenceCheckDto"/> describing whether the given email is associated
+    /// with the given game, either as an attendee Registration (any
+    /// <see cref="AttendeeType"/> — Player or Adult) or as the PrimaryEmail on a
+    /// submitted <see cref="RegistrationSubmission"/> (household contact).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Historically the handler only matched <c>Person.Email</c>, which returned
+    /// <c>isRegistered:false</c> for adults whose <c>Person.Email</c> was cleared
+    /// during a dedup/import (e.g. because it duplicated the submission's primary
+    /// email) and who had no linked <see cref="ApplicationUser"/>. The fallback
+    /// path via <c>UserEmailService</c> only helped users with an app account.
+    /// </para>
+    /// <para>
+    /// The method now unions three signals, all case-insensitive and
+    /// whitespace-trimmed on both sides, all scoped to the given game and
+    /// honouring soft-delete / status filters:
+    /// </para>
+    /// <list type="number">
+    /// <item><description><c>Person.Email</c> on any active Registration whose
+    /// submission is Submitted.</description></item>
+    /// <item><description><c>ApplicationUser.NormalizedEmail</c> (primary or alias
+    /// via <see cref="UserEmailService"/>) → <c>PersonId</c> → any active
+    /// Registration.</description></item>
+    /// <item><description><c>RegistrationSubmission.PrimaryEmail</c> on any
+    /// submitted, non-deleted submission.</description></item>
+    /// </list>
+    /// <para>
+    /// <c>guardianOnly</c> is set when signal 3 is the only match — i.e. the
+    /// caller registered their kids but did not register themselves as an
+    /// attendee. This lets bot clients distinguish "registered themselves"
+    /// from "registered their household".
+    /// </para>
+    /// </remarks>
+    internal static async Task<PresenceCheckDto> CheckRegistrationPresenceAsync(
+        ApplicationDbContext db,
+        UserEmailService userEmailService,
+        string email,
+        int gameId,
+        CancellationToken ct)
+    {
+        // Trim + upper-case for case-insensitive comparison on the SQL side.
+        // PostgreSQL's UPPER() is collation-aware; for ASCII emails it matches
+        // ToUpperInvariant(). We ALSO trim Person.Email / PrimaryEmail on the
+        // SQL side because historical data has been observed with trailing
+        // whitespace introduced by import scripts.
+        var normalizedEmail = email.Trim().ToUpperInvariant();
+
+        // 1) Attendee by Person.Email (any AttendeeType — Player and Adult both
+        // count as "registered"; the old code only filtered by email, which is
+        // equivalent, but make it explicit here for clarity and future-proofing
+        // against new attendee types).
+        var attendeeByPersonEmail = await db.Registrations
+            .AsNoTracking()
+            .AnyAsync(r =>
+                r.Submission.GameId == gameId &&
+                r.Submission.Status == SubmissionStatus.Submitted &&
+                r.Status == RegistrationStatus.Active &&
+                !r.Submission.IsDeleted &&
+                r.Person.Email != null &&
+                r.Person.Email.Trim().ToUpper() == normalizedEmail,
+                ct);
+
+        // 2) Attendee by linked ApplicationUser (primary NormalizedEmail or
+        // alias UserEmails) → PersonId. This covers the case where
+        // Person.Email was cleared during dedup (see SubmissionService) but
+        // the user still has an account with the email.
+        var attendeeByUserLink = false;
+        if (!attendeeByPersonEmail)
+        {
+            var userId = await userEmailService.ResolveUserIdByEmailAsync(email, ct);
+            if (userId is not null)
+            {
+                var personId = await db.Users
+                    .AsNoTracking()
+                    .Where(u => u.Id == userId)
+                    .Select(u => u.PersonId)
+                    .FirstOrDefaultAsync(ct);
+
+                if (personId.HasValue)
+                {
+                    attendeeByUserLink = await db.Registrations
+                        .AsNoTracking()
+                        .AnyAsync(r =>
+                            r.Submission.GameId == gameId &&
+                            r.Submission.Status == SubmissionStatus.Submitted &&
+                            r.Status == RegistrationStatus.Active &&
+                            !r.Submission.IsDeleted &&
+                            r.PersonId == personId.Value,
+                            ct);
+                }
+            }
+        }
+
+        var hasAttendeeRegistration = attendeeByPersonEmail || attendeeByUserLink;
+
+        // 3) Household contact: email matches a submission's PrimaryEmail,
+        // even when the caller has no Registration of their own. This is the
+        // common case for parents who register their kids.
+        var hasSubmissionAsPrimaryContact = await db.RegistrationSubmissions
+            .AsNoTracking()
+            .AnyAsync(s =>
+                s.GameId == gameId &&
+                s.Status == SubmissionStatus.Submitted &&
+                !s.IsDeleted &&
+                s.PrimaryEmail.Trim().ToUpper() == normalizedEmail,
+                ct);
+
+        var isRegistered = hasAttendeeRegistration || hasSubmissionAsPrimaryContact;
+        var guardianOnly = !hasAttendeeRegistration && hasSubmissionAsPrimaryContact;
+
+        return new PresenceCheckDto(isRegistered, guardianOnly);
     }
 
     /// <summary>
