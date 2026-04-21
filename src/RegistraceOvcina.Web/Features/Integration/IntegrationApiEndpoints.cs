@@ -1,3 +1,5 @@
+using System.Globalization;
+using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Http.HttpResults;
 using Microsoft.EntityFrameworkCore;
@@ -295,14 +297,13 @@ public static class IntegrationApiEndpoints
             string email,
             int gameId,
             IDbContextFactory<ApplicationDbContext> dbFactory,
-            UserEmailService userEmailService,
             CancellationToken ct) =>
         {
             if (string.IsNullOrWhiteSpace(email))
                 return Results.BadRequest("email is required.");
 
             await using var db = await dbFactory.CreateDbContextAsync(ct);
-            var result = await CheckRegistrationPresenceAsync(db, userEmailService, email, gameId, ct);
+            var result = await CheckRegistrationPresenceAsync(db, email, gameId, ct);
             return Results.Ok(result);
         }).AllowAnonymous();
 
@@ -390,11 +391,10 @@ public static class IntegrationApiEndpoints
     /// Historically the handler only matched <c>Person.Email</c>, which returned
     /// <c>isRegistered:false</c> for adults whose <c>Person.Email</c> was cleared
     /// during a dedup/import (e.g. because it duplicated the submission's primary
-    /// email) and who had no linked <see cref="ApplicationUser"/>. The fallback
-    /// path via <c>UserEmailService</c> only helped users with an app account.
+    /// email) and who had no linked <see cref="ApplicationUser"/>.
     /// </para>
     /// <para>
-    /// The method now unions three signals, all case-insensitive and
+    /// The method now unions four signals, all case-insensitive and
     /// whitespace-trimmed on both sides, all scoped to the given game and
     /// honouring soft-delete / status filters:
     /// </para>
@@ -402,13 +402,18 @@ public static class IntegrationApiEndpoints
     /// <item><description><c>Person.Email</c> on any active Registration whose
     /// submission is Submitted.</description></item>
     /// <item><description><c>ApplicationUser.NormalizedEmail</c> (primary or alias
-    /// via <see cref="UserEmailService"/>) → <c>PersonId</c> → any active
-    /// Registration.</description></item>
+    /// in <c>UserEmails</c>) → <c>PersonId</c> → any active Registration.</description></item>
+    /// <item><description>Primary-contact-name match: <c>Submission.PrimaryEmail</c>
+    /// matches the input AND <c>Submission.PrimaryContactName</c> matches the
+    /// First+LastName of an Adult attendee in the same submission (case-insensitive,
+    /// diacritic-normalized). Catches the case where dedup nulled <c>Person.Email</c>
+    /// and no <c>ApplicationUser</c> link exists — the submission itself tells us
+    /// the primary contact is also an attendee.</description></item>
     /// <item><description><c>RegistrationSubmission.PrimaryEmail</c> on any
-    /// submitted, non-deleted submission.</description></item>
+    /// submitted, non-deleted submission (guardian fallback).</description></item>
     /// </list>
     /// <para>
-    /// <c>guardianOnly</c> is set when signal 3 is the only match — i.e. the
+    /// <c>guardianOnly</c> is set when only signal 4 matches — i.e. the
     /// caller registered their kids but did not register themselves as an
     /// attendee. This lets bot clients distinguish "registered themselves"
     /// from "registered their household".
@@ -416,15 +421,14 @@ public static class IntegrationApiEndpoints
     /// </remarks>
     internal static async Task<PresenceCheckDto> CheckRegistrationPresenceAsync(
         ApplicationDbContext db,
-        UserEmailService userEmailService,
         string email,
         int gameId,
         CancellationToken ct)
     {
-        // Trim + upper-case for case-insensitive comparison on the SQL side.
-        // PostgreSQL's UPPER() is collation-aware; for ASCII emails it matches
-        // ToUpperInvariant(). We ALSO trim Person.Email / PrimaryEmail on the
-        // SQL side because historical data has been observed with trailing
+        // Trim + upper-case (culture-invariant) for case-insensitive comparison on
+        // the SQL side. PostgreSQL's UPPER() is collation-aware; for ASCII emails
+        // it matches ToUpperInvariant(). We ALSO trim Person.Email / PrimaryEmail
+        // on the SQL side because historical data has been observed with trailing
         // whitespace introduced by import scripts.
         var normalizedEmail = email.Trim().ToUpperInvariant();
 
@@ -449,7 +453,7 @@ public static class IntegrationApiEndpoints
                 r.Status == RegistrationStatus.Active &&
                 !r.Submission.IsDeleted &&
                 r.Person.Email != null &&
-                r.Person.Email.Trim().ToUpper() == normalizedEmail,
+                r.Person.Email.Trim().ToUpperInvariant() == normalizedEmail,
                 ct);
 
         // A.2 — email resolves to any ApplicationUser (primary NormalizedEmail
@@ -494,12 +498,84 @@ public static class IntegrationApiEndpoints
                     personIdsFromUsers.Contains(r.PersonId),
                     ct);
 
-        var hasOwnRegistrationForThisPerson = attendeeByPersonEmail || attendeeByUserLink;
+        // ---------------------------------------------------------------
+        // Signal C — primary-contact-name match (fallback for dedup orphans):
+        // For the Lukáš Heinz real-data case — Person.Email was nulled by dedup
+        // and no ApplicationUser links the email to the Person. The only
+        // remaining signal is the submission itself: Submission.PrimaryEmail
+        // matches the input, AND Submission.PrimaryContactName matches the
+        // First+LastName of an Adult attendee in that same submission.
+        //
+        // If both hold, the primary-contact is ALSO attending → own-registration.
+        // Requires BOTH firstName AND lastName to match (diacritic-insensitive,
+        // trim+lowercase) to avoid false positives like "Klára Heinzová".
+        // Only Adult attendees count: a parent named same as their child must
+        // NOT flip the flag (handled by the AttendeeType.Adult filter below).
+        // ---------------------------------------------------------------
+        var attendeeByPrimaryContactName = false;
+        if (!attendeeByPersonEmail && !attendeeByUserLink)
+        {
+            // Load primary-contact rows whose PrimaryEmail matches, together
+            // with this submission's Adult attendees' names. Small result set
+            // (usually 0 or 1 submission per email), so we evaluate the name
+            // comparison in memory with diacritic normalization.
+            var primaryContactCandidates = await db.RegistrationSubmissions
+                .AsNoTracking()
+                .Where(s =>
+                    s.GameId == gameId &&
+                    s.Status == SubmissionStatus.Submitted &&
+                    !s.IsDeleted &&
+                    s.PrimaryEmail.Trim().ToUpperInvariant() == normalizedEmail)
+                .Select(s => new
+                {
+                    s.PrimaryContactName,
+                    AdultAttendees = s.Registrations
+                        .Where(r =>
+                            r.Status == RegistrationStatus.Active &&
+                            r.AttendeeType == AttendeeType.Adult)
+                        .Select(r => new
+                        {
+                            r.Person.FirstName,
+                            r.Person.LastName
+                        })
+                        .ToList()
+                })
+                .ToListAsync(ct);
+
+            foreach (var candidate in primaryContactCandidates)
+            {
+                if (string.IsNullOrWhiteSpace(candidate.PrimaryContactName))
+                    continue;
+
+                var (contactFirst, contactLast) = SplitContactName(candidate.PrimaryContactName);
+                if (contactFirst is null || contactLast is null)
+                    continue;
+
+                var normContactFirst = NormalizeForNameCompare(contactFirst);
+                var normContactLast = NormalizeForNameCompare(contactLast);
+
+                foreach (var attendee in candidate.AdultAttendees)
+                {
+                    if (NormalizeForNameCompare(attendee.FirstName) == normContactFirst &&
+                        NormalizeForNameCompare(attendee.LastName) == normContactLast)
+                    {
+                        attendeeByPrimaryContactName = true;
+                        break;
+                    }
+                }
+
+                if (attendeeByPrimaryContactName)
+                    break;
+            }
+        }
+
+        var hasOwnRegistrationForThisPerson =
+            attendeeByPersonEmail || attendeeByUserLink || attendeeByPrimaryContactName;
 
         // ---------------------------------------------------------------
-        // Signal B — primary-contact match: email matches a submission's
-        // PrimaryEmail on a submitted, non-deleted submission in this game.
-        // This lets parents who registered their kids but not themselves
+        // Signal D — primary-email match (guardian fallback): email matches a
+        // submission's PrimaryEmail on a submitted, non-deleted submission in
+        // this game. Parents who registered their kids but not themselves
         // still show up as "registered", flagged guardianOnly.
         // ---------------------------------------------------------------
         var hasPrimaryContactMatch = await db.RegistrationSubmissions
@@ -508,7 +584,7 @@ public static class IntegrationApiEndpoints
                 s.GameId == gameId &&
                 s.Status == SubmissionStatus.Submitted &&
                 !s.IsDeleted &&
-                s.PrimaryEmail.Trim().ToUpper() == normalizedEmail,
+                s.PrimaryEmail.Trim().ToUpperInvariant() == normalizedEmail,
                 ct);
 
         // ---------------------------------------------------------------
@@ -518,6 +594,43 @@ public static class IntegrationApiEndpoints
         var guardianOnly = !hasOwnRegistrationForThisPerson && hasPrimaryContactMatch;
 
         return new PresenceCheckDto(isRegistered, guardianOnly);
+    }
+
+    /// <summary>
+    /// Splits a free-form "First [Middle...] Last" contact name into a first
+    /// name (first token) and last name (last token). Returns (null, null) if
+    /// the input has fewer than 2 non-whitespace tokens.
+    /// </summary>
+    private static (string? First, string? Last) SplitContactName(string name)
+    {
+        var tokens = name.Trim().Split(
+            (char[]?)null,
+            StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (tokens.Length < 2)
+            return (null, null);
+        return (tokens[0], tokens[^1]);
+    }
+
+    /// <summary>
+    /// Trims, lowercases (invariant), and strips combining diacritic marks so
+    /// that "Lukáš" and "Lukas" compare equal. Used only for comparing the
+    /// primary contact name against an attendee's First/LastName — NOT for
+    /// storage or email normalization.
+    /// </summary>
+    private static string NormalizeForNameCompare(string? s)
+    {
+        if (string.IsNullOrWhiteSpace(s))
+            return string.Empty;
+
+        var trimmed = s.Trim().ToLowerInvariant();
+        var decomposed = trimmed.Normalize(NormalizationForm.FormD);
+        var builder = new System.Text.StringBuilder(decomposed.Length);
+        foreach (var ch in decomposed)
+        {
+            if (CharUnicodeInfo.GetUnicodeCategory(ch) != UnicodeCategory.NonSpacingMark)
+                builder.Append(ch);
+        }
+        return builder.ToString().Normalize(NormalizationForm.FormC);
     }
 
     /// <summary>
