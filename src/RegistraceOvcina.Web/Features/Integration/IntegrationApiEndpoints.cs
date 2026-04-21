@@ -445,6 +445,8 @@ public static class IntegrationApiEndpoints
         // ---------------------------------------------------------------
 
         // A.1 — direct Person.Email match on a Registration in this game.
+        // Npgsql can't translate ToUpperInvariant(); ToUpper() maps to PostgreSQL UPPER().
+        // Input is already ToUpperInvariant-normalized; server-side UPPER is sufficient for our ASCII-only emails.
         var attendeeByPersonEmail = await db.Registrations
             .AsNoTracking()
             .AnyAsync(r =>
@@ -453,7 +455,7 @@ public static class IntegrationApiEndpoints
                 r.Status == RegistrationStatus.Active &&
                 !r.Submission.IsDeleted &&
                 r.Person.Email != null &&
-                r.Person.Email.Trim().ToUpperInvariant() == normalizedEmail,
+                r.Person.Email.Trim().ToUpper() == normalizedEmail,
                 ct);
 
         // A.2 — email resolves to any ApplicationUser (primary NormalizedEmail
@@ -519,13 +521,15 @@ public static class IntegrationApiEndpoints
             // with this submission's Adult attendees' names. Small result set
             // (usually 0 or 1 submission per email), so we evaluate the name
             // comparison in memory with diacritic normalization.
+            // Npgsql can't translate ToUpperInvariant(); ToUpper() maps to PostgreSQL UPPER().
+            // Input is already ToUpperInvariant-normalized; server-side UPPER is sufficient for our ASCII-only emails.
             var primaryContactCandidates = await db.RegistrationSubmissions
                 .AsNoTracking()
                 .Where(s =>
                     s.GameId == gameId &&
                     s.Status == SubmissionStatus.Submitted &&
                     !s.IsDeleted &&
-                    s.PrimaryEmail.Trim().ToUpperInvariant() == normalizedEmail)
+                    s.PrimaryEmail.Trim().ToUpper() == normalizedEmail)
                 .Select(s => new
                 {
                     s.PrimaryContactName,
@@ -578,13 +582,15 @@ public static class IntegrationApiEndpoints
         // this game. Parents who registered their kids but not themselves
         // still show up as "registered", flagged guardianOnly.
         // ---------------------------------------------------------------
+        // Npgsql can't translate ToUpperInvariant(); ToUpper() maps to PostgreSQL UPPER().
+        // Input is already ToUpperInvariant-normalized; server-side UPPER is sufficient for our ASCII-only emails.
         var hasPrimaryContactMatch = await db.RegistrationSubmissions
             .AsNoTracking()
             .AnyAsync(s =>
                 s.GameId == gameId &&
                 s.Status == SubmissionStatus.Submitted &&
                 !s.IsDeleted &&
-                s.PrimaryEmail.Trim().ToUpperInvariant() == normalizedEmail,
+                s.PrimaryEmail.Trim().ToUpper() == normalizedEmail,
                 ct);
 
         // ---------------------------------------------------------------
@@ -624,7 +630,7 @@ public static class IntegrationApiEndpoints
 
         var trimmed = s.Trim().ToLowerInvariant();
         var decomposed = trimmed.Normalize(NormalizationForm.FormD);
-        var builder = new System.Text.StringBuilder(decomposed.Length);
+        var builder = new StringBuilder(decomposed.Length);
         foreach (var ch in decomposed)
         {
             if (CharUnicodeInfo.GetUnicodeCategory(ch) != UnicodeCategory.NonSpacingMark)
