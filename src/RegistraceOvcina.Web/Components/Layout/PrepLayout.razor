@@ -1,0 +1,46 @@
+@inherits LayoutComponentBase
+
+<div class="prep-shell">
+    @if (isInteractive)
+    {
+        <span data-testid="interactive-ready" hidden></span>
+    }
+
+    <header class="prep-header">
+        <div class="container py-3 d-flex flex-column flex-sm-row align-items-sm-center justify-content-between gap-2">
+            <a class="prep-brand-link" href="/">Ovčina registrace</a>
+            <span class="text-secondary prep-header-subtitle">Příprava postav</span>
+        </div>
+    </header>
+
+    <main class="container py-4">
+        @Body
+    </main>
+
+    <footer class="prep-footer">
+        <div class="container py-3 text-center text-secondary">
+            <small>Ovčina — kontaktujte organizátory, pokud potřebujete pomoc.</small>
+        </div>
+    </footer>
+</div>
+
+<div id="blazor-error-ui" data-nosnippet>
+    Došlo k neočekávané chybě.
+    <a href="." class="reload">Načíst znovu</a>
+    <span class="dismiss">🗙</span>
+</div>
+
+@code {
+    private bool isInteractive;
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (!firstRender || isInteractive)
+        {
+            return;
+        }
+
+        isInteractive = true;
+        StateHasChanged();
+    }
+}
