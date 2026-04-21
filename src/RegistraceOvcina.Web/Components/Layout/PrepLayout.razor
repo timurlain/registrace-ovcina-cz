@@ -1,6 +1,11 @@
 @inherits LayoutComponentBase
 
 <div class="prep-shell">
+    @if (isInteractive)
+    {
+        <span data-testid="interactive-ready" hidden></span>
+    }
+
     <header class="prep-header">
         <div class="container py-3 d-flex flex-column flex-sm-row align-items-sm-center justify-content-between gap-2">
             <a class="prep-brand-link" href="/">Ovčina registrace</a>
@@ -18,3 +23,18 @@
         </div>
     </footer>
 </div>
+
+@code {
+    private bool isInteractive;
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (!firstRender || isInteractive)
+        {
+            return;
+        }
+
+        isInteractive = true;
+        StateHasChanged();
+    }
+}
