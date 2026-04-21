@@ -134,6 +134,9 @@ public sealed class IntegrationApiDtoTests
     {
         var dto = new PresenceCheckDto(true);
         Assert.True(dto.IsRegistered);
+        // Default GuardianOnly is false, preserving a backward-compatible default
+        // shape for callers that only constructed the DTO positionally.
+        Assert.False(dto.GuardianOnly);
     }
 
     [Fact]
@@ -141,6 +144,15 @@ public sealed class IntegrationApiDtoTests
     {
         var dto = new PresenceCheckDto(false);
         Assert.False(dto.IsRegistered);
+        Assert.False(dto.GuardianOnly);
+    }
+
+    [Fact]
+    public void PresenceCheckDto_GuardianOnly_CanBeSet()
+    {
+        var dto = new PresenceCheckDto(true, GuardianOnly: true);
+        Assert.True(dto.IsRegistered);
+        Assert.True(dto.GuardianOnly);
     }
 }
 

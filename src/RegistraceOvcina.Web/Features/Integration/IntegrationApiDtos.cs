@@ -25,7 +25,15 @@ public sealed record RegistrationDto(
     string Status);
 
 /// <summary>Presence check result.</summary>
-public sealed record PresenceCheckDto(bool IsRegistered);
+/// <param name="IsRegistered">True if the email matches either a Person.Email
+/// on an active Registration OR a RegistrationSubmission.PrimaryEmail for the
+/// given game.</param>
+/// <param name="GuardianOnly">True when IsRegistered is true solely because the
+/// email is a submission's PrimaryEmail (household contact) — i.e. the person
+/// themselves has no attendee Registration in this game. False when the person
+/// is an attendee (Player or Adult) regardless of whether they are also a
+/// household contact, and false when IsRegistered is false.</param>
+public sealed record PresenceCheckDto(bool IsRegistered, bool GuardianOnly = false);
 
 /// <summary>Game roles for a user.</summary>
 public sealed record UserGameRolesDto(List<string> Roles);
