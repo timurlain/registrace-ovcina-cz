@@ -197,6 +197,51 @@ public sealed class PeopleReviewServiceContactTests : IAsyncLifetime
         Assert.Equal(UpdateContactOutcome.NoChange, result.Outcome);
     }
 
+    [Fact]
+    public async Task UpdateContactAsync_case_insensitive_email_collision_detected()
+    {
+        // Copilot followup (v0.9.30): legacy imports have stored emails in mixed case.
+        // Person A's email is "TEST@X.CZ"; Person B tries to claim "test@x.cz".
+        // A case-sensitive Postgres `=` would miss this and surface a 500 at SaveChanges
+        // via the partial unique index. Collision MUST be detected at the app layer.
+        //
+        // Use direct SQL to seed A's email in uppercase — the normal UpdateContactAsync
+        // path lowercases on write, so we bypass it to reproduce the legacy-data shape.
+        await SeedAsync(
+            CreatePerson(1, "Anna", "Import", 2010, null, "111"),
+            CreatePerson(2, "Bedřich", "Novák", 2011, null, "222"));
+
+        await using (var seedDb = new ApplicationDbContext(_options))
+        {
+            await seedDb.Database.ExecuteSqlRawAsync(
+                """UPDATE "People" SET "Email" = 'TEST@X.CZ' WHERE "Id" = 1""");
+        }
+
+        var service = CreateService();
+
+        var result = await service.UpdateContactAsync(2, "test@x.cz", "222", ActorUserId);
+
+        Assert.Equal(UpdateContactOutcome.EmailAlreadyUsedByOtherPerson, result.Outcome);
+
+        // Person B's email should NOT have been written.
+        await using var db = new ApplicationDbContext(_options);
+        var b = await db.People.SingleAsync(x => x.Id == 2);
+        Assert.Null(b.Email);
+    }
+
+    // NOTE (v0.9.30 — Copilot followup #3):
+    // A test for the DbUpdateException race translation was considered but skipped
+    // per the plan's explicit allowance ("or skip this test and just rely on the
+    // hand-rolled logic"). Reasons:
+    //   1. Reproducing the real race requires a SaveChanges interceptor that holds
+    //      the app-level check's snapshot, which is brittle and slow.
+    //   2. Npgsql's `PostgresException.ConstraintName` is read-only with no public
+    //      constructor that sets it, so a hand-built fake can't exercise the
+    //      `IsUniqueEmailViolation` constraint-name check.
+    //   3. Manual QA on staging exercises the end-to-end path.
+    // The hand-rolled predicate in PeopleReviewService.IsUniqueEmailViolation is
+    // tight: SqlState == 23505 AND ConstraintName contains "Email".
+
     private PeopleReviewService CreateService() =>
         new(new TestDbContextFactory(_options), new FixedTimeProvider());
 

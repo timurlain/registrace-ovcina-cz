@@ -1,6 +1,7 @@
 using System.ComponentModel.DataAnnotations;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 using RegistraceOvcina.Web.Data;
 
 namespace RegistraceOvcina.Web.Features.People;
@@ -514,12 +515,18 @@ public sealed class PeopleReviewService(
         // Check email uniqueness against OTHER active Persons only.
         // Global query filter already excludes soft-deleted, so this naturally matches
         // the scope of the partial unique index ("Email" IS NOT NULL AND "Email" != '').
+        //
+        // Case-insensitive compare to match SubmissionService.UpdateAttendeeAsync — legacy
+        // imports have stored emails with mixed casing (e.g. "TEST@X.CZ"). Uses .ToLower()
+        // (Npgsql translates to LOWER()); do NOT use ToLowerInvariant() which Npgsql cannot
+        // translate — that pattern caused the v0.9.18 prod outage.
         if (!string.IsNullOrWhiteSpace(trimmedEmail)
             && !string.Equals(trimmedEmail, person.Email, StringComparison.OrdinalIgnoreCase))
         {
+            var normalizedEmail = trimmedEmail.ToLowerInvariant();
             var collision = await db.People
                 .AsNoTracking()
-                .AnyAsync(x => x.Id != personId && x.Email == trimmedEmail, cancellationToken);
+                .AnyAsync(x => x.Id != personId && x.Email != null && x.Email.ToLower() == normalizedEmail, cancellationToken);
 
             if (collision)
             {
@@ -571,7 +578,21 @@ public sealed class PeopleReviewService(
             })
         });
 
-        await db.SaveChangesAsync(cancellationToken);
+        try
+        {
+            await db.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException ex) when (IsUniqueEmailViolation(ex))
+        {
+            // Race between the application-level collision check above and SaveChangesAsync
+            // — another transaction claimed this email. Translate to the standard outcome so
+            // the organizer sees the expected "email already used" banner instead of a 500.
+            return new UpdateContactResult(
+                UpdateContactOutcome.EmailAlreadyUsedByOtherPerson,
+                "E-mail už používá jiná osoba (souběžná úprava).",
+                trimmedEmail,
+                trimmedPhone);
+        }
 
         return new UpdateContactResult(
             UpdateContactOutcome.Updated,
@@ -579,6 +600,11 @@ public sealed class PeopleReviewService(
             trimmedEmail,
             trimmedPhone);
     }
+
+    private static bool IsUniqueEmailViolation(DbUpdateException ex) =>
+        ex.InnerException is PostgresException pg
+        && pg.SqlState == PostgresErrorCodes.UniqueViolation
+        && (pg.ConstraintName?.Contains("Email", StringComparison.OrdinalIgnoreCase) ?? false);
 
     public async Task<List<PersonSearchResultItem>> SearchPersonsAsync(
         string query,

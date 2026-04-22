@@ -1271,7 +1271,8 @@ public class Program
 
                     return result.Outcome switch
                     {
-                        UpdateContactOutcome.NotFound => Results.NotFound(),
+                        UpdateContactOutcome.NotFound =>
+                            Results.LocalRedirect($"/organizace/osoby/{personId}?contact=not-found"),
                         UpdateContactOutcome.EmailAlreadyUsedByOtherPerson =>
                             Results.LocalRedirect($"/organizace/osoby/{personId}?contact=email-conflict"),
                         UpdateContactOutcome.NoChange =>
