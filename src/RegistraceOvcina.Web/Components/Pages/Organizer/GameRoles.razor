@@ -8,6 +8,8 @@
 @inject GameService GameService
 @inject GameRoleService GameRoleService
 @inject GameRolesViewService GameRolesViewService
+@inject IGameRoleAccountService GameRoleAccountService
+@inject NavigationManager NavigationManager
 @inject AuthenticationStateProvider AuthStateProvider
 
 <PageTitle>Dospělí</PageTitle>
@@ -42,13 +44,42 @@ else if (adults.Count == 0)
 }
 else
 {
-    <div class="d-flex justify-content-between align-items-center mb-3">
+    <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
         <div class="text-secondary small">Celkem: <strong>@adults.Count</strong> dospělých</div>
-        <button class="btn btn-sm @(groupByRole ? "btn-primary" : "btn-outline-secondary")"
-                @onclick="ToggleGrouping">
-            <i class="bi bi-collection me-1"></i>Seskupit podle role
-        </button>
+        <div class="d-flex align-items-center gap-2 flex-wrap">
+            @if (!groupByRole)
+            {
+                <button class="btn btn-sm btn-outline-primary"
+                        disabled="@(bulkEligibleCount == 0 || isBulkRunning)"
+                        @onclick="BulkLinkOrCreateAsync"
+                        data-testid="bulk-link-or-create">
+                    <i class="bi bi-person-plus me-1"></i>
+                    @if (isBulkRunning)
+                    {
+                        <span>Pracuji…</span>
+                    }
+                    else
+                    {
+                        <span>Vytvořit/propojit účty pro všechny dospělé s e-mailem (@bulkEligibleCount)</span>
+                    }
+                </button>
+            }
+            <button class="btn btn-sm @(groupByRole ? "btn-primary" : "btn-outline-secondary")"
+                    @onclick="ToggleGrouping">
+                <i class="bi bi-collection me-1"></i>Seskupit podle role
+            </button>
+        </div>
     </div>
+
+    @if (!string.IsNullOrWhiteSpace(statusMessage))
+    {
+        <div class="alert @statusAlertClass alert-dismissible fade show mb-3" role="status"
+             data-testid="link-or-create-status">
+            @statusMessage
+            <button type="button" class="btn-close" aria-label="Close"
+                    @onclick="() => statusMessage = null"></button>
+        </div>
+    }
 
     @if (groupByRole)
     {
@@ -126,7 +157,7 @@ else
                                             }
                                             else
                                             {
-                                                <span class="badge text-bg-warning">Bez účtu</span>
+                                                @NoAccountCell(adult)
                                             }
                                         </td>
                                     </tr>
@@ -200,7 +231,7 @@ else
                                 }
                                 else
                                 {
-                                    <span class="badge text-bg-warning">Bez účtu</span>
+                                    @NoAccountCell(adult)
                                 }
                             </td>
                         </tr>
@@ -219,8 +250,42 @@ else
     private bool groupByRole;
     private bool sortDescending;
     private string currentUserId = "";
+    private string? statusMessage;
+    private string statusAlertClass = "alert-success";
+    private readonly HashSet<int> busyPersonIds = new();
+    private bool isBulkRunning;
 
     private string SortIndicator => sortDescending ? "▼" : "▲";
+
+    private int bulkEligibleCount => adults?
+        .Count(a => !a.HasAccount && !string.IsNullOrWhiteSpace(a.Email)) ?? 0;
+
+    private bool IsRowBusy(int personId) => isBulkRunning || busyPersonIds.Contains(personId);
+
+    private RenderFragment<AdultRoleView> NoAccountCell => adult =>
+        @<text>
+            <span class="badge text-bg-warning me-1">Bez účtu</span>
+            @if (!string.IsNullOrWhiteSpace(adult.Email))
+            {
+                <button type="button" class="btn btn-sm btn-outline-primary mt-1"
+                        disabled="@IsRowBusy(adult.PersonId)"
+                        @onclick="() => LinkOrCreateAsync(adult)"
+                        data-testid="link-or-create-button">
+                    <i class="bi bi-person-plus me-1"></i>Vytvořit/propojit účet
+                </button>
+            }
+            else
+            {
+                <a class="btn btn-sm btn-outline-secondary mt-1"
+                   href="@($"/organizace/osoby/{adult.PersonId}")"
+                   data-testid="missing-email-link">
+                    <i class="bi bi-envelope-plus me-1"></i>Doplnit e-mail
+                </a>
+                <div class="text-secondary small mt-1">
+                    Bez e-mailu nemůžeme vytvořit ani propojit účet.
+                </div>
+            }
+        </text>;
 
     protected override async Task OnInitializedAsync()
     {
@@ -321,5 +386,88 @@ else
         if (flags.HasFlag(AdultRoleFlags.RangerLeader)) labels.Add("Hraničář");
         if (flags.HasFlag(AdultRoleFlags.Spectator)) labels.Add("Přihlížející");
         return labels;
+    }
+
+    private async Task LinkOrCreateAsync(AdultRoleView adult)
+    {
+        if (string.IsNullOrWhiteSpace(adult.Email) || string.IsNullOrEmpty(currentUserId))
+            return;
+
+        busyPersonIds.Add(adult.PersonId);
+        try
+        {
+            var result = await GameRoleAccountService.LinkOrCreateAccountAsync(
+                adult.PersonId, currentUserId, CancellationToken.None);
+
+            switch (result.Outcome)
+            {
+                case LinkOrCreateOutcome.Linked:
+                    SetStatus("Účet propojen.", success: true);
+                    break;
+                case LinkOrCreateOutcome.Created:
+                    SetStatus("Účet vytvořen.", success: true);
+                    break;
+                case LinkOrCreateOutcome.AlreadyLinked:
+                    SetStatus("Účet už byl propojen, obnov stránku.", success: false);
+                    break;
+                case LinkOrCreateOutcome.ConflictEmailUsedByAnotherPerson:
+                    SetStatus(
+                        "E-mail patří jiné osobě — zkontroluj v /admin/propojit-ucty",
+                        success: false);
+                    break;
+                case LinkOrCreateOutcome.MissingEmail:
+                    SetStatus("Osoba nemá vyplněný e-mail.", success: false);
+                    break;
+            }
+
+            // Refresh data so HasAccount/UserId update for the row.
+            await LoadDataAsync();
+        }
+        finally
+        {
+            busyPersonIds.Remove(adult.PersonId);
+        }
+    }
+
+    private async Task BulkLinkOrCreateAsync()
+    {
+        if (!selectedGameId.HasValue || string.IsNullOrEmpty(currentUserId) || bulkEligibleCount == 0)
+            return;
+
+        isBulkRunning = true;
+        try
+        {
+            var result = await GameRoleAccountService.LinkOrCreateAccountsForGameAsync(
+                selectedGameId.Value, currentUserId, CancellationToken.None);
+
+            var parts = new List<string>();
+            if (result.Linked > 0) parts.Add($"propojeno {result.Linked}");
+            if (result.Created > 0) parts.Add($"vytvořeno {result.Created}");
+            if (result.AlreadyLinked > 0) parts.Add($"již propojeno {result.AlreadyLinked}");
+            if (result.MissingEmail > 0) parts.Add($"bez e-mailu {result.MissingEmail}");
+            if (result.Conflicts > 0) parts.Add($"konflikty {result.Conflicts}");
+
+            var summary = parts.Count > 0
+                ? "Hotovo: " + string.Join(", ", parts) + "."
+                : "Žádní dospělí ke zpracování.";
+
+            if (result.FirstErrors.Count > 0)
+            {
+                summary += " Ukázky chyb: " + string.Join(" | ", result.FirstErrors);
+            }
+
+            SetStatus(summary, success: result.Conflicts == 0);
+            await LoadDataAsync();
+        }
+        finally
+        {
+            isBulkRunning = false;
+        }
+    }
+
+    private void SetStatus(string message, bool success)
+    {
+        statusMessage = message;
+        statusAlertClass = success ? "alert-success" : "alert-warning";
     }
 }
