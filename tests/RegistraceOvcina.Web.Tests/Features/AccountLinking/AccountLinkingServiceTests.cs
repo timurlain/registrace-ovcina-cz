@@ -629,6 +629,253 @@ public sealed class AccountLinkingServiceTests
         Assert.Empty(bucket.MediumConfidence);
     }
 
+    // 16a -----------------------------------------------------------
+    // v0.9.23: ListConflictsAsync exposes Persons with >1 linked ApplicationUser
+    // so the admin can clean them up via the new Konflikty tab.
+    [Fact]
+    public async Task ListConflictsAsync_empty_when_no_duplicates()
+    {
+        var options = CreateOptions();
+
+        await using (var db = new ApplicationDbContext(options))
+        {
+            var person = new Person
+            {
+                FirstName = "Alice",
+                LastName = "Solo",
+                BirthYear = 1990,
+                Email = "alice@example.cz",
+                CreatedAtUtc = FixedDate(),
+                UpdatedAtUtc = FixedDate()
+            };
+            db.People.Add(person);
+            await db.SaveChangesAsync();
+
+            var user = CreateUser("user-1", "Alice", "alice@example.cz");
+            user.PersonId = person.Id;
+            db.Users.Add(user);
+            db.Users.Add(CreateUser("user-unlinked", "Nobody", "nobody@example.cz"));
+            await db.SaveChangesAsync();
+        }
+
+        var service = CreateService(options);
+        var conflicts = await service.ListConflictsAsync(CancellationToken.None);
+
+        Assert.Empty(conflicts);
+    }
+
+    // 16b -----------------------------------------------------------
+    [Fact]
+    public async Task ListConflictsAsync_returns_each_person_with_multiple_links()
+    {
+        var options = CreateOptions();
+        int personIdA, personIdB;
+
+        await using (var db = new ApplicationDbContext(options))
+        {
+            var personA = new Person
+            {
+                FirstName = "Alice",
+                LastName = "Conflicted",
+                BirthYear = 1990,
+                Email = "alice@example.cz",
+                CreatedAtUtc = FixedDate(),
+                UpdatedAtUtc = FixedDate()
+            };
+            var personB = new Person
+            {
+                FirstName = "Bob",
+                LastName = "AlsoConflicted",
+                BirthYear = 1985,
+                Email = null,
+                CreatedAtUtc = FixedDate(),
+                UpdatedAtUtc = FixedDate()
+            };
+            db.People.AddRange(personA, personB);
+            await db.SaveChangesAsync();
+            personIdA = personA.Id;
+            personIdB = personB.Id;
+
+            // Two users on personA.
+            var a1 = CreateUser("user-a1", "Alice One", "a1@example.cz");
+            a1.PersonId = personIdA;
+            var a2 = CreateUser("user-a2", "Alice Two", "a2@example.cz");
+            a2.PersonId = personIdA;
+
+            // Three users on personB.
+            var b1 = CreateUser("user-b1", "Bob One", "b1@example.cz");
+            b1.PersonId = personIdB;
+            var b2 = CreateUser("user-b2", "Bob Two", "b2@example.cz");
+            b2.PersonId = personIdB;
+            var b3 = CreateUser("user-b3", "Bob Three", "b3@example.cz");
+            b3.PersonId = personIdB;
+
+            db.Users.AddRange(a1, a2, b1, b2, b3);
+            await db.SaveChangesAsync();
+        }
+
+        var service = CreateService(options);
+        var conflicts = await service.ListConflictsAsync(CancellationToken.None);
+
+        Assert.Equal(2, conflicts.Count);
+
+        var aliceConflict = Assert.Single(conflicts, c => c.PersonId == personIdA);
+        Assert.Equal("Alice Conflicted", aliceConflict.PersonFullName);
+        Assert.Equal(1990, aliceConflict.PersonBirthYear);
+        Assert.Equal("alice@example.cz", aliceConflict.PersonEmail);
+        Assert.Equal(2, aliceConflict.LinkedUsers.Count);
+
+        var bobConflict = Assert.Single(conflicts, c => c.PersonId == personIdB);
+        Assert.Equal(3, bobConflict.LinkedUsers.Count);
+        Assert.Null(bobConflict.PersonEmail);
+    }
+
+    // 16c -----------------------------------------------------------
+    [Fact]
+    public async Task ListConflictsAsync_includes_linkedat_from_auditlog()
+    {
+        var options = CreateOptions();
+        int personId;
+        var olderAudit = new DateTime(2026, 3, 1, 10, 0, 0, DateTimeKind.Utc);
+        var newerAudit = new DateTime(2026, 4, 1, 10, 0, 0, DateTimeKind.Utc);
+
+        await using (var db = new ApplicationDbContext(options))
+        {
+            var person = new Person
+            {
+                FirstName = "Alice",
+                LastName = "WithAudit",
+                BirthYear = 1990,
+                Email = null,
+                CreatedAtUtc = FixedDate(),
+                UpdatedAtUtc = FixedDate()
+            };
+            db.People.Add(person);
+            await db.SaveChangesAsync();
+            personId = person.Id;
+
+            var u1 = CreateUser("user-older", "Older", "older@example.cz");
+            u1.PersonId = personId;
+            var u2 = CreateUser("user-newer", "Newer", "newer@example.cz");
+            u2.PersonId = personId;
+            db.Users.AddRange(u1, u2);
+
+            db.AuditLogs.AddRange(
+                new AuditLog
+                {
+                    EntityType = "ApplicationUser",
+                    EntityId = "user-older",
+                    Action = "LinkAccount",
+                    ActorUserId = ActorId,
+                    CreatedAtUtc = olderAudit,
+                    DetailsJson = "{}"
+                },
+                new AuditLog
+                {
+                    EntityType = "ApplicationUser",
+                    EntityId = "user-newer",
+                    Action = "LinkAccount",
+                    ActorUserId = ActorId,
+                    CreatedAtUtc = newerAudit,
+                    DetailsJson = "{}"
+                });
+            await db.SaveChangesAsync();
+        }
+
+        var service = CreateService(options);
+        var conflicts = await service.ListConflictsAsync(CancellationToken.None);
+
+        var conflict = Assert.Single(conflicts);
+        var olderUser = Assert.Single(conflict.LinkedUsers, u => u.UserId == "user-older");
+        var newerUser = Assert.Single(conflict.LinkedUsers, u => u.UserId == "user-newer");
+        Assert.NotNull(olderUser.LinkedAtUtc);
+        Assert.NotNull(newerUser.LinkedAtUtc);
+        Assert.Equal(olderAudit, olderUser.LinkedAtUtc!.Value.UtcDateTime);
+        Assert.Equal(newerAudit, newerUser.LinkedAtUtc!.Value.UtcDateTime);
+    }
+
+    // 16d -----------------------------------------------------------
+    [Fact]
+    public async Task ListConflictsAsync_users_ordered_most_recent_first()
+    {
+        var options = CreateOptions();
+        int personId;
+        var oldest = new DateTime(2026, 1, 1, 10, 0, 0, DateTimeKind.Utc);
+        var middle = new DateTime(2026, 3, 1, 10, 0, 0, DateTimeKind.Utc);
+        var newest = new DateTime(2026, 4, 1, 10, 0, 0, DateTimeKind.Utc);
+
+        await using (var db = new ApplicationDbContext(options))
+        {
+            var person = new Person
+            {
+                FirstName = "Shared",
+                LastName = "Ordered",
+                BirthYear = 1990,
+                Email = null,
+                CreatedAtUtc = FixedDate(),
+                UpdatedAtUtc = FixedDate()
+            };
+            db.People.Add(person);
+            await db.SaveChangesAsync();
+            personId = person.Id;
+
+            var u1 = CreateUser("user-oldest", "Old", "old@example.cz");
+            u1.PersonId = personId;
+            var u2 = CreateUser("user-middle", "Mid", "mid@example.cz");
+            u2.PersonId = personId;
+            var u3 = CreateUser("user-newest", "New", "new@example.cz");
+            u3.PersonId = personId;
+            db.Users.AddRange(u1, u2, u3);
+
+            db.AuditLogs.AddRange(
+                new AuditLog { EntityType = "ApplicationUser", EntityId = "user-oldest", Action = "LinkAccount", ActorUserId = ActorId, CreatedAtUtc = oldest, DetailsJson = "{}" },
+                new AuditLog { EntityType = "ApplicationUser", EntityId = "user-middle", Action = "LinkAccount", ActorUserId = ActorId, CreatedAtUtc = middle, DetailsJson = "{}" },
+                new AuditLog { EntityType = "ApplicationUser", EntityId = "user-newest", Action = "LinkAccount", ActorUserId = ActorId, CreatedAtUtc = newest, DetailsJson = "{}" });
+            await db.SaveChangesAsync();
+        }
+
+        var service = CreateService(options);
+        var conflicts = await service.ListConflictsAsync(CancellationToken.None);
+
+        var conflict = Assert.Single(conflicts);
+        var orderedIds = conflict.LinkedUsers.Select(u => u.UserId).ToList();
+        Assert.Equal(new[] { "user-newest", "user-middle", "user-oldest" }, orderedIds);
+    }
+
+    // 16e -----------------------------------------------------------
+    // Regression guard: a Person with exactly one linked user is the normal state,
+    // and must NEVER appear on the conflicts list.
+    [Fact]
+    public async Task ListConflictsAsync_single_linked_user_not_listed()
+    {
+        var options = CreateOptions();
+
+        await using (var db = new ApplicationDbContext(options))
+        {
+            var person = new Person
+            {
+                FirstName = "Alice",
+                LastName = "Normal",
+                BirthYear = 1990,
+                Email = "alice@example.cz",
+                CreatedAtUtc = FixedDate(),
+                UpdatedAtUtc = FixedDate()
+            };
+            db.People.Add(person);
+            await db.SaveChangesAsync();
+
+            var user = CreateUser("user-1", "Alice", "alice@example.cz");
+            user.PersonId = person.Id;
+            db.Users.Add(user);
+            await db.SaveChangesAsync();
+        }
+
+        var service = CreateService(options);
+        var conflicts = await service.ListConflictsAsync(CancellationToken.None);
+
+        Assert.Empty(conflicts);
+    }
+
     // 15 -----------------------------------------------------------
     [Fact]
     public async Task SearchUsersAsync_matches_email_and_displayname()

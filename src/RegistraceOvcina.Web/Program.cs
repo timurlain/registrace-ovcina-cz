@@ -772,7 +772,7 @@ public class Program
             .RequireAuthorization(AuthorizationPolicies.AdminOnly);
         app.MapPost(
                 "/admin/propojit-ucty/odpojit",
-                async ([FromForm] string userId, HttpContext httpContext, UserManager<ApplicationUser> userManager, IAccountLinkingService accountLinkingService, CancellationToken ct) =>
+                async ([FromForm] string userId, [FromForm] string? returnTab, HttpContext httpContext, UserManager<ApplicationUser> userManager, IAccountLinkingService accountLinkingService, CancellationToken ct) =>
                 {
                     var user = await userManager.GetUserAsync(httpContext.User);
                     if (user is null)
@@ -783,7 +783,8 @@ public class Program
                     try
                     {
                         await accountLinkingService.UnlinkAsync(userId, user.Id, ct);
-                        return Results.LocalRedirect("/admin/propojit-ucty?status=unlinked&tab=linked");
+                        var tab = string.IsNullOrWhiteSpace(returnTab) ? "linked" : returnTab;
+                        return Results.LocalRedirect($"/admin/propojit-ucty?status=unlinked&tab={Uri.EscapeDataString(tab)}");
                     }
                     catch (ValidationException ex)
                     {
