@@ -7,7 +7,6 @@
 @inject RoleManager<ApplicationRole> RoleManager
 @inject UserManager<ApplicationUser> UserManager
 @inject IDbContextFactory<ApplicationDbContext> DbFactory
-@inject NavigationManager Navigation
 
 <PageTitle>Správa rolí</PageTitle>
 
@@ -198,7 +197,6 @@
             // For system/staff roles we still want the "members of the Identity role" count
             // (GetUsersInRoleAsync). For game roles we prefer the cross-game assignment count,
             // falling back to the Identity count if there's no GameRoles row for the name.
-            var identityUsers = await UserManager.GetUsersInRoleAsync(role.Name!);
             int userCount;
             if (role.Category == "game"
                 && assignedUserCounts.TryGetValue(role.Name!, out var assigned))
@@ -207,6 +205,7 @@
             }
             else
             {
+                var identityUsers = await UserManager.GetUsersInRoleAsync(role.Name!);
                 userCount = identityUsers.Count;
             }
 
@@ -305,7 +304,7 @@
         }
 
         role.Name = newName;
-        // Category stays "game" — the organizational concept was retired in v0.9.26.
+        // Category is not editable here; keep existing value unchanged.
 
         var result = await RoleManager.UpdateAsync(role);
         if (result.Succeeded)
