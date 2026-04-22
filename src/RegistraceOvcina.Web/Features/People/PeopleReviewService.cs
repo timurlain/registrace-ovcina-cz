@@ -477,6 +477,109 @@ public sealed class PeopleReviewService(
         await db.SaveChangesAsync(cancellationToken);
     }
 
+    /// <summary>
+    /// Updates contact info (email + phone) on a Person. Organizer flow for filling in
+    /// contact details on Persons imported without them (common for legacy imports),
+    /// unblocking the v0.9.28 link-or-create-account step which requires an email.
+    /// </summary>
+    /// <remarks>
+    /// Respects the partial unique index on Person.Email (filtered to non-deleted rows
+    /// with non-empty email). Soft-deleted Persons don't appear because the global
+    /// IsDeleted query filter excludes them — they return <see cref="UpdateContactOutcome.NotFound"/>.
+    /// </remarks>
+    public async Task<UpdateContactResult> UpdateContactAsync(
+        int personId,
+        string? email,
+        string? phone,
+        string actorUserId,
+        CancellationToken cancellationToken = default)
+    {
+        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+
+        var person = await db.People
+            .FirstOrDefaultAsync(x => x.Id == personId, cancellationToken);
+
+        if (person is null)
+        {
+            // Soft-deleted Persons are filtered out by HasQueryFilter, so they land here too.
+            return new UpdateContactResult(UpdateContactOutcome.NotFound, null, null, null);
+        }
+
+        // Normalize: empty/whitespace -> null so unique index sees NULL (permitted by partial filter)
+        // and downstream matching uses the same canonical form as import/search.
+        var trimmedEmail = string.IsNullOrWhiteSpace(email) ? null : email.Trim().ToLowerInvariant();
+        var normalizedPhoneDigits = PersonIdentityNormalizer.NormalizePhone(phone);
+        var trimmedPhone = string.IsNullOrWhiteSpace(normalizedPhoneDigits) ? null : normalizedPhoneDigits;
+
+        // Check email uniqueness against OTHER active Persons only.
+        // Global query filter already excludes soft-deleted, so this naturally matches
+        // the scope of the partial unique index ("Email" IS NOT NULL AND "Email" != '').
+        if (!string.IsNullOrWhiteSpace(trimmedEmail)
+            && !string.Equals(trimmedEmail, person.Email, StringComparison.OrdinalIgnoreCase))
+        {
+            var collision = await db.People
+                .AsNoTracking()
+                .AnyAsync(x => x.Id != personId && x.Email == trimmedEmail, cancellationToken);
+
+            if (collision)
+            {
+                return new UpdateContactResult(
+                    UpdateContactOutcome.EmailAlreadyUsedByOtherPerson,
+                    "E-mail už používá jiná osoba.",
+                    trimmedEmail,
+                    trimmedPhone);
+            }
+        }
+
+        var oldEmail = person.Email;
+        var oldPhone = person.Phone;
+
+        var emailChanged = !string.Equals(oldEmail, trimmedEmail, StringComparison.Ordinal);
+        var phoneChanged = !string.Equals(oldPhone, trimmedPhone, StringComparison.Ordinal);
+
+        if (!emailChanged && !phoneChanged)
+        {
+            return new UpdateContactResult(
+                UpdateContactOutcome.NoChange,
+                null,
+                trimmedEmail,
+                trimmedPhone);
+        }
+
+        person.Email = trimmedEmail;
+        person.Phone = trimmedPhone;
+        person.UpdatedAtUtc = timeProvider.GetUtcNow().UtcDateTime;
+
+        var changedFields = new List<string>();
+        if (emailChanged) changedFields.Add(nameof(Person.Email));
+        if (phoneChanged) changedFields.Add(nameof(Person.Phone));
+
+        db.AuditLogs.Add(new AuditLog
+        {
+            EntityType = nameof(Person),
+            EntityId = personId.ToString(),
+            Action = "UpdateContact",
+            ActorUserId = actorUserId,
+            CreatedAtUtc = timeProvider.GetUtcNow().UtcDateTime,
+            DetailsJson = JsonSerializer.Serialize(new
+            {
+                OldEmail = oldEmail,
+                NewEmail = trimmedEmail,
+                OldPhone = oldPhone,
+                NewPhone = trimmedPhone,
+                ChangedFields = changedFields
+            })
+        });
+
+        await db.SaveChangesAsync(cancellationToken);
+
+        return new UpdateContactResult(
+            UpdateContactOutcome.Updated,
+            null,
+            trimmedEmail,
+            trimmedPhone);
+    }
+
     public async Task<List<PersonSearchResultItem>> SearchPersonsAsync(
         string query,
         int excludePersonId,
@@ -870,3 +973,17 @@ public sealed record PersonSearchResultItem(
     int RegistrationCount,
     DateTime? LastSeenAtUtc,
     string? LastSeenGameName);
+
+public sealed record UpdateContactResult(
+    UpdateContactOutcome Outcome,
+    string? Message,
+    string? NormalizedEmail,
+    string? NormalizedPhone);
+
+public enum UpdateContactOutcome
+{
+    Updated,
+    NotFound,
+    EmailAlreadyUsedByOtherPerson,
+    NoChange
+}

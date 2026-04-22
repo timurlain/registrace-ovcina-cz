@@ -1258,6 +1258,29 @@ public class Program
                 })
             .RequireAuthorization(AuthorizationPolicies.StaffOnly);
         app.MapPost(
+                "/organizace/osoby/{personId:int}/kontakt",
+                async ([FromForm] string? email, [FromForm] string? phone, int personId, HttpContext httpContext, UserManager<ApplicationUser> userManager, PeopleReviewService peopleReviewService) =>
+                {
+                    var user = await userManager.GetUserAsync(httpContext.User);
+                    if (user is null)
+                    {
+                        return Results.LocalRedirect($"/Account/Login?ReturnUrl={Uri.EscapeDataString($"/organizace/osoby/{personId}")}");
+                    }
+
+                    var result = await peopleReviewService.UpdateContactAsync(personId, email, phone, user.Id);
+
+                    return result.Outcome switch
+                    {
+                        UpdateContactOutcome.NotFound => Results.NotFound(),
+                        UpdateContactOutcome.EmailAlreadyUsedByOtherPerson =>
+                            Results.LocalRedirect($"/organizace/osoby/{personId}?contact=email-conflict"),
+                        UpdateContactOutcome.NoChange =>
+                            Results.LocalRedirect($"/organizace/osoby/{personId}?contact=no-change"),
+                        _ => Results.LocalRedirect($"/organizace/osoby/{personId}?contact=updated")
+                    };
+                })
+            .RequireAuthorization(AuthorizationPolicies.StaffOnly);
+        app.MapPost(
                 "/organizace/prihlasky/{submissionId:int}/poznamka",
                 async ([FromForm] string note, HttpContext httpContext, int submissionId, UserManager<ApplicationUser> userManager, OrganizerSubmissionService organizerSubmissionService) =>
                 {
