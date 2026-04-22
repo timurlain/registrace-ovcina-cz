@@ -170,6 +170,11 @@
 @code {
     private enum Tab { Conflicts, High, Medium, Unlinked, Linked }
 
+    // Sort state for the "Osoby bez účtu" tab. Resets on reload — intentionally tab-local.
+    private enum UnlinkedSort { Name, BirthYear, Email, Phone }
+    private UnlinkedSort unlinkedSortKey = UnlinkedSort.Name;
+    private bool unlinkedSortDesc = false;
+
     private ProposalBucket? proposals;
     private IReadOnlyList<UnlinkedPersonView> unlinkedPersons = Array.Empty<UnlinkedPersonView>();
     private IReadOnlyList<AlreadyLinkedView> linkedViews = Array.Empty<AlreadyLinkedView>();
@@ -177,6 +182,64 @@
     private Tab activeTab = Tab.High;
     private string? statusMessage;
     private string? errorMessage;
+
+    private void ToggleUnlinkedSort(UnlinkedSort key)
+    {
+        if (unlinkedSortKey == key)
+        {
+            unlinkedSortDesc = !unlinkedSortDesc;
+        }
+        else
+        {
+            unlinkedSortKey = key;
+            unlinkedSortDesc = false;
+        }
+    }
+
+    private string UnlinkedSortIndicator(UnlinkedSort key) =>
+        unlinkedSortKey == key ? (unlinkedSortDesc ? "▼" : "▲") : "";
+
+    // Czech culture-aware comparer — "Česnek" sorts before "Dub", not after "Zemánek".
+    private static readonly StringComparer CzechNameComparer =
+        StringComparer.Create(new System.Globalization.CultureInfo("cs-CZ"), ignoreCase: true);
+
+    private IEnumerable<UnlinkedPersonView> SortedUnlinked(IEnumerable<UnlinkedPersonView> rows) =>
+        unlinkedSortKey switch
+        {
+            UnlinkedSort.Name => unlinkedSortDesc
+                ? rows.OrderByDescending(r => r.PersonFullName, CzechNameComparer)
+                : rows.OrderBy(r => r.PersonFullName, CzechNameComparer),
+            UnlinkedSort.BirthYear => unlinkedSortDesc
+                ? rows.OrderByDescending(r => r.BirthYear ?? int.MinValue)
+                : rows.OrderBy(r => r.BirthYear ?? int.MaxValue),
+            UnlinkedSort.Email => SortByNullableString(rows, r => r.Email, unlinkedSortDesc),
+            UnlinkedSort.Phone => SortByNullableString(rows, r => r.Phone, unlinkedSortDesc),
+            _ => rows
+        };
+
+    // Null/empty values sort last regardless of direction, so empty cells don't dominate the top of the list.
+    // Primary key IsMissing=false sorts before IsMissing=true; secondary key is the value in the chosen direction.
+    // Keeps the sort key evaluated once per row.
+    private static IEnumerable<T> SortByNullableString<T>(
+        IEnumerable<T> rows, Func<T, string?> key, bool desc)
+    {
+        var projected = rows.Select(r =>
+        {
+            var value = key(r);
+            var isMissing = string.IsNullOrWhiteSpace(value);
+            return new { Row = r, IsMissing = isMissing, Value = isMissing ? null : value };
+        });
+
+        var sorted = desc
+            ? projected
+                .OrderBy(x => x.IsMissing)
+                .ThenByDescending(x => x.Value, StringComparer.OrdinalIgnoreCase)
+            : projected
+                .OrderBy(x => x.IsMissing)
+                .ThenBy(x => x.Value, StringComparer.OrdinalIgnoreCase);
+
+        return sorted.Select(x => x.Row);
+    }
 
     // Picker state for "Osoby bez účtu" rows. Key is PersonId.
     private readonly Dictionary<int, string> pickerQueries = new();
@@ -412,10 +475,59 @@
         builder.AddAttribute(11, "class", "table-responsive");
         builder.OpenElement(12, "table");
         builder.AddAttribute(13, "class", "table table-sm align-middle");
-        builder.AddMarkupContent(14, "<thead><tr><th>Osoba</th><th>Rok narození</th><th>E-mail</th><th>Vybrat účet</th><th class=\"text-end\">Akce</th></tr></thead>");
-        builder.OpenElement(15, "tbody");
+
+        // Sortable header — clicking cycles sort key / direction.
+        builder.OpenElement(14, "thead");
+        builder.OpenElement(15, "tr");
+
+        // Accessible sortable header: real <button> inside <th scope="col">, aria-sort reflects current state,
+        // aria-label describes what the next click will do — screen readers announce both.
+        void SortableHeader(int baseSeq, UnlinkedSort key, string label, string? thClass = null)
+        {
+            var indicator = UnlinkedSortIndicator(key);
+            var ariaSort = unlinkedSortKey == key
+                ? (unlinkedSortDesc ? "descending" : "ascending")
+                : "none";
+            var ariaLabel = ariaSort switch
+            {
+                "ascending" => $"{label}, seřazeno vzestupně. Aktivací změníte řazení na sestupné.",
+                "descending" => $"{label}, seřazeno sestupně. Aktivací změníte řazení na vzestupné.",
+                _ => $"{label}, není seřazeno. Aktivací seřadíte vzestupně."
+            };
+
+            builder.OpenElement(baseSeq, "th");
+            builder.AddAttribute(baseSeq + 1, "scope", "col");
+            builder.AddAttribute(baseSeq + 2, "aria-sort", ariaSort);
+            if (!string.IsNullOrEmpty(thClass))
+            {
+                builder.AddAttribute(baseSeq + 3, "class", thClass);
+            }
+
+            builder.OpenElement(baseSeq + 4, "button");
+            builder.AddAttribute(baseSeq + 5, "type", "button");
+            builder.AddAttribute(baseSeq + 6, "class", "btn btn-link p-0 border-0 text-decoration-none text-reset user-select-none");
+            builder.AddAttribute(baseSeq + 7, "data-testid", $"unlinked-sort-{key.ToString().ToLowerInvariant()}");
+            builder.AddAttribute(baseSeq + 8, "aria-label", ariaLabel);
+            builder.AddAttribute(baseSeq + 9, "onclick",
+                EventCallback.Factory.Create<MouseEventArgs>(this, _ => ToggleUnlinkedSort(key)));
+            builder.AddContent(baseSeq + 10, $"{label} {indicator}");
+            builder.CloseElement();
+
+            builder.CloseElement();
+        }
+
+        SortableHeader(16, UnlinkedSort.Name, "Osoba");
+        SortableHeader(28, UnlinkedSort.BirthYear, "Rok narození");
+        SortableHeader(40, UnlinkedSort.Email, "E-mail");
+        SortableHeader(52, UnlinkedSort.Phone, "Telefon");
+        builder.AddMarkupContent(64, "<th scope=\"col\">Vybrat účet</th><th scope=\"col\" class=\"text-end\">Akce</th>");
+
+        builder.CloseElement(); // </tr>
+        builder.CloseElement(); // </thead>
+
+        builder.OpenElement(41, "tbody");
         var seq = 100;
-        foreach (var p in unlinkedPersons)
+        foreach (var p in SortedUnlinked(unlinkedPersons))
         {
             builder.OpenElement(seq++, "tr");
             builder.AddAttribute(seq++, "data-testid", $"unlinked-row-{p.PersonId}");
@@ -430,6 +542,10 @@
 
             builder.OpenElement(seq++, "td");
             builder.AddContent(seq++, p.Email ?? "");
+            builder.CloseElement();
+
+            builder.OpenElement(seq++, "td");
+            builder.AddContent(seq++, p.Phone ?? "");
             builder.CloseElement();
 
             // Picker cell

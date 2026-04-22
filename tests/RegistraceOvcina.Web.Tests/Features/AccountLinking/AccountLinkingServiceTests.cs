@@ -496,6 +496,49 @@ public sealed class AccountLinkingServiceTests
         Assert.Equal("Free Two", row.PersonFullName);
     }
 
+    // 13b -----------------------------------------------------------
+    // v0.9.27: UnlinkedPersonView now carries Phone so the admin tab can
+    // sort + display it. Make sure the projection actually reads it.
+    [Fact]
+    public async Task ListUnlinkedPersonsAsync_includes_phone_when_present()
+    {
+        var options = CreateOptions();
+
+        await using (var db = new ApplicationDbContext(options))
+        {
+            db.People.Add(new Person
+            {
+                FirstName = "Has",
+                LastName = "Phone",
+                BirthYear = 1990,
+                Email = "hp@x.cz",
+                Phone = "+420 123 456 789",
+                CreatedAtUtc = FixedDate(),
+                UpdatedAtUtc = FixedDate()
+            });
+            db.People.Add(new Person
+            {
+                FirstName = "No",
+                LastName = "Phone",
+                BirthYear = 1991,
+                Email = "np@x.cz",
+                Phone = null,
+                CreatedAtUtc = FixedDate(),
+                UpdatedAtUtc = FixedDate()
+            });
+            await db.SaveChangesAsync();
+        }
+
+        var service = CreateService(options);
+        var list = await service.ListUnlinkedPersonsAsync(CancellationToken.None);
+
+        Assert.Equal(2, list.Count);
+        var withPhone = list.Single(r => r.PersonFullName == "Has Phone");
+        Assert.Equal("+420 123 456 789", withPhone.Phone);
+        var withoutPhone = list.Single(r => r.PersonFullName == "No Phone");
+        Assert.Null(withoutPhone.Phone);
+    }
+
     // 14a -----------------------------------------------------------
     // v0.9.22 hotfix: guard against creating duplicate PersonId links.
     [Fact]
