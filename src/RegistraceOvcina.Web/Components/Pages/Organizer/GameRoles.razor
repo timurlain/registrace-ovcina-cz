@@ -54,10 +54,13 @@ else
     {
         <div class="btn-group btn-group-sm mb-3" role="group" aria-label="Režim seskupení">
             <button type="button" class="btn @(groupingMode == GroupingMode.Assigned ? "btn-primary" : "btn-outline-primary")"
+                    aria-pressed="@(groupingMode == GroupingMode.Assigned)"
                     @onclick='() => SetGroupingMode(GroupingMode.Assigned)'>Přidělené</button>
             <button type="button" class="btn @(groupingMode == GroupingMode.SelfDeclared ? "btn-primary" : "btn-outline-primary")"
+                    aria-pressed="@(groupingMode == GroupingMode.SelfDeclared)"
                     @onclick='() => SetGroupingMode(GroupingMode.SelfDeclared)'>Zvolené</button>
             <button type="button" class="btn @(groupingMode == GroupingMode.Both ? "btn-primary" : "btn-outline-primary")"
+                    aria-pressed="@(groupingMode == GroupingMode.Both)"
                     @onclick='() => SetGroupingMode(GroupingMode.Both)'>Obě</button>
         </div>
         <div class="text-secondary small mb-3">
@@ -322,11 +325,7 @@ else
 
     private void ToggleGrouping() => groupByRole = !groupByRole;
 
-    private void SetGroupingMode(GroupingMode mode)
-    {
-        groupingMode = mode;
-        StateHasChanged();
-    }
+    private void SetGroupingMode(GroupingMode mode) => groupingMode = mode;
 
     private List<AdultRoleView> SortAdults(IEnumerable<AdultRoleView> source) =>
         sortDescending

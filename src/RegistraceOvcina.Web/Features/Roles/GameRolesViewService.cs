@@ -210,7 +210,7 @@ public sealed class GameRolesViewService(
             GroupingMode.Assigned => assigned,
             GroupingMode.SelfDeclared => selfDeclared,
             GroupingMode.Both => selfDeclared || assigned,
-            _ => selfDeclared || assigned
+            _ => throw new ArgumentOutOfRangeException(nameof(mode), mode, "Unknown GroupingMode.")
         };
     }
 
@@ -221,7 +221,7 @@ public sealed class GameRolesViewService(
             GroupingMode.Assigned => a.AssignedGameRoles.Count == 0,
             GroupingMode.SelfDeclared => a.AdultRoles == AdultRoleFlags.None,
             GroupingMode.Both => a.AdultRoles == AdultRoleFlags.None && a.AssignedGameRoles.Count == 0,
-            _ => a.AdultRoles == AdultRoleFlags.None && a.AssignedGameRoles.Count == 0
+            _ => throw new ArgumentOutOfRangeException(nameof(mode), mode, "Unknown GroupingMode.")
         };
     }
 
@@ -267,7 +267,7 @@ public sealed record RoleGroup(string RoleName, List<AdultRoleView> Adults);
 /// </summary>
 public enum GroupingMode
 {
-    /// <summary>Only officially assigned GameRoles (operational view). Default.</summary>
+    /// <summary>Only officially assigned GameRoles (operational view). Page-level default on /organizace/role.</summary>
     Assigned,
 
     /// <summary>Only self-declared AdultRoles flags from registration (recruitment view).</summary>
