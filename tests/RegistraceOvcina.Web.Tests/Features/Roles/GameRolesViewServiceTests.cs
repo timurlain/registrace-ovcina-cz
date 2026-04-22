@@ -5,10 +5,11 @@ using RegistraceOvcina.Web.Features.Roles;
 namespace RegistraceOvcina.Web.Tests.Features.Roles;
 
 /// <summary>
-/// Covers the two /organizace/role bugs fixed in v0.9.20:
-///   1. "Group by role" must pick up self-declared AdultRoleFlags (not just assigned GameRoles).
-///   2. HasAccount + assigned-roles lookup must also work when the account is linked via
-///      ApplicationUser.PersonId (Person.Email null or mismatched).
+/// Covers the /organizace/role view-service:
+///   1. BuildAdultViewsAsync: HasAccount detection via email OR PersonId, with defensive guard
+///      against duplicate PersonId links (v0.9.22 regression).
+///   2. GroupAdultsByRole: groups by officially-assigned GameRole only (v0.9.26 simplification —
+///      the 3-mode toggle Přidělené/Zvolené/Obě has been retired).
 /// </summary>
 public sealed class GameRolesViewServiceTests
 {
@@ -178,78 +179,81 @@ public sealed class GameRolesViewServiceTests
     }
 
     // ---------------------------------------------------------------
-    // GroupAdultsByRole
+    // GroupAdultsByRole — v0.9.26: groups by assigned GameRole only
     // ---------------------------------------------------------------
 
     [Fact]
-    public void GroupByRole_includes_self_declared_adults_even_without_assignment()
+    public void GroupByRole_groups_by_assigned()
     {
+        // Three adults, two assigned to "npc", one assigned to "helper".
         var adults = new List<AdultRoleView>
         {
-            new() { LastName = "Appleby", FirstName = "A", AdultRoles = AdultRoleFlags.PlayMonster },
-            new() { LastName = "Bruk",    FirstName = "B", AdultRoles = AdultRoleFlags.PlayMonster },
-            new() { LastName = "Civek",   FirstName = "C", AdultRoles = AdultRoleFlags.PlayMonster }
+            new() { LastName = "Alfa",  FirstName = "A", AssignedGameRoles = ["npc"] },
+            new() { LastName = "Bruk",  FirstName = "B", AssignedGameRoles = ["npc"] },
+            new() { LastName = "Civek", FirstName = "C", AssignedGameRoles = ["helper"] }
         };
 
         var groups = GameRolesViewService.GroupAdultsByRole(adults);
 
-        var monsterGroup = groups.Single(g => g.RoleName == "Příšera");
-        Assert.Equal(3, monsterGroup.Adults.Count);
+        var npc = groups.Single(g => g.RoleName == "npc");
+        Assert.Equal(2, npc.Adults.Count);
+        Assert.Equal("Alfa",  npc.Adults[0].LastName);
+        Assert.Equal("Bruk",  npc.Adults[1].LastName);
+
+        var helper = groups.Single(g => g.RoleName == "helper");
+        Assert.Single(helper.Adults);
+        Assert.Equal("Civek", helper.Adults[0].LastName);
+
+        // No "Nezvoleno" bucket because every adult has at least one assigned role.
+        Assert.DoesNotContain(groups, g => g.RoleName == "Nezvoleno");
     }
 
     [Fact]
-    public void GroupByRole_includes_assigned_without_self_declaration()
+    public void GroupByRole_catchall_shows_unassigned()
     {
+        // Two adults, one assigned ("npc"), one with no assignment — even though they
+        // have a self-declared AdultRoles flag, they must land in "Nezvoleno" because
+        // grouping is by assignment only (v0.9.26).
         var adults = new List<AdultRoleView>
         {
             new()
             {
-                LastName = "Dvořák", FirstName = "D",
+                LastName = "Assigned", FirstName = "A",
                 AdultRoles = AdultRoleFlags.None,
                 AssignedGameRoles = ["npc"]
+            },
+            new()
+            {
+                LastName = "Unassigned", FirstName = "U",
+                AdultRoles = AdultRoleFlags.PlayMonster,
+                AssignedGameRoles = []
             }
         };
 
         var groups = GameRolesViewService.GroupAdultsByRole(adults);
 
-        var monsterGroup = groups.Single(g => g.RoleName == "Příšera");
-        Assert.Single(monsterGroup.Adults);
-        Assert.DoesNotContain(groups, g => g.RoleName == "Nezvoleno");
+        var nezvoleno = groups.Single(g => g.RoleName == "Nezvoleno");
+        Assert.Single(nezvoleno.Adults);
+        Assert.Equal("Unassigned", nezvoleno.Adults[0].LastName);
     }
 
     [Fact]
-    public void GroupByRole_adult_with_multiple_flags_appears_in_each_group()
+    public void GroupByRole_adult_with_multiple_assigned_roles_appears_in_each_group()
     {
         var adults = new List<AdultRoleView>
         {
             new()
             {
                 LastName = "Multi", FirstName = "M",
-                AdultRoles = AdultRoleFlags.PlayMonster | AdultRoleFlags.TechSupport | AdultRoleFlags.RangerLeader
+                AssignedGameRoles = ["npc", "helper", "ranger-leader"]
             }
         };
 
         var groups = GameRolesViewService.GroupAdultsByRole(adults);
 
-        Assert.Contains(groups, g => g.RoleName == "Příšera" && g.Adults.Count == 1);
-        Assert.Contains(groups, g => g.RoleName == "Technická pomoc" && g.Adults.Count == 1);
-        Assert.Contains(groups, g => g.RoleName == "Hraničář" && g.Adults.Count == 1);
-    }
-
-    [Fact]
-    public void GroupByRole_uncategorized_adults_land_in_Nezvoleno_bucket()
-    {
-        var adults = new List<AdultRoleView>
-        {
-            new() { LastName = "Blank", FirstName = "B", AdultRoles = AdultRoleFlags.None },
-            new() { LastName = "Monster", FirstName = "M", AdultRoles = AdultRoleFlags.PlayMonster }
-        };
-
-        var groups = GameRolesViewService.GroupAdultsByRole(adults);
-
-        var uncategorized = groups.Single(g => g.RoleName == "Nezvoleno");
-        Assert.Single(uncategorized.Adults);
-        Assert.Equal("Blank", uncategorized.Adults[0].LastName);
+        Assert.Contains(groups, g => g.RoleName == "npc" && g.Adults.Count == 1);
+        Assert.Contains(groups, g => g.RoleName == "helper" && g.Adults.Count == 1);
+        Assert.Contains(groups, g => g.RoleName == "ranger-leader" && g.Adults.Count == 1);
     }
 
     [Fact]
@@ -257,148 +261,39 @@ public sealed class GameRolesViewServiceTests
     {
         var adults = new List<AdultRoleView>
         {
-            new() { LastName = "Cihlář", FirstName = "X", AdultRoles = AdultRoleFlags.PlayMonster },
-            new() { LastName = "Alfa",   FirstName = "Z", AdultRoles = AdultRoleFlags.PlayMonster },
-            new() { LastName = "Alfa",   FirstName = "A", AdultRoles = AdultRoleFlags.PlayMonster }
+            new() { LastName = "Cihlář", FirstName = "X", AssignedGameRoles = ["npc"] },
+            new() { LastName = "Alfa",   FirstName = "Z", AssignedGameRoles = ["npc"] },
+            new() { LastName = "Alfa",   FirstName = "A", AssignedGameRoles = ["npc"] }
         };
 
         var groups = GameRolesViewService.GroupAdultsByRole(adults);
-        var monster = groups.Single(g => g.RoleName == "Příšera").Adults;
+        var npc = groups.Single(g => g.RoleName == "npc").Adults;
 
-        Assert.Equal("Alfa",   monster[0].LastName);
-        Assert.Equal("A",      monster[0].FirstName);
-        Assert.Equal("Alfa",   monster[1].LastName);
-        Assert.Equal("Z",      monster[1].FirstName);
-        Assert.Equal("Cihlář", monster[2].LastName);
-    }
-
-    // ---------------------------------------------------------------
-    // GroupAdultsByRole — GroupingMode (v0.9.25)
-    // ---------------------------------------------------------------
-
-    // Seed shared by the three mode-comparison tests:
-    //   A — self-declared PlayMonster only (no assignment)
-    //   B — assigned "npc" only (no flag)
-    //   C — both self-declared PlayMonster AND assigned "npc"
-    private static List<AdultRoleView> SeedABC() =>
-    [
-        new()
-        {
-            LastName = "Alpha", FirstName = "A",
-            AdultRoles = AdultRoleFlags.PlayMonster,
-            AssignedGameRoles = []
-        },
-        new()
-        {
-            LastName = "Beta", FirstName = "B",
-            AdultRoles = AdultRoleFlags.None,
-            AssignedGameRoles = ["npc"]
-        },
-        new()
-        {
-            LastName = "Ceta", FirstName = "C",
-            AdultRoles = AdultRoleFlags.PlayMonster,
-            AssignedGameRoles = ["npc"]
-        }
-    ];
-
-    [Fact]
-    public void GroupByRole_AssignedMode_only_shows_assigned()
-    {
-        var adults = SeedABC();
-
-        var groups = GameRolesViewService.GroupAdultsByRole(adults, GroupingMode.Assigned);
-
-        var monster = groups.Single(g => g.RoleName == "Příšera").Adults;
-        Assert.Equal(2, monster.Count);
-        Assert.Contains(monster, a => a.LastName == "Beta");
-        Assert.Contains(monster, a => a.LastName == "Ceta");
-        Assert.DoesNotContain(monster, a => a.LastName == "Alpha");
+        Assert.Equal("Alfa",   npc[0].LastName);
+        Assert.Equal("A",      npc[0].FirstName);
+        Assert.Equal("Alfa",   npc[1].LastName);
+        Assert.Equal("Z",      npc[1].FirstName);
+        Assert.Equal("Cihlář", npc[2].LastName);
     }
 
     [Fact]
-    public void GroupByRole_SelfDeclaredMode_only_shows_selfdeclared()
+    public void GroupByRole_available_role_names_emit_empty_groups()
     {
-        var adults = SeedABC();
-
-        var groups = GameRolesViewService.GroupAdultsByRole(adults, GroupingMode.SelfDeclared);
-
-        var monster = groups.Single(g => g.RoleName == "Příšera").Adults;
-        Assert.Equal(2, monster.Count);
-        Assert.Contains(monster, a => a.LastName == "Alpha");
-        Assert.Contains(monster, a => a.LastName == "Ceta");
-        Assert.DoesNotContain(monster, a => a.LastName == "Beta");
-    }
-
-    [Fact]
-    public void GroupByRole_BothMode_union()
-    {
-        var adults = SeedABC();
-
-        var groups = GameRolesViewService.GroupAdultsByRole(adults, GroupingMode.Both);
-
-        var monster = groups.Single(g => g.RoleName == "Příšera").Adults;
-        Assert.Equal(3, monster.Count);
-        Assert.Contains(monster, a => a.LastName == "Alpha");
-        Assert.Contains(monster, a => a.LastName == "Beta");
-        Assert.Contains(monster, a => a.LastName == "Ceta");
-    }
-
-    [Fact]
-    public void GroupByRole_AssignedMode_catchall_is_adults_without_any_assignment()
-    {
-        // Self-declared PlayMonster adult with NO assignment must land in "Nezvoleno"
-        // under Assigned mode — because they have no officially assigned role yet.
-        // An adult with an assignment but no flag must NOT land in the catch-all.
+        // When caller passes availableRoleNames, the result includes a group for every
+        // known role — even if no adult is currently assigned — so organizers see that
+        // the role exists and is open for assignment.
         var adults = new List<AdultRoleView>
         {
-            new()
-            {
-                LastName = "Flagged", FirstName = "F",
-                AdultRoles = AdultRoleFlags.PlayMonster,
-                AssignedGameRoles = []
-            },
-            new()
-            {
-                LastName = "Assigned", FirstName = "A",
-                AdultRoles = AdultRoleFlags.None,
-                AssignedGameRoles = ["npc"]
-            }
+            new() { LastName = "Alfa", FirstName = "A", AssignedGameRoles = ["npc"] }
         };
 
-        var groups = GameRolesViewService.GroupAdultsByRole(adults, GroupingMode.Assigned);
+        var available = new List<string> { "npc", "helper", "tech-support" };
 
-        var uncategorized = groups.Single(g => g.RoleName == "Nezvoleno").Adults;
-        Assert.Single(uncategorized);
-        Assert.Equal("Flagged", uncategorized[0].LastName);
-    }
+        var groups = GameRolesViewService.GroupAdultsByRole(adults, available);
 
-    [Fact]
-    public void GroupByRole_SelfDeclaredMode_catchall_is_adults_without_any_flag()
-    {
-        // Adult with assignment but NO flag must land in "Nezvoleno" under SelfDeclared mode.
-        // An adult with a flag but no assignment must NOT land in the catch-all.
-        var adults = new List<AdultRoleView>
-        {
-            new()
-            {
-                LastName = "Flagged", FirstName = "F",
-                AdultRoles = AdultRoleFlags.PlayMonster,
-                AssignedGameRoles = []
-            },
-            new()
-            {
-                LastName = "Assigned", FirstName = "A",
-                AdultRoles = AdultRoleFlags.None,
-                AssignedGameRoles = ["npc"]
-            }
-        };
-
-        var groups = GameRolesViewService.GroupAdultsByRole(adults, GroupingMode.SelfDeclared);
-
-        var uncategorized = groups.Single(g => g.RoleName == "Nezvoleno").Adults;
-        Assert.Single(uncategorized);
-        Assert.Equal("Assigned", uncategorized[0].LastName);
+        Assert.Contains(groups, g => g.RoleName == "npc" && g.Adults.Count == 1);
+        Assert.Contains(groups, g => g.RoleName == "helper" && g.Adults.Count == 0);
+        Assert.Contains(groups, g => g.RoleName == "tech-support" && g.Adults.Count == 0);
     }
 
     // ---------------------------------------------------------------

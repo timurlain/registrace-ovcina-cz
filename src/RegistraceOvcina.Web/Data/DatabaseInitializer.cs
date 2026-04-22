@@ -14,10 +14,8 @@ public static class DatabaseInitializer
         (RoleNames.Organizer, "system"),
         (RoleNames.Registrant, "system"),
         (RoleNames.Guest, "system"),
-        // Game roles are managed by admins in /admin/roles — no longer seeded
-        (RoleNames.StaffRegistration, "staff"),
-        (RoleNames.StaffAccounts, "staff"),
-        (RoleNames.StaffLogistics, "staff"),
+        // Game roles are managed by admins in /admin/roles — no longer seeded.
+        // The "staff" (Organizational) category was retired in v0.9.26.
     ];
 
     public static async Task InitializeAsync(WebApplication app)

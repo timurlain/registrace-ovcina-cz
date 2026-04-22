@@ -2,8 +2,11 @@
 @attribute [Authorize(Policy = AuthorizationPolicies.AdminOnly)]
 @rendermode InteractiveServer
 
+@using Microsoft.EntityFrameworkCore
+
 @inject RoleManager<ApplicationRole> RoleManager
 @inject UserManager<ApplicationUser> UserManager
+@inject IDbContextFactory<ApplicationDbContext> DbFactory
 
 <PageTitle>Správa rolí</PageTitle>
 
@@ -26,16 +29,9 @@
                     <div class="card-body">
                         <h3 class="h5 mb-3">Přidat novou roli</h3>
                         <div class="row g-2 align-items-end">
-                            <div class="col-md-5">
+                            <div class="col-md-9">
                                 <label class="form-label">Název role</label>
                                 <input @bind="newRoleName" class="form-control" placeholder="Např. Courier" />
-                            </div>
-                            <div class="col-md-4">
-                                <label class="form-label">Kategorie</label>
-                                <select @bind="newRoleCategory" class="form-select">
-                                    <option value="game">Herní role</option>
-                                    <option value="staff">Organizační role</option>
-                                </select>
                             </div>
                             <div class="col-md-3">
                                 <button class="btn btn-primary w-100" @onclick="CreateRoleAsync">Přidat</button>
@@ -62,7 +58,6 @@
                                 <thead>
                                     <tr>
                                         <th>Název</th>
-                                        <th>Kategorie</th>
                                         <th>Uživatelů</th>
                                         <th>Akce</th>
                                     </tr>
@@ -77,16 +72,7 @@
                                                     <input @bind="editRoleName" class="form-control form-control-sm" />
                                                 </td>
                                                 <td>
-                                                    <select @bind="editRoleCategory" class="form-select form-select-sm">
-                                                        <option value="game">Herní role</option>
-                                                        <option value="staff">Organizační role</option>
-                                                    </select>
-                                                </td>
-                                                <td>
-                                                    <button class="btn btn-sm btn-link p-0 text-decoration-none" @onclick="() => ToggleExpandAsync(entry)">
-                                                        @entry.UserCount
-                                                        <i class="bi @(expandedRoleId == entry.Id ? "bi-chevron-up" : "bi-chevron-down") ms-1 small"></i>
-                                                    </button>
+                                                    @RenderUserCountCell(entry)
                                                 </td>
                                                 <td>
                                                     <div class="d-flex gap-1">
@@ -105,13 +91,7 @@
                                             <tr>
                                                 <td>@entry.Name</td>
                                                 <td>
-                                                    <span class="badge @CategoryBadgeClass(entry.Category)">@CategoryLabel(entry.Category)</span>
-                                                </td>
-                                                <td>
-                                                    <button class="btn btn-sm btn-link p-0 text-decoration-none" @onclick="() => ToggleExpandAsync(entry)">
-                                                        @entry.UserCount
-                                                        <i class="bi @(expandedRoleId == entry.Id ? "bi-chevron-up" : "bi-chevron-down") ms-1 small"></i>
-                                                    </button>
+                                                    @RenderUserCountCell(entry)
                                                 </td>
                                                 <td>
                                                     @if (!entry.IsProtected)
@@ -164,19 +144,16 @@
     [
         ("system", "Systémové role"),
         ("game", "Herní role"),
-        ("staff", "Organizační role"),
     ];
 
     private List<RoleEntry>? roleEntries;
 
     // Create form
     private string newRoleName = "";
-    private string newRoleCategory = "game";
 
     // Edit form
     private string? editingRoleId;
     private string editRoleName = "";
-    private string editRoleCategory = "game";
 
     // Delete confirmation
     private string? confirmDeleteId;
@@ -200,17 +177,44 @@
         expandedRoleUsers = null;
 
         var allRoles = RoleManager.Roles.ToList();
+
+        // Count distinct users ever assigned this role across ANY game (per GameRoles table).
+        // Keyed by RoleName (case-insensitive). Used for rendering the "Uživatelů" column
+        // on /admin/roles. Replaces the previous per-current-game filter that always showed 0.
+        await using var db = await DbFactory.CreateDbContextAsync();
+        var assignedCountsRaw = await db.GameRoles.AsNoTracking()
+            .GroupBy(gr => gr.RoleName)
+            .Select(g => new { Name = g.Key, Users = g.Select(x => x.UserId).Distinct().Count() })
+            .ToListAsync();
+
+        var assignedUserCounts = assignedCountsRaw
+            .ToDictionary(x => x.Name, x => x.Users, StringComparer.OrdinalIgnoreCase);
+
         var entries = new List<RoleEntry>();
 
         foreach (var role in allRoles)
         {
-            var usersInRole = await UserManager.GetUsersInRoleAsync(role.Name!);
+            // For system/staff roles we still want the "members of the Identity role" count
+            // (GetUsersInRoleAsync). For game roles we prefer the cross-game assignment count,
+            // falling back to the Identity count if there's no GameRoles row for the name.
+            int userCount;
+            if (role.Category == "game"
+                && assignedUserCounts.TryGetValue(role.Name!, out var assigned))
+            {
+                userCount = assigned;
+            }
+            else
+            {
+                var identityUsers = await UserManager.GetUsersInRoleAsync(role.Name!);
+                userCount = identityUsers.Count;
+            }
+
             entries.Add(new RoleEntry
             {
                 Id = role.Id,
                 Name = role.Name!,
                 Category = role.Category,
-                UserCount = usersInRole.Count,
+                UserCount = userCount,
                 IsProtected = role.Category == "system"
                     || ProtectedRoleNames.Contains(role.Name!, StringComparer.OrdinalIgnoreCase),
             });
@@ -219,19 +223,11 @@
         roleEntries = entries.OrderBy(r => r.Name).ToList();
     }
 
-    private static readonly string[] AllowedNewCategories = ["game", "staff"];
-
     private async Task CreateRoleAsync()
     {
         if (string.IsNullOrWhiteSpace(newRoleName))
         {
             SetStatus("Zadejte název role.", true);
-            return;
-        }
-
-        if (!AllowedNewCategories.Contains(newRoleCategory, StringComparer.OrdinalIgnoreCase))
-        {
-            SetStatus("Novou roli lze vytvořit pouze v kategorii Herní nebo Organizační.", true);
             return;
         }
 
@@ -244,14 +240,13 @@
         var result = await RoleManager.CreateAsync(new ApplicationRole
         {
             Name = newRoleName.Trim(),
-            Category = newRoleCategory,
+            Category = "game",
         });
 
         if (result.Succeeded)
         {
             SetStatus($"Role \"{newRoleName.Trim()}\" byla vytvořena.", false);
             newRoleName = "";
-            newRoleCategory = "game";
             await LoadRolesAsync();
         }
         else
@@ -264,7 +259,6 @@
     {
         editingRoleId = entry.Id;
         editRoleName = entry.Name;
-        editRoleCategory = entry.Category;
         confirmDeleteId = null;
     }
 
@@ -298,12 +292,6 @@
             return;
         }
 
-        if (!AllowedNewCategories.Contains(editRoleCategory, StringComparer.OrdinalIgnoreCase))
-        {
-            SetStatus("Kategorie role musí být Herní nebo Organizační.", true);
-            return;
-        }
-
         var oldName = role.Name!;
         var newName = editRoleName.Trim();
 
@@ -316,7 +304,7 @@
         }
 
         role.Name = newName;
-        role.Category = editRoleCategory;
+        // Category is not editable here; keep existing value unchanged.
 
         var result = await RoleManager.UpdateAsync(role);
         if (result.Succeeded)
@@ -423,18 +411,10 @@
             .ToList();
     }
 
-    private static string CategoryLabel(string category) => category switch
-    {
-        "system" => "Systémová",
-        "game" => "Herní",
-        "staff" => "Organizační",
-        _ => category,
-    };
-
     private RenderFragment ExpandedUsersRow => __builder =>
     {
         <tr>
-            <td colspan="4" class="p-0">
+            <td colspan="3" class="p-0">
                 <div class="bg-light border-top px-4 py-2">
                     @if (expandedRoleUsers!.Count == 0)
                     {
@@ -457,12 +437,29 @@
         </tr>
     };
 
-    private static string CategoryBadgeClass(string category) => category switch
+    // Renders the "Uživatelů" cell. If the count is > 0 and the role is a game role,
+    // we link to /organizace/role for drill-down; otherwise render plain text.
+    private RenderFragment RenderUserCountCell(RoleEntry entry) => __builder =>
     {
-        "system" => "bg-secondary",
-        "game" => "bg-info text-dark",
-        "staff" => "bg-warning text-dark",
-        _ => "bg-light text-dark",
+        if (entry.UserCount > 0 && entry.Category == "game")
+        {
+            var href = $"/organizace/role?role={Uri.EscapeDataString(entry.Name)}";
+            <a href="@href" class="text-decoration-none">
+                @entry.UserCount
+            </a>
+        }
+        else if (entry.UserCount > 0)
+        {
+            // System-role members still get the inline expand toggle.
+            <button class="btn btn-sm btn-link p-0 text-decoration-none" @onclick="() => ToggleExpandAsync(entry)">
+                @entry.UserCount
+                <i class="bi @(expandedRoleId == entry.Id ? "bi-chevron-up" : "bi-chevron-down") ms-1 small"></i>
+            </button>
+        }
+        else
+        {
+            <span class="text-muted">0</span>
+        }
     };
 
     private sealed class RoleEntry
