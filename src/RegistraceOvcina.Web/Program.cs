@@ -27,6 +27,7 @@ using RegistraceOvcina.Web.Features.Integration;
 using RegistraceOvcina.Web.Features.Roles;
 using RegistraceOvcina.Web.Features.Announcements;
 using RegistraceOvcina.Web.Features.Auth;
+using RegistraceOvcina.Web.Features.AccountLinking;
 using RegistraceOvcina.Web.Features.ExternalContacts;
 using RegistraceOvcina.Web.Features.Stats;
 using RegistraceOvcina.Web.Features.Users;
@@ -267,6 +268,7 @@ public class Program
         builder.Services.AddScoped<GuestAuthService>();
         builder.Services.AddScoped<UserAdministrationService>();
         builder.Services.AddScoped<UserEmailService>();
+        builder.Services.AddScoped<IAccountLinkingService, AccountLinkingService>();
         builder.Services.AddScoped<GameRoleService>();
         builder.Services.AddScoped<AnnouncementService>();
         builder.Services.AddScoped<GameStatsService>();
@@ -715,6 +717,82 @@ public class Program
                     {
                         return Results.LocalRedirect($"/admin/hry/{gameId}/jidla?error={Uri.EscapeDataString(ex.Message)}");
                     }
+                })
+            .RequireAuthorization(AuthorizationPolicies.AdminOnly);
+        app.MapPost(
+                "/admin/propojit-ucty/automaticky",
+                async (HttpContext httpContext, UserManager<ApplicationUser> userManager, IAccountLinkingService accountLinkingService, CancellationToken ct) =>
+                {
+                    var user = await userManager.GetUserAsync(httpContext.User);
+                    if (user is null)
+                    {
+                        return Results.LocalRedirect($"/Account/Login?ReturnUrl={Uri.EscapeDataString("/admin/propojit-ucty")}");
+                    }
+
+                    try
+                    {
+                        var count = await accountLinkingService.AutoLinkHighConfidenceAsync(user.Id, ct);
+                        return Results.LocalRedirect($"/admin/propojit-ucty?status=auto-linked&count={count}");
+                    }
+                    catch (ValidationException ex)
+                    {
+                        return Results.LocalRedirect($"/admin/propojit-ucty?error={Uri.EscapeDataString(ex.Message)}");
+                    }
+                })
+            .RequireAuthorization(AuthorizationPolicies.AdminOnly);
+        app.MapPost(
+                "/admin/propojit-ucty/propojit",
+                async ([FromForm] string userId, [FromForm] int personId, [FromForm] string? returnTab, HttpContext httpContext, UserManager<ApplicationUser> userManager, IAccountLinkingService accountLinkingService, CancellationToken ct) =>
+                {
+                    var user = await userManager.GetUserAsync(httpContext.User);
+                    if (user is null)
+                    {
+                        return Results.LocalRedirect($"/Account/Login?ReturnUrl={Uri.EscapeDataString("/admin/propojit-ucty")}");
+                    }
+
+                    try
+                    {
+                        await accountLinkingService.LinkAsync(userId, personId, user.Id, ct);
+                        var tab = string.IsNullOrWhiteSpace(returnTab) ? "" : $"&tab={Uri.EscapeDataString(returnTab)}";
+                        return Results.LocalRedirect($"/admin/propojit-ucty?status=linked{tab}");
+                    }
+                    catch (ValidationException ex)
+                    {
+                        return Results.LocalRedirect($"/admin/propojit-ucty?error={Uri.EscapeDataString(ex.Message)}");
+                    }
+                })
+            .RequireAuthorization(AuthorizationPolicies.AdminOnly);
+        app.MapPost(
+                "/admin/propojit-ucty/odpojit",
+                async ([FromForm] string userId, HttpContext httpContext, UserManager<ApplicationUser> userManager, IAccountLinkingService accountLinkingService, CancellationToken ct) =>
+                {
+                    var user = await userManager.GetUserAsync(httpContext.User);
+                    if (user is null)
+                    {
+                        return Results.LocalRedirect($"/Account/Login?ReturnUrl={Uri.EscapeDataString("/admin/propojit-ucty")}");
+                    }
+
+                    try
+                    {
+                        await accountLinkingService.UnlinkAsync(userId, user.Id, ct);
+                        return Results.LocalRedirect("/admin/propojit-ucty?status=unlinked&tab=linked");
+                    }
+                    catch (ValidationException ex)
+                    {
+                        return Results.LocalRedirect($"/admin/propojit-ucty?error={Uri.EscapeDataString(ex.Message)}");
+                    }
+                })
+            .RequireAuthorization(AuthorizationPolicies.AdminOnly);
+        app.MapPost(
+                "/admin/propojit-ucty/zamitnout",
+                ([FromForm] string userId, [FromForm] int personId) =>
+                {
+                    // "Zamítnout" is client-side dismissal; we have no persistent rejection model. Server just
+                    // redirects back so the page refreshes the proposal list. Keeping it server-side keeps
+                    // the UI contract uniform (all actions POST) and leaves room to add a deny-list later.
+                    _ = userId;
+                    _ = personId;
+                    return Results.LocalRedirect("/admin/propojit-ucty?status=dismissed");
                 })
             .RequireAuthorization(AuthorizationPolicies.AdminOnly);
         app.MapPost(
