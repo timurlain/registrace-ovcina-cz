@@ -761,6 +761,13 @@ public class Program
                     {
                         return Results.LocalRedirect($"/admin/propojit-ucty?error={Uri.EscapeDataString(ex.Message)}");
                     }
+                    catch (InvalidOperationException ex)
+                    {
+                        // v0.9.22: LinkAsync throws when the target Person is already linked to
+                        // another account. Surface the conflict as a friendly banner instead
+                        // of a 500 page.
+                        return Results.LocalRedirect($"/admin/propojit-ucty?error={Uri.EscapeDataString(ex.Message)}");
+                    }
                 })
             .RequireAuthorization(AuthorizationPolicies.AdminOnly);
         app.MapPost(
