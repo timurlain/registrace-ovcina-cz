@@ -1,0 +1,604 @@
+@page "/admin/propojit-ucty"
+@attribute [Authorize(Policy = AuthorizationPolicies.AdminOnly)]
+@rendermode InteractiveServer
+
+@using Microsoft.AspNetCore.WebUtilities
+@using RegistraceOvcina.Web.Features.AccountLinking
+@using RegistraceOvcina.Web.Infrastructure
+
+@inject IAccountLinkingService LinkingService
+@inject NavigationManager NavigationManager
+
+<PageTitle>Propojit účty</PageTitle>
+
+<div class="row g-4">
+    <div class="col-12">
+        <section class="card shadow-sm">
+            <div class="card-body p-4">
+                <div class="d-flex flex-column flex-lg-row justify-content-between gap-3 mb-3">
+                    <div>
+                        <h1 class="h3 mb-2" data-testid="account-linking-title">Propojit účty</h1>
+                        <p class="text-secondary mb-0">
+                            Napojte přihlašovací účty na osobní karty (Osoby) bez obesílání rodičů.
+                            Vysoce jisté shody jde propojit hromadně, zbytek prochází ručně.
+                        </p>
+                    </div>
+
+                    @if (proposals is not null)
+                    {
+                        <div class="d-flex flex-wrap gap-4">
+                            <div>
+                                <div class="small text-secondary">Vysoká shoda</div>
+                                <div class="h4 mb-0" data-testid="high-confidence-count">@proposals.HighConfidence.Count</div>
+                            </div>
+                            <div>
+                                <div class="small text-secondary">Ruční kontrola</div>
+                                <div class="h4 mb-0" data-testid="medium-confidence-count">@proposals.MediumConfidence.Count</div>
+                            </div>
+                            <div>
+                                <div class="small text-secondary">Osoby bez účtu</div>
+                                <div class="h4 mb-0" data-testid="unlinked-persons-count">@unlinkedPersons.Count</div>
+                            </div>
+                            <div>
+                                <div class="small text-secondary">Propojené</div>
+                                <div class="h4 mb-0" data-testid="linked-count">@linkedViews.Count</div>
+                            </div>
+                        </div>
+                    }
+                </div>
+
+                @if (!string.IsNullOrWhiteSpace(statusMessage))
+                {
+                    <div class="alert alert-success mb-0" role="status" data-testid="status-message">@statusMessage</div>
+                }
+
+                @if (!string.IsNullOrWhiteSpace(errorMessage))
+                {
+                    <div class="alert alert-danger mb-0" role="alert" data-testid="error-message">@errorMessage</div>
+                }
+            </div>
+        </section>
+    </div>
+
+    <div class="col-12">
+        <ul class="nav nav-tabs" role="tablist">
+            <li class="nav-item" role="presentation">
+                <button type="button"
+                        class="nav-link @(activeTab == Tab.High ? "active" : "")"
+                        @onclick="() => SwitchTab(Tab.High)"
+                        data-testid="tab-high">
+                    Vysoká shoda <span class="badge text-bg-secondary">@(proposals?.HighConfidence.Count ?? 0)</span>
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button type="button"
+                        class="nav-link @(activeTab == Tab.Medium ? "active" : "")"
+                        @onclick="() => SwitchTab(Tab.Medium)"
+                        data-testid="tab-medium">
+                    Ruční kontrola <span class="badge text-bg-secondary">@(proposals?.MediumConfidence.Count ?? 0)</span>
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button type="button"
+                        class="nav-link @(activeTab == Tab.Unlinked ? "active" : "")"
+                        @onclick="() => SwitchTab(Tab.Unlinked)"
+                        data-testid="tab-unlinked">
+                    Osoby bez účtu <span class="badge text-bg-secondary">@unlinkedPersons.Count</span>
+                </button>
+            </li>
+            <li class="nav-item" role="presentation">
+                <button type="button"
+                        class="nav-link @(activeTab == Tab.Linked ? "active" : "")"
+                        @onclick="() => SwitchTab(Tab.Linked)"
+                        data-testid="tab-linked">
+                    Propojené <span class="badge text-bg-secondary">@linkedViews.Count</span>
+                </button>
+            </li>
+        </ul>
+    </div>
+
+    <div class="col-12">
+        <section class="card shadow-sm">
+            <div class="card-body p-4">
+                @if (proposals is null)
+                {
+                    <p class="text-secondary">Načítám návrhy...</p>
+                }
+                else
+                {
+                    @switch (activeTab)
+                    {
+                        case Tab.High:
+                            @RenderHighTab()
+                            break;
+                        case Tab.Medium:
+                            @RenderMediumTab()
+                            break;
+                        case Tab.Unlinked:
+                            @RenderUnlinkedTab()
+                            break;
+                        case Tab.Linked:
+                            @RenderLinkedTab()
+                            break;
+                    }
+                }
+            </div>
+        </section>
+    </div>
+</div>
+
+@code {
+    private enum Tab { High, Medium, Unlinked, Linked }
+
+    private ProposalBucket? proposals;
+    private IReadOnlyList<UnlinkedPersonView> unlinkedPersons = Array.Empty<UnlinkedPersonView>();
+    private IReadOnlyList<AlreadyLinkedView> linkedViews = Array.Empty<AlreadyLinkedView>();
+    private Tab activeTab = Tab.High;
+    private string? statusMessage;
+    private string? errorMessage;
+
+    // Picker state for "Osoby bez účtu" rows. Key is PersonId.
+    private readonly Dictionary<int, string> pickerQueries = new();
+    private readonly Dictionary<int, IReadOnlyList<UserPickerResult>> pickerResults = new();
+    private readonly Dictionary<int, string?> pickerSelectedUserId = new();
+    private CancellationTokenSource? searchCts;
+
+    protected override async Task OnInitializedAsync()
+    {
+        ReadQueryString();
+        await ReloadAsync();
+    }
+
+    private void ReadQueryString()
+    {
+        var uri = NavigationManager.ToAbsoluteUri(NavigationManager.Uri);
+        var query = QueryHelpers.ParseQuery(uri.Query);
+
+        if (query.TryGetValue("tab", out var tab))
+        {
+            activeTab = tab.ToString() switch
+            {
+                "medium" => Tab.Medium,
+                "unlinked" => Tab.Unlinked,
+                "linked" => Tab.Linked,
+                _ => Tab.High
+            };
+        }
+
+        if (query.TryGetValue("status", out var status))
+        {
+            statusMessage = status.ToString() switch
+            {
+                "auto-linked" when query.TryGetValue("count", out var c) =>
+                    $"Automaticky propojeno {c} účtů.",
+                "linked" => "Účet byl propojen.",
+                "unlinked" => "Účet byl odpojen.",
+                "dismissed" => "Návrh byl zamítnut.",
+                _ => null
+            };
+        }
+
+        if (query.TryGetValue("error", out var err))
+        {
+            errorMessage = err.ToString();
+        }
+    }
+
+    private async Task ReloadAsync()
+    {
+        proposals = await LinkingService.ProposeAsync(CancellationToken.None);
+        unlinkedPersons = await LinkingService.ListUnlinkedPersonsAsync(CancellationToken.None);
+        linkedViews = await LinkingService.ListLinkedAsync(CancellationToken.None);
+    }
+
+    private void SwitchTab(Tab tab)
+    {
+        activeTab = tab;
+    }
+
+    private RenderFragment RenderHighTab() => builder =>
+    {
+        builder.OpenElement(0, "div");
+
+        if (proposals!.HighConfidence.Count == 0)
+        {
+            builder.OpenElement(1, "p");
+            builder.AddAttribute(2, "class", "text-secondary mb-0");
+            builder.AddContent(3, "Žádné vysoce jisté shody k propojení.");
+            builder.CloseElement();
+            builder.CloseElement();
+            return;
+        }
+
+        builder.OpenElement(10, "form");
+        builder.AddAttribute(11, "method", "post");
+        builder.AddAttribute(12, "action", "/admin/propojit-ucty/automaticky");
+        builder.AddAttribute(13, "class", "mb-3");
+        builder.OpenComponent<AntiforgeryToken>(14);
+        builder.CloseComponent();
+        builder.OpenElement(15, "button");
+        builder.AddAttribute(16, "type", "submit");
+        builder.AddAttribute(17, "class", "btn btn-primary");
+        builder.AddAttribute(18, "data-testid", "auto-link-all");
+        builder.AddAttribute(19, "disabled", proposals.HighConfidence.Count == 0);
+        builder.AddContent(20, $"Propojit vše ({proposals.HighConfidence.Count})");
+        builder.CloseElement();
+        builder.CloseElement();
+
+        builder.AddContent(30, RenderProposalTable(proposals.HighConfidence, showScore: false));
+
+        builder.CloseElement();
+    };
+
+    private RenderFragment RenderMediumTab() => builder =>
+    {
+        builder.OpenElement(0, "div");
+        if (proposals!.MediumConfidence.Count == 0)
+        {
+            builder.OpenElement(1, "p");
+            builder.AddAttribute(2, "class", "text-secondary mb-0");
+            builder.AddContent(3, "Žádné návrhy k ruční kontrole.");
+            builder.CloseElement();
+            builder.CloseElement();
+            return;
+        }
+        builder.AddContent(10, RenderProposalTable(proposals.MediumConfidence, showScore: true));
+        builder.CloseElement();
+    };
+
+    private RenderFragment RenderProposalTable(IReadOnlyList<LinkProposal> rows, bool showScore) => builder =>
+    {
+        builder.OpenElement(0, "div");
+        builder.AddAttribute(1, "class", "table-responsive");
+
+        builder.OpenElement(2, "table");
+        builder.AddAttribute(3, "class", "table table-sm align-middle");
+
+        builder.OpenElement(10, "thead");
+        builder.OpenElement(11, "tr");
+        builder.AddMarkupContent(12, "<th>ApplicationUser</th><th>Osoba</th><th>Signál</th>");
+        if (showScore)
+        {
+            builder.AddMarkupContent(13, "<th>Skóre</th>");
+        }
+        builder.AddMarkupContent(14, "<th class=\"text-end\">Akce</th>");
+        builder.CloseElement();
+        builder.CloseElement();
+
+        builder.OpenElement(20, "tbody");
+        var seq = 100;
+        foreach (var row in rows)
+        {
+            builder.OpenElement(seq++, "tr");
+            builder.AddAttribute(seq++, "data-testid", $"proposal-row-{row.UserId}-{row.PersonId}");
+
+            // ApplicationUser
+            builder.OpenElement(seq++, "td");
+            builder.OpenElement(seq++, "div");
+            builder.AddAttribute(seq++, "class", "fw-semibold");
+            builder.AddContent(seq++, row.UserEmail);
+            builder.CloseElement();
+            builder.OpenElement(seq++, "div");
+            builder.AddAttribute(seq++, "class", "small text-secondary");
+            builder.AddContent(seq++, row.UserDisplayName ?? "");
+            builder.CloseElement();
+            builder.CloseElement();
+
+            // Person
+            builder.OpenElement(seq++, "td");
+            builder.AddContent(seq++, row.PersonFullName);
+            builder.CloseElement();
+
+            // Signal
+            builder.OpenElement(seq++, "td");
+            builder.AddContent(seq++, FormatSignal(row.Signal));
+            builder.CloseElement();
+
+            if (showScore)
+            {
+                builder.OpenElement(seq++, "td");
+                builder.AddContent(seq++, row.FuzzyScore?.ToString() ?? "");
+                builder.CloseElement();
+            }
+
+            // Actions
+            builder.OpenElement(seq++, "td");
+            builder.AddAttribute(seq++, "class", "text-end");
+            builder.OpenElement(seq++, "div");
+            builder.AddAttribute(seq++, "class", "d-flex flex-wrap justify-content-end gap-1");
+
+            builder.OpenElement(seq++, "form");
+            builder.AddAttribute(seq++, "method", "post");
+            builder.AddAttribute(seq++, "action", "/admin/propojit-ucty/propojit");
+            builder.AddAttribute(seq++, "class", "d-inline");
+            builder.OpenComponent<AntiforgeryToken>(seq++);
+            builder.CloseComponent();
+            builder.AddMarkupContent(seq++,
+                $"<input type=\"hidden\" name=\"userId\" value=\"{System.Net.WebUtility.HtmlEncode(row.UserId)}\" />" +
+                $"<input type=\"hidden\" name=\"personId\" value=\"{row.PersonId}\" />" +
+                $"<input type=\"hidden\" name=\"returnTab\" value=\"{(showScore ? "medium" : "high")}\" />");
+            builder.OpenElement(seq++, "button");
+            builder.AddAttribute(seq++, "type", "submit");
+            builder.AddAttribute(seq++, "class", "btn btn-sm btn-outline-success");
+            builder.AddAttribute(seq++, "data-testid", $"link-{row.UserId}-{row.PersonId}");
+            builder.AddContent(seq++, "Propojit");
+            builder.CloseElement();
+            builder.CloseElement();
+
+            builder.OpenElement(seq++, "form");
+            builder.AddAttribute(seq++, "method", "post");
+            builder.AddAttribute(seq++, "action", "/admin/propojit-ucty/zamitnout");
+            builder.AddAttribute(seq++, "class", "d-inline");
+            builder.OpenComponent<AntiforgeryToken>(seq++);
+            builder.CloseComponent();
+            builder.AddMarkupContent(seq++,
+                $"<input type=\"hidden\" name=\"userId\" value=\"{System.Net.WebUtility.HtmlEncode(row.UserId)}\" />" +
+                $"<input type=\"hidden\" name=\"personId\" value=\"{row.PersonId}\" />");
+            builder.OpenElement(seq++, "button");
+            builder.AddAttribute(seq++, "type", "submit");
+            builder.AddAttribute(seq++, "class", "btn btn-sm btn-outline-secondary");
+            builder.AddAttribute(seq++, "data-testid", $"dismiss-{row.UserId}-{row.PersonId}");
+            builder.AddContent(seq++, "Zamítnout");
+            builder.CloseElement();
+            builder.CloseElement();
+
+            builder.CloseElement();
+            builder.CloseElement();
+
+            builder.CloseElement(); // </tr>
+        }
+        builder.CloseElement(); // </tbody>
+        builder.CloseElement(); // </table>
+        builder.CloseElement(); // </div>
+    };
+
+    private RenderFragment RenderUnlinkedTab() => builder =>
+    {
+        builder.OpenElement(0, "div");
+        if (unlinkedPersons.Count == 0)
+        {
+            builder.OpenElement(1, "p");
+            builder.AddAttribute(2, "class", "text-secondary mb-0");
+            builder.AddContent(3, "Všechny osoby mají přiřazený přihlašovací účet.");
+            builder.CloseElement();
+            builder.CloseElement();
+            return;
+        }
+
+        builder.OpenElement(10, "div");
+        builder.AddAttribute(11, "class", "table-responsive");
+        builder.OpenElement(12, "table");
+        builder.AddAttribute(13, "class", "table table-sm align-middle");
+        builder.AddMarkupContent(14, "<thead><tr><th>Osoba</th><th>Rok narození</th><th>E-mail</th><th>Vybrat účet</th><th class=\"text-end\">Akce</th></tr></thead>");
+        builder.OpenElement(15, "tbody");
+        var seq = 100;
+        foreach (var p in unlinkedPersons)
+        {
+            builder.OpenElement(seq++, "tr");
+            builder.AddAttribute(seq++, "data-testid", $"unlinked-row-{p.PersonId}");
+
+            builder.OpenElement(seq++, "td");
+            builder.AddContent(seq++, p.PersonFullName);
+            builder.CloseElement();
+
+            builder.OpenElement(seq++, "td");
+            builder.AddContent(seq++, p.BirthYear?.ToString() ?? "");
+            builder.CloseElement();
+
+            builder.OpenElement(seq++, "td");
+            builder.AddContent(seq++, p.Email ?? "");
+            builder.CloseElement();
+
+            // Picker cell
+            builder.OpenElement(seq++, "td");
+            {
+                var personId = p.PersonId;
+                builder.OpenElement(seq++, "div");
+                builder.AddAttribute(seq++, "class", "d-flex flex-column gap-1");
+
+                // search input
+                builder.OpenElement(seq++, "input");
+                builder.AddAttribute(seq++, "type", "text");
+                builder.AddAttribute(seq++, "class", "form-control form-control-sm");
+                builder.AddAttribute(seq++, "placeholder", "Hledat účet podle e-mailu nebo jména...");
+                builder.AddAttribute(seq++, "data-testid", $"user-search-{personId}");
+                builder.AddAttribute(seq++, "value", pickerQueries.GetValueOrDefault(personId, ""));
+                builder.AddAttribute(seq++, "oninput",
+                    EventCallback.Factory.Create<ChangeEventArgs>(this, e => OnSearchInputAsync(personId, e)));
+                builder.CloseElement();
+
+                // results
+                var results = pickerResults.GetValueOrDefault(personId);
+                if (results is { Count: > 0 })
+                {
+                    builder.OpenElement(seq++, "ul");
+                    builder.AddAttribute(seq++, "class", "list-group list-group-flush small");
+                    builder.AddAttribute(seq++, "data-testid", $"user-results-{personId}");
+                    foreach (var r in results)
+                    {
+                        var isSelected = pickerSelectedUserId.GetValueOrDefault(personId) == r.UserId;
+                        builder.OpenElement(seq++, "li");
+                        builder.AddAttribute(seq++, "class", $"list-group-item list-group-item-action {(isSelected ? "active" : "")}".Trim());
+                        builder.AddAttribute(seq++, "style", "cursor:pointer;");
+                        builder.AddAttribute(seq++, "data-testid", $"user-result-{personId}-{r.UserId}");
+                        var userRef = r;
+                        builder.AddAttribute(seq++, "onclick",
+                            EventCallback.Factory.Create<MouseEventArgs>(this, _ => SelectUser(personId, userRef)));
+                        builder.OpenElement(seq++, "div");
+                        builder.AddAttribute(seq++, "class", "fw-semibold");
+                        builder.AddContent(seq++, r.Email);
+                        builder.CloseElement();
+                        if (!string.IsNullOrWhiteSpace(r.DisplayName))
+                        {
+                            builder.OpenElement(seq++, "div");
+                            builder.AddAttribute(seq++, "class", "text-secondary");
+                            builder.AddContent(seq++, r.DisplayName);
+                            builder.CloseElement();
+                        }
+                        builder.CloseElement();
+                    }
+                    builder.CloseElement();
+                }
+
+                builder.CloseElement();
+            }
+            builder.CloseElement();
+
+            // Action
+            builder.OpenElement(seq++, "td");
+            builder.AddAttribute(seq++, "class", "text-end");
+            var selectedUser = pickerSelectedUserId.GetValueOrDefault(p.PersonId);
+            if (!string.IsNullOrWhiteSpace(selectedUser))
+            {
+                builder.OpenElement(seq++, "form");
+                builder.AddAttribute(seq++, "method", "post");
+                builder.AddAttribute(seq++, "action", "/admin/propojit-ucty/propojit");
+                builder.OpenComponent<AntiforgeryToken>(seq++);
+                builder.CloseComponent();
+                builder.AddMarkupContent(seq++,
+                    $"<input type=\"hidden\" name=\"userId\" value=\"{System.Net.WebUtility.HtmlEncode(selectedUser)}\" />" +
+                    $"<input type=\"hidden\" name=\"personId\" value=\"{p.PersonId}\" />" +
+                    $"<input type=\"hidden\" name=\"returnTab\" value=\"unlinked\" />");
+                builder.OpenElement(seq++, "button");
+                builder.AddAttribute(seq++, "type", "submit");
+                builder.AddAttribute(seq++, "class", "btn btn-sm btn-outline-success");
+                builder.AddAttribute(seq++, "data-testid", $"link-manual-{p.PersonId}");
+                builder.AddContent(seq++, "Propojit");
+                builder.CloseElement();
+                builder.CloseElement();
+            }
+            else
+            {
+                builder.OpenElement(seq++, "button");
+                builder.AddAttribute(seq++, "type", "button");
+                builder.AddAttribute(seq++, "class", "btn btn-sm btn-outline-secondary");
+                builder.AddAttribute(seq++, "disabled", true);
+                builder.AddContent(seq++, "Propojit");
+                builder.CloseElement();
+            }
+            builder.CloseElement();
+
+            builder.CloseElement(); // </tr>
+        }
+        builder.CloseElement();
+        builder.CloseElement();
+        builder.CloseElement();
+        builder.CloseElement();
+    };
+
+    private RenderFragment RenderLinkedTab() => builder =>
+    {
+        builder.OpenElement(0, "div");
+        if (linkedViews.Count == 0)
+        {
+            builder.OpenElement(1, "p");
+            builder.AddAttribute(2, "class", "text-secondary mb-0");
+            builder.AddContent(3, "Žádné propojené účty.");
+            builder.CloseElement();
+            builder.CloseElement();
+            return;
+        }
+
+        builder.OpenElement(10, "div");
+        builder.AddAttribute(11, "class", "table-responsive");
+        builder.OpenElement(12, "table");
+        builder.AddAttribute(13, "class", "table table-sm align-middle");
+        builder.AddMarkupContent(14, "<thead><tr><th>ApplicationUser</th><th>Osoba</th><th>Propojeno</th><th class=\"text-end\">Akce</th></tr></thead>");
+        builder.OpenElement(15, "tbody");
+        var seq = 100;
+        foreach (var v in linkedViews)
+        {
+            builder.OpenElement(seq++, "tr");
+            builder.AddAttribute(seq++, "data-testid", $"linked-row-{v.UserId}");
+
+            builder.OpenElement(seq++, "td");
+            builder.OpenElement(seq++, "div");
+            builder.AddAttribute(seq++, "class", "fw-semibold");
+            builder.AddContent(seq++, v.UserEmail);
+            builder.CloseElement();
+            builder.OpenElement(seq++, "div");
+            builder.AddAttribute(seq++, "class", "small text-secondary");
+            builder.AddContent(seq++, v.UserDisplayName ?? "");
+            builder.CloseElement();
+            builder.CloseElement();
+
+            builder.OpenElement(seq++, "td");
+            builder.AddContent(seq++, v.PersonFullName);
+            builder.CloseElement();
+
+            builder.OpenElement(seq++, "td");
+            builder.AddContent(seq++, v.LinkedAtUtc.HasValue ? CzechTime.Format(v.LinkedAtUtc.Value.UtcDateTime) : "—");
+            builder.CloseElement();
+
+            builder.OpenElement(seq++, "td");
+            builder.AddAttribute(seq++, "class", "text-end");
+            builder.OpenElement(seq++, "form");
+            builder.AddAttribute(seq++, "method", "post");
+            builder.AddAttribute(seq++, "action", "/admin/propojit-ucty/odpojit");
+            builder.AddAttribute(seq++, "onsubmit", "return confirm('Opravdu odpojit tento účet od osoby?');");
+            builder.OpenComponent<AntiforgeryToken>(seq++);
+            builder.CloseComponent();
+            builder.AddMarkupContent(seq++,
+                $"<input type=\"hidden\" name=\"userId\" value=\"{System.Net.WebUtility.HtmlEncode(v.UserId)}\" />");
+            builder.OpenElement(seq++, "button");
+            builder.AddAttribute(seq++, "type", "submit");
+            builder.AddAttribute(seq++, "class", "btn btn-sm btn-outline-danger");
+            builder.AddAttribute(seq++, "data-testid", $"unlink-{v.UserId}");
+            builder.AddContent(seq++, "Odpojit");
+            builder.CloseElement();
+            builder.CloseElement();
+            builder.CloseElement();
+
+            builder.CloseElement();
+        }
+        builder.CloseElement();
+        builder.CloseElement();
+        builder.CloseElement();
+        builder.CloseElement();
+    };
+
+    private async Task OnSearchInputAsync(int personId, ChangeEventArgs e)
+    {
+        var query = e.Value?.ToString() ?? "";
+        pickerQueries[personId] = query;
+        if (query.Trim().Length < 2)
+        {
+            pickerResults[personId] = Array.Empty<UserPickerResult>();
+            return;
+        }
+
+        searchCts?.Cancel();
+        searchCts = new CancellationTokenSource();
+        var ct = searchCts.Token;
+
+        // Debounce ~250ms.
+        try
+        {
+            await Task.Delay(250, ct);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+
+        var results = await LinkingService.SearchUsersAsync(query, 10, ct);
+        if (ct.IsCancellationRequested) return;
+        pickerResults[personId] = results;
+        StateHasChanged();
+    }
+
+    private void SelectUser(int personId, UserPickerResult user)
+    {
+        pickerSelectedUserId[personId] = user.UserId;
+        pickerQueries[personId] = user.Email;
+    }
+
+    private static string FormatSignal(LinkSignal signal) => signal switch
+    {
+        LinkSignal.ExactEmailMatch => "Shoda primárního e-mailu",
+        LinkSignal.AlternateEmailMatch => "Shoda alternativního e-mailu",
+        LinkSignal.SubmissionPrimaryContactMatch => "Shoda přihlášky a jména",
+        LinkSignal.FuzzyNameMatch => "Podobnost jména",
+        _ => signal.ToString()
+    };
+}
