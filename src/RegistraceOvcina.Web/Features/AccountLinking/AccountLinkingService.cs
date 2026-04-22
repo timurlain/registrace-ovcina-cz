@@ -39,7 +39,8 @@ public sealed record UnlinkedPersonView(
     int PersonId,
     string PersonFullName,
     int? BirthYear,
-    string? Email);
+    string? Email,
+    string? Phone);
 
 public sealed record UserPickerResult(
     string UserId,
@@ -546,7 +547,7 @@ public sealed class AccountLinkingService(
         var linkedSet = new HashSet<int>(linkedPersonIds);
 
         var persons = await db.People.AsNoTracking()
-            .Select(p => new UnlinkedPersonView(p.Id, p.FirstName + " " + p.LastName, p.BirthYear, p.Email))
+            .Select(p => new UnlinkedPersonView(p.Id, p.FirstName + " " + p.LastName, p.BirthYear, p.Email, p.Phone))
             .ToListAsync(ct);
 
         return persons
