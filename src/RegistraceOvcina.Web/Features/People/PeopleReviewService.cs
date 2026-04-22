@@ -547,6 +547,60 @@ public sealed class PeopleReviewService(
             .ToList();
     }
 
+    /// <summary>
+    /// Scans all not-soft-deleted Persons for likely duplicate pairs. Rules:
+    /// exact name + BirthYear within 1 (score 95 — the main target for the historical
+    /// age-vs-birthyear import bug), diminutive first-name equivalence (90), fuzzy
+    /// first-name (Levenshtein ≤ 2) within 1 year (85), exact name same birth year (80),
+    /// and shared normalized phone / email (88). Only pairs with score ≥ 80 are returned;
+    /// duplicates across rules take the highest score.
+    /// </summary>
+    public async Task<IReadOnlyList<DuplicateCandidatePair>> FindDuplicateCandidatesAsync(
+        CancellationToken cancellationToken = default)
+    {
+        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+
+        // Load only what we need. The global IsDeleted query filter already excludes
+        // soft-deleted Persons, so no extra filter needed here.
+        var linkedPersonIds = await db.Users
+            .AsNoTracking()
+            .Where(u => u.PersonId != null)
+            .Select(u => u.PersonId!.Value)
+            .Distinct()
+            .ToListAsync(cancellationToken);
+        var linkedPersonSet = linkedPersonIds.ToHashSet();
+
+        var sources = await db.People
+            .AsNoTracking()
+            .Select(p => new
+            {
+                p.Id,
+                p.FirstName,
+                p.LastName,
+                p.BirthYear,
+                p.Email,
+                p.Phone,
+                RegistrationCount = p.Registrations.Count,
+                CharacterCount = p.Characters.Count
+            })
+            .ToListAsync(cancellationToken);
+
+        var projections = sources
+            .Select(p => new DuplicateCandidateSource(
+                p.Id,
+                p.FirstName,
+                p.LastName,
+                p.BirthYear,
+                p.Email,
+                p.Phone,
+                p.RegistrationCount,
+                linkedPersonSet.Contains(p.Id),
+                p.CharacterCount))
+            .ToList();
+
+        return DuplicateCandidateFinder.Find(projections);
+    }
+
     private async Task<List<LinkableAccountItem>> GetLinkableAccountsAsync(
         ApplicationDbContext db,
         Person person,

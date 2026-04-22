@@ -1,0 +1,373 @@
+@page "/admin/duplicity"
+@attribute [Authorize(Policy = AuthorizationPolicies.AdminOnly)]
+@rendermode InteractiveServer
+
+@using Microsoft.AspNetCore.Authorization
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.Components.Rendering
+@using Microsoft.AspNetCore.Identity
+@using RegistraceOvcina.Web.Data
+@using RegistraceOvcina.Web.Features.People
+@using RegistraceOvcina.Web.Security
+
+@inject PeopleReviewService PeopleReviewService
+@inject UserManager<ApplicationUser> UserManager
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject IJSRuntime JS
+
+<PageTitle>Duplicitní osoby</PageTitle>
+
+<div class="row g-4">
+    <div class="col-12">
+        <section class="card shadow-sm">
+            <div class="card-body p-4">
+                <h1 class="h3 mb-2" data-testid="duplicate-persons-title">Duplicitní osoby</h1>
+                <p class="text-secondary mb-3">
+                    Nástroj hledá pravděpodobně duplicitní osoby — stejné jméno + rozdíl 1 roku v narození,
+                    zdrobněliny, sdílený telefon/email. Každý pár potvrď ručně. Sloučení je nevratné.
+                </p>
+                <div class="d-flex flex-wrap gap-2 align-items-center">
+                    <button type="button"
+                            class="btn btn-primary"
+                            data-testid="run-detection"
+                            @onclick="RunDetectionAsync"
+                            disabled="@isLoading">
+                        @if (isLoading)
+                        {
+                            <span class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></span>
+                        }
+                        Spustit detekci
+                    </button>
+
+                    @if (hasResults)
+                    {
+                        <button type="button"
+                                class="btn btn-outline-danger"
+                                data-testid="merge-selected"
+                                @onclick="MergeSelectedAsync"
+                                disabled="@(isMerging || selectedCount == 0)">
+                            Sloučit vybrané (@selectedCount)
+                        </button>
+                        <span class="small text-secondary" data-testid="remaining-count">
+                            Zbývá párů: @pairs.Count
+                        </span>
+                    }
+                </div>
+
+                @if (!string.IsNullOrWhiteSpace(statusMessage))
+                {
+                    <div class="alert alert-success mt-3 mb-0" role="status" data-testid="status-message">@statusMessage</div>
+                }
+
+                @if (!string.IsNullOrWhiteSpace(errorMessage))
+                {
+                    <div class="alert alert-danger mt-3 mb-0" role="alert" data-testid="error-message">@errorMessage</div>
+                }
+            </div>
+        </section>
+    </div>
+
+    @if (hasResults)
+    {
+        @foreach (var reason in _reasonOrder)
+        {
+            var pairsInReason = pairs.Where(p => p.Pair.Reason == reason).ToList();
+            if (pairsInReason.Count == 0) continue;
+
+            <div class="col-12">
+                <section class="card shadow-sm" data-testid="@($"group-{reason}")">
+                    <div class="card-body">
+                        <h2 class="h5 mb-3">
+                            @ReasonLabel(reason)
+                            <span class="badge text-bg-secondary ms-2">@pairsInReason.Count</span>
+                        </h2>
+
+                        @foreach (var row in pairsInReason)
+                        {
+                            var leftId = row.Pair.Left.Id;
+                            var rightId = row.Pair.Right.Id;
+                            <div class="border rounded p-3 mb-2" data-testid="@($"pair-{leftId}-{rightId}")">
+                                <div class="row g-3 align-items-stretch">
+                                    <div class="col-md-5">
+                                        @PersonCard(row.Pair.Left, row, row.Pair.Left.Id == row.KeepId)
+                                    </div>
+                                    <div class="col-md-2 d-flex flex-column justify-content-center align-items-center gap-2">
+                                        <div class="small text-secondary">Skóre</div>
+                                        <div class="h4 mb-0">@row.Pair.ConfidenceScore</div>
+                                        <button type="button"
+                                                class="btn btn-sm btn-outline-danger"
+                                                data-testid="@($"merge-{leftId}-{rightId}")"
+                                                disabled="@isMerging"
+                                                @onclick="() => MergeOneAsync(row)">
+                                            Sloučit
+                                        </button>
+                                    </div>
+                                    <div class="col-md-5">
+                                        @PersonCard(row.Pair.Right, row, row.Pair.Right.Id == row.KeepId)
+                                    </div>
+                                </div>
+                            </div>
+                        }
+                    </div>
+                </section>
+            </div>
+        }
+
+        @if (pairs.Count == 0)
+        {
+            <div class="col-12">
+                <div class="alert alert-info mb-0" data-testid="no-more-pairs">
+                    Žádné další duplicitní páry. Spusť detekci znovu pro aktualizaci.
+                </div>
+            </div>
+        }
+    }
+    else if (detectionRan)
+    {
+        <div class="col-12">
+            <div class="alert alert-info mb-0" data-testid="no-duplicates">
+                Žádní kandidáti na duplicitu nebyli nalezeni.
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private static readonly DuplicateMatchReason[] _reasonOrder =
+    [
+        DuplicateMatchReason.ExactNameBirthYearWithin1,
+        DuplicateMatchReason.DiminutiveNameBirthYearWithin1,
+        DuplicateMatchReason.SharedPhoneOrEmail,
+        DuplicateMatchReason.FuzzyNameBirthYearWithin1,
+        DuplicateMatchReason.ExactNameSameBirthYear
+    ];
+
+    private readonly List<PairRow> pairs = [];
+    private bool isLoading;
+    private bool isMerging;
+    private bool detectionRan;
+    private string? statusMessage;
+    private string? errorMessage;
+
+    private bool hasResults => detectionRan && pairs.Count > 0;
+    private int selectedCount => pairs.Count(p => p.IsSelected);
+
+    private async Task RunDetectionAsync()
+    {
+        isLoading = true;
+        statusMessage = null;
+        errorMessage = null;
+        pairs.Clear();
+        StateHasChanged();
+
+        try
+        {
+            var results = await PeopleReviewService.FindDuplicateCandidatesAsync();
+            foreach (var pair in results)
+            {
+                pairs.Add(new PairRow
+                {
+                    Pair = pair,
+                    KeepId = ChooseDefaultKeep(pair),
+                    IsSelected = false
+                });
+            }
+            detectionRan = true;
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Detekci se nepodařilo spustit: {ex.Message}";
+        }
+        finally
+        {
+            isLoading = false;
+        }
+    }
+
+    private async Task MergeOneAsync(PairRow row)
+    {
+        var keep = row.KeepId == row.Pair.Left.Id ? row.Pair.Left : row.Pair.Right;
+        var drop = row.KeepId == row.Pair.Left.Id ? row.Pair.Right : row.Pair.Left;
+
+        var confirmed = await JS.InvokeAsync<bool>(
+            "confirm",
+            $"Sloučit {drop.FullName} ({drop.BirthYear}) do {keep.FullName} ({keep.BirthYear})? Tato akce je NEVRATNÁ.");
+        if (!confirmed) return;
+
+        await MergePairCoreAsync(row);
+    }
+
+    private async Task MergeSelectedAsync()
+    {
+        var selected = pairs.Where(p => p.IsSelected).ToList();
+        if (selected.Count == 0) return;
+
+        var confirmed = await JS.InvokeAsync<bool>(
+            "confirm",
+            $"Sloučit {selected.Count} vybraných párů? Tato akce je NEVRATNÁ.");
+        if (!confirmed) return;
+
+        var ok = 0;
+        var fail = 0;
+        foreach (var row in selected)
+        {
+            try
+            {
+                await MergePairCoreAsync(row, interactive: false);
+                ok++;
+            }
+            catch (Exception ex)
+            {
+                fail++;
+                errorMessage = $"Některá sloučení selhala: {ex.Message}";
+            }
+        }
+
+        statusMessage = fail == 0
+            ? $"Sloučeno {ok} párů."
+            : $"Sloučeno {ok} párů, {fail} selhalo.";
+    }
+
+    private async Task MergePairCoreAsync(PairRow row, bool interactive = true)
+    {
+        isMerging = true;
+        try
+        {
+            var keep = row.KeepId == row.Pair.Left.Id ? row.Pair.Left : row.Pair.Right;
+            var drop = row.KeepId == row.Pair.Left.Id ? row.Pair.Right : row.Pair.Left;
+
+            var auth = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+            var user = auth.User;
+            var appUser = await UserManager.GetUserAsync(user);
+            var actorId = appUser?.Id ?? user.Identity?.Name ?? "admin";
+
+            await PeopleReviewService.MergeAsync(keep.Id, drop.Id, actorId);
+            pairs.Remove(row);
+            if (interactive)
+            {
+                statusMessage = $"Sloučeno: {drop.FullName} → {keep.FullName}.";
+                errorMessage = null;
+            }
+        }
+        catch (Exception ex) when (interactive)
+        {
+            errorMessage = $"Sloučení selhalo: {ex.Message}";
+        }
+        finally
+        {
+            isMerging = false;
+        }
+    }
+
+    private static int ChooseDefaultKeep(DuplicateCandidatePair pair)
+    {
+        // Higher RegistrationCount wins, then HasLinkedUser, then lower Id.
+        var l = pair.Left;
+        var r = pair.Right;
+        if (l.RegistrationCount != r.RegistrationCount)
+            return l.RegistrationCount > r.RegistrationCount ? l.Id : r.Id;
+        if (l.HasLinkedUser != r.HasLinkedUser)
+            return l.HasLinkedUser ? l.Id : r.Id;
+        return l.Id < r.Id ? l.Id : r.Id;
+    }
+
+    private static string ReasonLabel(DuplicateMatchReason reason) => reason switch
+    {
+        DuplicateMatchReason.ExactNameBirthYearWithin1 => "Přesné jméno + rok ±1",
+        DuplicateMatchReason.DiminutiveNameBirthYearWithin1 => "Zdrobnělina + rok ±1",
+        DuplicateMatchReason.SharedPhoneOrEmail => "Sdílený telefon / email",
+        DuplicateMatchReason.FuzzyNameBirthYearWithin1 => "Přibližné jméno + rok ±1",
+        DuplicateMatchReason.ExactNameSameBirthYear => "Přesné jméno + stejný rok",
+        _ => reason.ToString()
+    };
+
+    private RenderFragment PersonCard(PersonSummary p, PairRow row, bool isKept) => builder =>
+    {
+        var radioName = $"keep-{row.Pair.Left.Id}-{row.Pair.Right.Id}";
+        var testId = $"person-card-{p.Id}";
+        var bgClass = isKept ? "bg-success-subtle" : "bg-body-tertiary";
+
+        builder.OpenElement(0, "div");
+        builder.AddAttribute(1, "class", $"p-3 rounded border h-100 {bgClass}");
+        builder.AddAttribute(2, "data-testid", testId);
+
+        builder.OpenElement(3, "div");
+        builder.AddAttribute(4, "class", "d-flex align-items-start justify-content-between mb-2");
+
+        builder.OpenElement(5, "div");
+        builder.OpenElement(6, "div");
+        builder.AddAttribute(7, "class", "fw-bold");
+        builder.AddContent(8, $"{p.FullName} ({p.BirthYear})");
+        builder.CloseElement();
+        builder.OpenElement(9, "div");
+        builder.AddAttribute(10, "class", "small text-secondary");
+        builder.AddContent(11, $"#{p.Id}");
+        builder.CloseElement();
+        builder.CloseElement();
+
+        builder.OpenElement(12, "label");
+        builder.AddAttribute(13, "class", "form-check d-flex align-items-center gap-1 small");
+        builder.OpenElement(14, "input");
+        builder.AddAttribute(15, "type", "radio");
+        builder.AddAttribute(16, "class", "form-check-input");
+        builder.AddAttribute(17, "name", radioName);
+        builder.AddAttribute(18, "data-testid", $"keep-{p.Id}");
+        builder.AddAttribute(19, "checked", isKept);
+        builder.AddAttribute(20, "onchange", EventCallback.Factory.Create(this, () =>
+        {
+            row.KeepId = p.Id;
+            row.IsSelected = true;
+        }));
+        builder.CloseElement();
+        builder.AddContent(21, "Ponechat");
+        builder.CloseElement();
+
+        builder.CloseElement();
+
+        // details list
+        builder.OpenElement(22, "ul");
+        builder.AddAttribute(23, "class", "list-unstyled small mb-2");
+        AppendLine(builder, 24, "Email", p.Email ?? "—");
+        AppendLine(builder, 26, "Telefon", p.Phone ?? "—");
+        AppendLine(builder, 28, "Účastí", p.RegistrationCount.ToString());
+        AppendLine(builder, 30, "Účet", p.HasLinkedUser ? "ano" : "ne");
+        AppendLine(builder, 32, "Postav", p.CharacterCount.ToString());
+        builder.CloseElement();
+
+        // bulk select checkbox
+        builder.OpenElement(34, "label");
+        builder.AddAttribute(35, "class", "form-check small");
+        builder.OpenElement(36, "input");
+        builder.AddAttribute(37, "type", "checkbox");
+        builder.AddAttribute(38, "class", "form-check-input me-1");
+        builder.AddAttribute(39, "data-testid", $"bulk-{row.Pair.Left.Id}-{row.Pair.Right.Id}-{p.Id}");
+        builder.AddAttribute(40, "checked", row.IsSelected);
+        builder.AddAttribute(41, "onchange", EventCallback.Factory.Create<ChangeEventArgs>(this, e =>
+        {
+            row.IsSelected = e.Value is bool b && b;
+        }));
+        builder.CloseElement();
+        builder.AddContent(42, "Zařadit do hromadného sloučení");
+        builder.CloseElement();
+
+        builder.CloseElement();
+    };
+
+    private static void AppendLine(RenderTreeBuilder b, int seq, string label, string value)
+    {
+        b.OpenElement(seq, "li");
+        b.OpenElement(seq + 1, "span");
+        b.AddAttribute(seq + 2, "class", "text-secondary me-1");
+        b.AddContent(seq + 3, label + ":");
+        b.CloseElement();
+        b.AddContent(seq + 4, value);
+        b.CloseElement();
+    }
+
+    private sealed class PairRow
+    {
+        public required DuplicateCandidatePair Pair { get; init; }
+        public int KeepId { get; set; }
+        public bool IsSelected { get; set; }
+    }
+}
