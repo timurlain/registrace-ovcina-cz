@@ -52,25 +52,8 @@ else
 
     @if (groupByRole)
     {
-        <div class="btn-group btn-group-sm mb-3" role="group" aria-label="Režim seskupení">
-            <button type="button" class="btn @(groupingMode == GroupingMode.Assigned ? "btn-primary" : "btn-outline-primary")"
-                    aria-pressed="@(groupingMode == GroupingMode.Assigned)"
-                    @onclick='() => SetGroupingMode(GroupingMode.Assigned)'>Přidělené</button>
-            <button type="button" class="btn @(groupingMode == GroupingMode.SelfDeclared ? "btn-primary" : "btn-outline-primary")"
-                    aria-pressed="@(groupingMode == GroupingMode.SelfDeclared)"
-                    @onclick='() => SetGroupingMode(GroupingMode.SelfDeclared)'>Zvolené</button>
-            <button type="button" class="btn @(groupingMode == GroupingMode.Both ? "btn-primary" : "btn-outline-primary")"
-                    aria-pressed="@(groupingMode == GroupingMode.Both)"
-                    @onclick='() => SetGroupingMode(GroupingMode.Both)'>Obě</button>
-        </div>
         <div class="text-secondary small mb-3">
-            @(groupingMode switch
-            {
-                GroupingMode.Assigned => "Zobrazuji jen dospělé s oficiálně přiřazenou rolí (GameRole).",
-                GroupingMode.SelfDeclared => "Zobrazuji jen dospělé, kteří si roli zvolili při registraci.",
-                GroupingMode.Both => "Zobrazuji union obou zdrojů.",
-                _ => ""
-            })
+            Seskupeno podle oficiálně přiřazené herní role. Dospělí bez přiřazení jsou ve skupině „Nezvoleno".
         </div>
 
         @foreach (var group in GetRoleGroups())
@@ -234,7 +217,6 @@ else
     private List<AdultRoleView>? adults;
     private List<string> availableGameRoles = [];
     private bool groupByRole;
-    private GroupingMode groupingMode = GroupingMode.Assigned;
     private bool sortDescending;
     private string currentUserId = "";
 
@@ -318,14 +300,12 @@ else
     private List<RoleGroup> GetRoleGroups()
     {
         if (adults is null) return [];
-        return GameRolesViewService.GroupAdultsByRole(adults, groupingMode);
+        return GameRolesViewService.GroupAdultsByRole(adults, availableGameRoles);
     }
 
     private void ToggleSort() => sortDescending = !sortDescending;
 
     private void ToggleGrouping() => groupByRole = !groupByRole;
-
-    private void SetGroupingMode(GroupingMode mode) => groupingMode = mode;
 
     private List<AdultRoleView> SortAdults(IEnumerable<AdultRoleView> source) =>
         sortDescending

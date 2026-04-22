@@ -142,54 +142,60 @@ public sealed class GameRolesViewService(
     }
 
     /// <summary>
-    /// Groups adults by <see cref="AdultRoleFlags"/> using the 5 canonical labels
-    /// (Příšera, Pomocník, Technická pomoc, Hraničář, Přihlížející).
+    /// Groups adults by their officially <b>assigned</b> GameRole (operational view).
+    /// An adult with multiple assigned roles appears in each matching group.
+    /// Adults with no assigned GameRole land in the "Nezvoleno" catch-all.
     ///
-    /// Overload kept for backwards compatibility — defaults to <see cref="GroupingMode.Both"/>
-    /// (the v0.9.20 union behavior).
-    /// </summary>
-    public static List<RoleGroup> GroupAdultsByRole(IReadOnlyList<AdultRoleView> adults)
-        => GroupAdultsByRole(adults, GroupingMode.Both);
-
-    /// <summary>
-    /// Groups adults by <see cref="AdultRoleFlags"/> using the 5 canonical labels
-    /// (Příšera, Pomocník, Technická pomoc, Hraničář, Přihlížející).
-    ///
-    /// Per-role filter depends on <paramref name="mode"/>:
-    ///   - <see cref="GroupingMode.Assigned"/>: adult appears iff their AssignedGameRoles list
-    ///     contains a mapped role name (officially assigned; operational view).
-    ///   - <see cref="GroupingMode.SelfDeclared"/>: adult appears iff their AdultRoles flags
-    ///     include the matching flag (self-declared during registration; recruitment view).
-    ///   - <see cref="GroupingMode.Both"/>: union of the two (v0.9.20 behavior).
-    ///
-    /// Catch-all "Nezvoleno" bucket:
-    ///   - Assigned: adults with NO assigned game role (regardless of flags).
-    ///   - SelfDeclared: adults with NO self-declared flag (regardless of assignments).
-    ///   - Both: adults with NEITHER flag NOR assigned role.
-    ///
-    /// An adult with multiple qualifying flags/assignments appears in multiple groups.
+    /// Group labels come from whatever role names exist in the <c>GameRoles</c> / <c>Roles</c>
+    /// tables for this game — no hardcoded mapping to the 5 AdultRoleFlags labels.
     /// Each group is sorted by LastName, then FirstName (case-insensitive).
-    /// Empty groups are dropped.
+    /// Empty groups are dropped, unless they are in <paramref name="availableRoleNames"/>
+    /// (in which case they are shown empty so organizers know the role exists but nobody
+    /// is assigned yet).
     /// </summary>
-    public static List<RoleGroup> GroupAdultsByRole(IReadOnlyList<AdultRoleView> adults, GroupingMode mode)
+    public static List<RoleGroup> GroupAdultsByRole(
+        IReadOnlyList<AdultRoleView> adults,
+        IReadOnlyList<string>? availableRoleNames = null)
     {
-        var result = new List<RoleGroup>(6);
+        // Union of role names that appear in assignments + any role names the caller wants
+        // shown even when empty (so admins see all defined roles in the game).
+        var assignedRoleNames = adults
+            .SelectMany(a => a.AssignedGameRoles)
+            .Distinct(StringComparer.OrdinalIgnoreCase);
 
-        foreach (var (label, flag, assignedRoleNames) in RoleMappings)
+        var allRoleNames = assignedRoleNames;
+        if (availableRoleNames is not null)
+        {
+            allRoleNames = allRoleNames.Concat(availableRoleNames);
+        }
+
+        var orderedRoleNames = allRoleNames
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(r => r, StringComparer.CurrentCultureIgnoreCase)
+            .ToList();
+
+        var result = new List<RoleGroup>(orderedRoleNames.Count + 1);
+
+        foreach (var roleName in orderedRoleNames)
         {
             var inGroup = adults
-                .Where(a => Matches(a, flag, assignedRoleNames, mode))
+                .Where(a => a.AssignedGameRoles.Contains(roleName, StringComparer.OrdinalIgnoreCase))
                 .OrderBy(a => a.LastName, StringComparer.CurrentCultureIgnoreCase)
                 .ThenBy(a => a.FirstName, StringComparer.CurrentCultureIgnoreCase)
                 .ToList();
 
-            if (inGroup.Count > 0)
-                result.Add(new RoleGroup(label, inGroup));
+            // Always emit groups for known available roles; otherwise drop empty groups.
+            var shouldEmit = inGroup.Count > 0
+                || (availableRoleNames is not null
+                    && availableRoleNames.Contains(roleName, StringComparer.OrdinalIgnoreCase));
+
+            if (shouldEmit)
+                result.Add(new RoleGroup(roleName, inGroup));
         }
 
-        // Catch-all bucket depends on mode.
+        // "Nezvoleno" catch-all: adults with no assigned GameRole.
         var uncategorized = adults
-            .Where(a => IsUncategorized(a, mode))
+            .Where(a => a.AssignedGameRoles.Count == 0)
             .OrderBy(a => a.LastName, StringComparer.CurrentCultureIgnoreCase)
             .ThenBy(a => a.FirstName, StringComparer.CurrentCultureIgnoreCase)
             .ToList();
@@ -199,46 +205,6 @@ public sealed class GameRolesViewService(
 
         return result;
     }
-
-    private static bool Matches(AdultRoleView a, AdultRoleFlags flag, string[] assignedRoleNames, GroupingMode mode)
-    {
-        var selfDeclared = a.AdultRoles.HasFlag(flag);
-        var assigned = a.AssignedGameRoles.Any(r => assignedRoleNames.Contains(r, StringComparer.OrdinalIgnoreCase));
-
-        return mode switch
-        {
-            GroupingMode.Assigned => assigned,
-            GroupingMode.SelfDeclared => selfDeclared,
-            GroupingMode.Both => selfDeclared || assigned,
-            _ => throw new ArgumentOutOfRangeException(nameof(mode), mode, "Unknown GroupingMode.")
-        };
-    }
-
-    private static bool IsUncategorized(AdultRoleView a, GroupingMode mode)
-    {
-        return mode switch
-        {
-            GroupingMode.Assigned => a.AssignedGameRoles.Count == 0,
-            GroupingMode.SelfDeclared => a.AdultRoles == AdultRoleFlags.None,
-            GroupingMode.Both => a.AdultRoles == AdultRoleFlags.None && a.AssignedGameRoles.Count == 0,
-            _ => throw new ArgumentOutOfRangeException(nameof(mode), mode, "Unknown GroupingMode.")
-        };
-    }
-
-    /// <summary>
-    /// Canonical Czech label ↔ AdultRoleFlags ↔ assigned GameRole.RoleName mapping.
-    /// The role-name list is intentionally loose because the admin can define arbitrary
-    /// game roles in the Roles table; we use the common seeded names ("npc", "tech-support",
-    /// "ranger-leader") plus a localized fallback so admins who use Czech role names still match.
-    /// </summary>
-    private static readonly (string Label, AdultRoleFlags Flag, string[] AssignedRoleNames)[] RoleMappings =
-    [
-        ("Příšera",         AdultRoleFlags.PlayMonster,        ["npc", "monster", "příšera"]),
-        ("Pomocník",        AdultRoleFlags.OrganizationHelper, ["helper", "pomocník", "pomocnik"]),
-        ("Technická pomoc", AdultRoleFlags.TechSupport,        ["tech-support", "tech", "technická pomoc"]),
-        ("Hraničář",        AdultRoleFlags.RangerLeader,       ["ranger-leader", "hraničář", "hranicar"]),
-        ("Přihlížející",    AdultRoleFlags.Spectator,          ["spectator", "přihlížející", "prihlizejici"]),
-    ];
 }
 
 public sealed class AdultRoleView
@@ -261,18 +227,3 @@ public sealed class AdultRoleView
 }
 
 public sealed record RoleGroup(string RoleName, List<AdultRoleView> Adults);
-
-/// <summary>
-/// Selects which side of the "role" relationship the grouping on /organizace/role filters by.
-/// </summary>
-public enum GroupingMode
-{
-    /// <summary>Only officially assigned GameRoles (operational view). Page-level default on /organizace/role.</summary>
-    Assigned,
-
-    /// <summary>Only self-declared AdultRoles flags from registration (recruitment view).</summary>
-    SelfDeclared,
-
-    /// <summary>Union of Assigned and SelfDeclared (v0.9.20 behavior; fullest view).</summary>
-    Both
-}
