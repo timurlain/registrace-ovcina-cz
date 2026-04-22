@@ -46,6 +46,20 @@ public sealed record UserPickerResult(
     string Email,
     string? DisplayName);
 
+public sealed record ConflictUser(
+    string UserId,
+    string UserEmail,
+    string? UserDisplayName,
+    DateTimeOffset? LinkedAtUtc,
+    DateTimeOffset? LastLoginAtUtc);
+
+public sealed record LinkConflict(
+    int PersonId,
+    string PersonFullName,
+    int PersonBirthYear,
+    string? PersonEmail,
+    IReadOnlyList<ConflictUser> LinkedUsers);
+
 public interface IAccountLinkingService
 {
     Task<ProposalBucket> ProposeAsync(CancellationToken ct);
@@ -55,6 +69,7 @@ public interface IAccountLinkingService
     Task<IReadOnlyList<AlreadyLinkedView>> ListLinkedAsync(CancellationToken ct);
     Task<IReadOnlyList<UnlinkedPersonView>> ListUnlinkedPersonsAsync(CancellationToken ct);
     Task<IReadOnlyList<UserPickerResult>> SearchUsersAsync(string query, int limit, CancellationToken ct);
+    Task<IReadOnlyList<LinkConflict>> ListConflictsAsync(CancellationToken ct);
 }
 
 public sealed class AccountLinkingService(
@@ -576,6 +591,93 @@ public sealed class AccountLinkingService(
             .ToListAsync(ct);
 
         return results;
+    }
+
+    public async Task<IReadOnlyList<LinkConflict>> ListConflictsAsync(CancellationToken ct)
+    {
+        await using var db = await dbContextFactory.CreateDbContextAsync(ct);
+
+        // A conflict is a Person with >1 ApplicationUser pointing at it via PersonId.
+        // Pull every linked user, group client-side by PersonId, and keep only groups of >= 2.
+        var linkedUsers = await db.Users.AsNoTracking()
+            .Where(u => u.PersonId != null)
+            .Select(u => new
+            {
+                u.Id,
+                Email = u.Email ?? "",
+                u.DisplayName,
+                PersonId = u.PersonId!.Value,
+                u.LastLoginAtUtc
+            })
+            .ToListAsync(ct);
+
+        var conflictGroups = linkedUsers
+            .GroupBy(u => u.PersonId)
+            .Where(g => g.Count() > 1)
+            .ToList();
+
+        if (conflictGroups.Count == 0) return Array.Empty<LinkConflict>();
+
+        var personIds = conflictGroups.Select(g => g.Key).ToList();
+        var persons = await db.People.AsNoTracking()
+            .IgnoreQueryFilters()
+            .Where(p => personIds.Contains(p.Id))
+            .Select(p => new { p.Id, p.FirstName, p.LastName, p.BirthYear, p.Email })
+            .ToListAsync(ct);
+        var personsById = persons.ToDictionary(p => p.Id, p => p);
+
+        // Pull latest LinkAccount audit timestamp per user for the conflicted users only.
+        var conflictUserIds = conflictGroups.SelectMany(g => g.Select(u => u.Id)).ToList();
+        var linkAuditDates = await db.AuditLogs.AsNoTracking()
+            .Where(a => a.EntityType == nameof(ApplicationUser)
+                        && a.Action == "LinkAccount"
+                        && conflictUserIds.Contains(a.EntityId))
+            .GroupBy(a => a.EntityId)
+            .Select(g => new { UserId = g.Key, LinkedAt = g.Max(x => x.CreatedAtUtc) })
+            .ToListAsync(ct);
+        var linkedAtByUser = linkAuditDates.ToDictionary(x => x.UserId, x => x.LinkedAt);
+
+        var conflicts = new List<LinkConflict>(conflictGroups.Count);
+        foreach (var group in conflictGroups)
+        {
+            var users = group
+                .Select(u =>
+                {
+                    DateTimeOffset? linkedAt = linkedAtByUser.TryGetValue(u.Id, out var dt)
+                        ? new DateTimeOffset(DateTime.SpecifyKind(dt, DateTimeKind.Utc))
+                        : null;
+                    DateTimeOffset? lastLogin = u.LastLoginAtUtc.HasValue
+                        ? new DateTimeOffset(DateTime.SpecifyKind(u.LastLoginAtUtc.Value, DateTimeKind.Utc))
+                        : null;
+                    return new ConflictUser(u.Id, u.Email, u.DisplayName, linkedAt, lastLogin);
+                })
+                // Most recent LinkedAt first; nulls go last. Stable tiebreaker on email.
+                .OrderByDescending(u => u.LinkedAtUtc ?? DateTimeOffset.MinValue)
+                .ThenBy(u => u.UserEmail, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            string personFullName;
+            int birthYear;
+            string? personEmail;
+            if (personsById.TryGetValue(group.Key, out var p))
+            {
+                personFullName = FullName(p.FirstName, p.LastName);
+                birthYear = p.BirthYear;
+                personEmail = p.Email;
+            }
+            else
+            {
+                personFullName = $"[Osoba #{group.Key}]";
+                birthYear = 0;
+                personEmail = null;
+            }
+
+            conflicts.Add(new LinkConflict(group.Key, personFullName, birthYear, personEmail, users));
+        }
+
+        return conflicts
+            .OrderBy(c => c.PersonFullName, StringComparer.OrdinalIgnoreCase)
+            .ToList();
     }
 
     // ---- helpers ----

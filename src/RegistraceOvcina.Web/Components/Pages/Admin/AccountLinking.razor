@@ -27,6 +27,13 @@
                     @if (proposals is not null)
                     {
                         <div class="d-flex flex-wrap gap-4">
+                            @if (conflicts.Count > 0)
+                            {
+                                <div>
+                                    <div class="small text-secondary">Konflikty</div>
+                                    <div class="h4 mb-0 text-danger" data-testid="conflicts-count">@conflicts.Count</div>
+                                </div>
+                            }
                             <div>
                                 <div class="small text-secondary">Vysoká shoda</div>
                                 <div class="h4 mb-0" data-testid="high-confidence-count">@proposals.HighConfidence.Count</div>
@@ -56,12 +63,39 @@
                 {
                     <div class="alert alert-danger mb-0" role="alert" data-testid="error-message">@errorMessage</div>
                 }
+
+                @if (conflicts.Count > 0 && activeTab != Tab.Conflicts)
+                {
+                    <div class="alert alert-warning mt-3 mb-0 d-flex justify-content-between align-items-center" role="alert" data-testid="conflicts-warning">
+                        <div>
+                            <strong>@conflicts.Count</strong> @ConflictNoun(conflicts.Count) má propojený víc než jeden účet.
+                            Zobrazit a vyřešit v záložce Konflikty.
+                        </div>
+                        <button type="button"
+                                class="btn btn-sm btn-outline-dark"
+                                @onclick="() => SwitchTab(Tab.Conflicts)"
+                                data-testid="conflicts-warning-link">
+                            Otevřít Konflikty
+                        </button>
+                    </div>
+                }
             </div>
         </section>
     </div>
 
     <div class="col-12">
         <ul class="nav nav-tabs" role="tablist">
+            @if (conflicts.Count > 0)
+            {
+                <li class="nav-item" role="presentation">
+                    <button type="button"
+                            class="nav-link text-danger @(activeTab == Tab.Conflicts ? "active" : "")"
+                            @onclick="() => SwitchTab(Tab.Conflicts)"
+                            data-testid="tab-conflicts">
+                        Konflikty <span class="badge text-bg-danger">@conflicts.Count</span>
+                    </button>
+                </li>
+            }
             <li class="nav-item" role="presentation">
                 <button type="button"
                         class="nav-link @(activeTab == Tab.High ? "active" : "")"
@@ -108,6 +142,9 @@
                 {
                     @switch (activeTab)
                     {
+                        case Tab.Conflicts:
+                            @RenderConflictsTab()
+                            break;
                         case Tab.High:
                             @RenderHighTab()
                             break;
@@ -128,11 +165,12 @@
 </div>
 
 @code {
-    private enum Tab { High, Medium, Unlinked, Linked }
+    private enum Tab { Conflicts, High, Medium, Unlinked, Linked }
 
     private ProposalBucket? proposals;
     private IReadOnlyList<UnlinkedPersonView> unlinkedPersons = Array.Empty<UnlinkedPersonView>();
     private IReadOnlyList<AlreadyLinkedView> linkedViews = Array.Empty<AlreadyLinkedView>();
+    private IReadOnlyList<LinkConflict> conflicts = Array.Empty<LinkConflict>();
     private Tab activeTab = Tab.High;
     private string? statusMessage;
     private string? errorMessage;
@@ -158,6 +196,7 @@
         {
             activeTab = tab.ToString() switch
             {
+                "conflicts" => Tab.Conflicts,
                 "medium" => Tab.Medium,
                 "unlinked" => Tab.Unlinked,
                 "linked" => Tab.Linked,
@@ -189,6 +228,7 @@
         proposals = await LinkingService.ProposeAsync(CancellationToken.None);
         unlinkedPersons = await LinkingService.ListUnlinkedPersonsAsync(CancellationToken.None);
         linkedViews = await LinkingService.ListLinkedAsync(CancellationToken.None);
+        conflicts = await LinkingService.ListConflictsAsync(CancellationToken.None);
     }
 
     private void SwitchTab(Tab tab)
@@ -600,5 +640,146 @@
         LinkSignal.SubmissionPrimaryContactMatch => "Shoda přihlášky a jména",
         LinkSignal.FuzzyNameMatch => "Podobnost jména",
         _ => signal.ToString()
+    };
+
+    // Czech grammar helper for the warning banner.
+    // 1 = "osoba", 2-4 = "osoby", 5+/0 = "osob". Plural form also used for "má/mají" — caller picks "má" for ≤4.
+    private static string ConflictNoun(int count) => count switch
+    {
+        1 => "osoba",
+        >= 2 and <= 4 => "osoby",
+        _ => "osob"
+    };
+
+    private RenderFragment RenderConflictsTab() => builder =>
+    {
+        builder.OpenElement(0, "div");
+
+        // Info banner.
+        builder.OpenElement(1, "div");
+        builder.AddAttribute(2, "class", "alert alert-info");
+        builder.AddAttribute(3, "data-testid", "conflicts-info");
+        builder.OpenElement(4, "p");
+        builder.AddAttribute(5, "class", "mb-1");
+        builder.AddContent(6, "Každá osoba by měla mít nejvýše jeden propojený účet.");
+        builder.CloseElement();
+        builder.OpenElement(7, "p");
+        builder.AddAttribute(8, "class", "mb-1");
+        builder.AddContent(9, "Nechte ten, který uživatel skutečně používá, a ostatní odpojte.");
+        builder.CloseElement();
+        builder.OpenElement(10, "p");
+        builder.AddAttribute(11, "class", "mb-0 small text-secondary");
+        builder.AddContent(12, "Odpojením účtu se nesmaže — jen se odstraní jeho propojení na osobu.");
+        builder.CloseElement();
+        builder.CloseElement();
+
+        if (conflicts.Count == 0)
+        {
+            builder.OpenElement(20, "p");
+            builder.AddAttribute(21, "class", "text-secondary mb-0");
+            builder.AddContent(22, "Žádné konflikty — každá osoba má nejvýše jeden propojený účet.");
+            builder.CloseElement();
+            builder.CloseElement();
+            return;
+        }
+
+        var seq = 100;
+        foreach (var c in conflicts)
+        {
+            builder.OpenElement(seq++, "section");
+            builder.AddAttribute(seq++, "class", "card mb-3");
+            builder.AddAttribute(seq++, "data-testid", $"conflict-person-{c.PersonId}");
+
+            // Person header.
+            builder.OpenElement(seq++, "div");
+            builder.AddAttribute(seq++, "class", "card-header bg-warning-subtle");
+            builder.OpenElement(seq++, "div");
+            builder.AddAttribute(seq++, "class", "d-flex flex-wrap gap-3 align-items-baseline");
+            builder.OpenElement(seq++, "strong");
+            builder.AddContent(seq++, c.PersonFullName);
+            builder.CloseElement();
+            if (c.PersonBirthYear > 0)
+            {
+                builder.OpenElement(seq++, "span");
+                builder.AddAttribute(seq++, "class", "small text-secondary");
+                builder.AddContent(seq++, $"Ročník {c.PersonBirthYear}");
+                builder.CloseElement();
+            }
+            builder.OpenElement(seq++, "span");
+            builder.AddAttribute(seq++, "class", "small text-secondary");
+            builder.AddContent(seq++, string.IsNullOrWhiteSpace(c.PersonEmail) ? "—" : c.PersonEmail!);
+            builder.CloseElement();
+            builder.OpenElement(seq++, "span");
+            builder.AddAttribute(seq++, "class", "badge text-bg-danger ms-auto");
+            builder.AddContent(seq++, $"{c.LinkedUsers.Count} účty");
+            builder.CloseElement();
+            builder.CloseElement();
+            builder.CloseElement();
+
+            // Users table.
+            builder.OpenElement(seq++, "div");
+            builder.AddAttribute(seq++, "class", "card-body p-0");
+            builder.OpenElement(seq++, "div");
+            builder.AddAttribute(seq++, "class", "table-responsive");
+            builder.OpenElement(seq++, "table");
+            builder.AddAttribute(seq++, "class", "table table-sm align-middle mb-0");
+            builder.AddMarkupContent(seq++, "<thead><tr><th>Účet</th><th>Propojeno</th><th>Poslední přihlášení</th><th class=\"text-end\">Akce</th></tr></thead>");
+            builder.OpenElement(seq++, "tbody");
+
+            foreach (var u in c.LinkedUsers)
+            {
+                builder.OpenElement(seq++, "tr");
+                builder.AddAttribute(seq++, "data-testid", $"conflict-user-{c.PersonId}-{u.UserId}");
+
+                builder.OpenElement(seq++, "td");
+                builder.OpenElement(seq++, "div");
+                builder.AddAttribute(seq++, "class", "fw-semibold");
+                builder.AddContent(seq++, u.UserEmail);
+                builder.CloseElement();
+                builder.OpenElement(seq++, "div");
+                builder.AddAttribute(seq++, "class", "small text-secondary");
+                builder.AddContent(seq++, u.UserDisplayName ?? "");
+                builder.CloseElement();
+                builder.CloseElement();
+
+                builder.OpenElement(seq++, "td");
+                builder.AddContent(seq++, u.LinkedAtUtc.HasValue ? CzechTime.Format(u.LinkedAtUtc.Value.UtcDateTime) : "—");
+                builder.CloseElement();
+
+                builder.OpenElement(seq++, "td");
+                builder.AddContent(seq++, u.LastLoginAtUtc.HasValue ? CzechTime.Format(u.LastLoginAtUtc.Value.UtcDateTime) : "—");
+                builder.CloseElement();
+
+                builder.OpenElement(seq++, "td");
+                builder.AddAttribute(seq++, "class", "text-end");
+                builder.OpenElement(seq++, "form");
+                builder.AddAttribute(seq++, "method", "post");
+                builder.AddAttribute(seq++, "action", "/admin/propojit-ucty/odpojit");
+                builder.AddAttribute(seq++, "onsubmit", "return confirm('Opravdu odpojit tento účet od osoby?');");
+                builder.OpenComponent<AntiforgeryToken>(seq++);
+                builder.CloseComponent();
+                builder.AddMarkupContent(seq++,
+                    $"<input type=\"hidden\" name=\"userId\" value=\"{System.Net.WebUtility.HtmlEncode(u.UserId)}\" />" +
+                    "<input type=\"hidden\" name=\"returnTab\" value=\"conflicts\" />");
+                builder.OpenElement(seq++, "button");
+                builder.AddAttribute(seq++, "type", "submit");
+                builder.AddAttribute(seq++, "class", "btn btn-sm btn-outline-danger");
+                builder.AddAttribute(seq++, "data-testid", $"conflict-unlink-{c.PersonId}-{u.UserId}");
+                builder.AddContent(seq++, "Odpojit");
+                builder.CloseElement();
+                builder.CloseElement();
+                builder.CloseElement();
+
+                builder.CloseElement(); // </tr>
+            }
+
+            builder.CloseElement(); // </tbody>
+            builder.CloseElement(); // </table>
+            builder.CloseElement(); // </div>
+            builder.CloseElement(); // </div> card-body
+            builder.CloseElement(); // </section>
+        }
+
+        builder.CloseElement(); // outer div
     };
 }
