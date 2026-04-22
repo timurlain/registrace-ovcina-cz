@@ -128,6 +128,78 @@ public sealed class GameRoleService(IDbContextFactory<ApplicationDbContext> dbFa
         await db.SaveChangesAsync();
     }
 
+    /// <summary>
+    /// Assigns a role directly by ApplicationUser.Id, bypassing the email lookup.
+    /// Required for accounts linked via ApplicationUser.PersonId where Person.Email is null
+    /// or doesn't match ApplicationUser.NormalizedEmail.
+    /// </summary>
+    public async Task AssignRoleByUserIdAsync(string userId, int gameId, string roleName, string actorUserId)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var normalizedRole = roleName.Trim().ToLowerInvariant();
+
+        var user = await db.Users.AsNoTracking()
+            .FirstOrDefaultAsync(u => u.Id == userId);
+
+        if (user is null)
+            throw new InvalidOperationException($"Uživatel s ID '{userId}' nebyl nalezen.");
+
+        var exists = await db.GameRoles
+            .AnyAsync(gr => gr.UserId == userId && gr.GameId == gameId && gr.RoleName == normalizedRole);
+
+        if (exists)
+            return;
+
+        db.GameRoles.Add(new GameRole
+        {
+            UserId = userId,
+            GameId = gameId,
+            RoleName = normalizedRole,
+            AssignedAtUtc = DateTime.UtcNow
+        });
+
+        db.AuditLogs.Add(new AuditLog
+        {
+            EntityType = "GameRole",
+            EntityId = $"{userId}:{gameId}:{normalizedRole}",
+            Action = "Assigned",
+            ActorUserId = actorUserId,
+            CreatedAtUtc = DateTime.UtcNow,
+            DetailsJson = JsonSerializer.Serialize(new { userId, gameId, roleName = normalizedRole })
+        });
+
+        await db.SaveChangesAsync();
+    }
+
+    /// <summary>
+    /// Revokes a role directly by ApplicationUser.Id (counterpart to <see cref="AssignRoleByUserIdAsync"/>).
+    /// </summary>
+    public async Task RevokeRoleByUserIdAsync(string userId, int gameId, string roleName, string actorUserId)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync();
+        var normalizedRole = roleName.Trim().ToLowerInvariant();
+
+        var gameRole = await db.GameRoles
+            .FirstOrDefaultAsync(gr => gr.UserId == userId && gr.GameId == gameId && gr.RoleName == normalizedRole);
+
+        if (gameRole is null)
+            return;
+
+        db.GameRoles.Remove(gameRole);
+
+        db.AuditLogs.Add(new AuditLog
+        {
+            EntityType = "GameRole",
+            EntityId = $"{userId}:{gameId}:{normalizedRole}",
+            Action = "Revoked",
+            ActorUserId = actorUserId,
+            CreatedAtUtc = DateTime.UtcNow,
+            DetailsJson = JsonSerializer.Serialize(new { userId, gameId, roleName = normalizedRole })
+        });
+
+        await db.SaveChangesAsync();
+    }
+
     public async Task<List<UserWithRoles>> GetAllRolesForGameAsync(int gameId)
     {
         await using var db = await dbFactory.CreateDbContextAsync();

@@ -3,9 +3,11 @@
 @attribute [Authorize(Policy = AuthorizationPolicies.StaffOnly)]
 
 @using Microsoft.EntityFrameworkCore
+@using RegistraceOvcina.Web.Features.Roles
 @inject IDbContextFactory<ApplicationDbContext> DbFactory
 @inject GameService GameService
 @inject GameRoleService GameRoleService
+@inject GameRolesViewService GameRolesViewService
 @inject AuthenticationStateProvider AuthStateProvider
 
 <PageTitle>Dospělí</PageTitle>
@@ -252,86 +254,17 @@ else
             .Select(r => r.Name!)
             .ToListAsync();
 
-        // Load adults
-        var adultRows = await db.Registrations.AsNoTracking()
-            .Where(r => r.Submission.GameId == selectedGameId.Value
-                && r.AttendeeType == AttendeeType.Adult
-                && r.Status == RegistrationStatus.Active
-                && !r.Submission.IsDeleted)
-            .OrderBy(r => r.Person.LastName)
-            .ThenBy(r => r.Person.FirstName)
-            .Select(r => new
-            {
-                r.Id,
-                FirstName = r.Person.FirstName,
-                LastName = r.Person.LastName,
-                r.Submission.GroupName,
-                Email = r.Person.Email,
-                r.AdultRoles
-            })
-            .ToListAsync();
-
-        // Load all emails that have user accounts
-        var allEmails = adultRows
-            .Where(a => !string.IsNullOrWhiteSpace(a.Email))
-            .Select(a => a.Email!.Trim().ToUpperInvariant())
-            .Distinct()
-            .ToList();
-
-        var emailsWithAccounts = allEmails.Count > 0
-            ? await db.Users.AsNoTracking()
-                .Where(u => allEmails.Contains(u.NormalizedEmail!))
-                .Select(u => u.NormalizedEmail!)
-                .ToListAsync()
-            : [];
-
-        var emailsWithAccountsSet = emailsWithAccounts.ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-        // Load assigned game roles for this game
-        var assignedRoles = await db.GameRoles.AsNoTracking()
-            .Where(gr => gr.GameId == selectedGameId.Value)
-            .Select(gr => new { gr.User.Email, gr.RoleName })
-            .ToListAsync();
-
-        var rolesByEmail = assignedRoles
-            .Where(r => r.Email is not null)
-            .GroupBy(r => r.Email!.Trim(), StringComparer.OrdinalIgnoreCase)
-            .ToDictionary(
-                g => g.Key,
-                g => g.Select(r => r.RoleName).OrderBy(r => r).ToList(),
-                StringComparer.OrdinalIgnoreCase);
-
-        adults = adultRows.Select(a =>
-        {
-            var email = a.Email?.Trim();
-            var normalizedEmail = email?.ToUpperInvariant();
-            var hasAccount = normalizedEmail is not null && emailsWithAccountsSet.Contains(normalizedEmail);
-            var assignedRolesList = email is not null && rolesByEmail.TryGetValue(email, out var roles)
-                ? roles
-                : new List<string>();
-
-            return new AdultRoleView
-            {
-                RegistrationId = a.Id,
-                FullName = $"{a.FirstName} {a.LastName}",
-                LastName = a.LastName,
-                FirstName = a.FirstName,
-                GroupName = a.GroupName,
-                Email = email,
-                AdultRoles = a.AdultRoles,
-                HasAccount = hasAccount,
-                AssignedGameRoles = assignedRolesList,
-                SelectedRole = ""
-            };
-        }).ToList();
+        // Adult view assembly (account detection via email OR PersonId link) now lives in
+        // GameRolesViewService so it can be unit-tested directly.
+        adults = await GameRolesViewService.BuildAdultViewsAsync(selectedGameId.Value);
     }
 
     private async Task AssignRoleAsync(AdultRoleView adult)
     {
-        if (string.IsNullOrEmpty(adult.SelectedRole) || string.IsNullOrEmpty(adult.Email) || !selectedGameId.HasValue)
+        if (string.IsNullOrEmpty(adult.SelectedRole) || string.IsNullOrEmpty(adult.UserId) || !selectedGameId.HasValue)
             return;
 
-        await GameRoleService.AssignRoleAsync(adult.Email, selectedGameId.Value, adult.SelectedRole, currentUserId);
+        await GameRoleService.AssignRoleByUserIdAsync(adult.UserId, selectedGameId.Value, adult.SelectedRole, currentUserId);
 
         // Update local state
         if (!adult.AssignedGameRoles.Contains(adult.SelectedRole, StringComparer.OrdinalIgnoreCase))
@@ -344,10 +277,10 @@ else
 
     private async Task RevokeRoleAsync(AdultRoleView adult, string roleName)
     {
-        if (string.IsNullOrEmpty(adult.Email) || !selectedGameId.HasValue)
+        if (string.IsNullOrEmpty(adult.UserId) || !selectedGameId.HasValue)
             return;
 
-        await GameRoleService.RevokeRoleAsync(adult.Email, selectedGameId.Value, roleName, currentUserId);
+        await GameRoleService.RevokeRoleByUserIdAsync(adult.UserId, selectedGameId.Value, roleName, currentUserId);
 
         // Update local state
         adult.AssignedGameRoles.RemoveAll(r => string.Equals(r, roleName, StringComparison.OrdinalIgnoreCase));
@@ -363,13 +296,7 @@ else
     private List<RoleGroup> GetRoleGroups()
     {
         if (adults is null) return [];
-
-        return availableGameRoles
-            .Select(roleName => new RoleGroup(
-                roleName,
-                adults.Where(a => a.AssignedGameRoles.Contains(roleName, StringComparer.OrdinalIgnoreCase)).ToList()))
-            .Where(g => g.Adults.Count > 0)
-            .ToList();
+        return GameRolesViewService.GroupAdultsByRole(adults);
     }
 
     private void ToggleSort() => sortDescending = !sortDescending;
@@ -391,20 +318,4 @@ else
         if (flags.HasFlag(AdultRoleFlags.Spectator)) labels.Add("Přihlížející");
         return labels;
     }
-
-    private sealed class AdultRoleView
-    {
-        public int RegistrationId { get; set; }
-        public string FullName { get; set; } = "";
-        public string LastName { get; set; } = "";
-        public string FirstName { get; set; } = "";
-        public string GroupName { get; set; } = "";
-        public string? Email { get; set; }
-        public AdultRoleFlags AdultRoles { get; set; }
-        public bool HasAccount { get; set; }
-        public List<string> AssignedGameRoles { get; set; } = [];
-        public string SelectedRole { get; set; } = "";
-    }
-
-    private sealed record RoleGroup(string RoleName, List<AdultRoleView> Adults);
 }
