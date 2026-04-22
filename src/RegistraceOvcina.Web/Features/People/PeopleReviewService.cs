@@ -523,10 +523,12 @@ public sealed class PeopleReviewService(
         if (!string.IsNullOrWhiteSpace(trimmedEmail)
             && !string.Equals(trimmedEmail, person.Email, StringComparison.OrdinalIgnoreCase))
         {
-            var normalizedEmail = trimmedEmail.ToLowerInvariant();
+            // trimmedEmail is already lowercased upstream (Trim().ToLowerInvariant()),
+            // so use it directly as the normalized form. ToLower() on the column side
+            // is translated by Npgsql to Postgres LOWER() for case-insensitive compare.
             var collision = await db.People
                 .AsNoTracking()
-                .AnyAsync(x => x.Id != personId && x.Email != null && x.Email.ToLower() == normalizedEmail, cancellationToken);
+                .AnyAsync(x => x.Id != personId && x.Email != null && x.Email.ToLower() == trimmedEmail, cancellationToken);
 
             if (collision)
             {

@@ -13,8 +13,18 @@
 }
 else if (model is null)
 {
+    @* When the POST /kontakt endpoint returned NotFound it redirects here with
+       ?contact=not-found. Show the fuller, action-oriented message in that case
+       (Copilot v0.9.30 followup). Otherwise fall back to the generic warning. *@
     <div class="alert alert-warning" data-testid="person-detail-missing">
-        Osoba nebyla nalezena.
+        @if (ContactStatus == "not-found")
+        {
+            @("Osoba nebyla nalezena — možná byla smazána. Obnov stránku.")
+        }
+        else
+        {
+            @("Osoba nebyla nalezena.")
+        }
     </div>
 }
 else
