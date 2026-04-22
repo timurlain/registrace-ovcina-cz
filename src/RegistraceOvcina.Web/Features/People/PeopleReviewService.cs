@@ -17,14 +17,18 @@ public sealed class PeopleReviewService(
 
         var peopleQuery = db.People.AsNoTracking();
 
-        // Push coarse text filter into SQL before materializing
+        // Push coarse text filter into SQL before materializing.
+        // ILike is Postgres-native case-insensitive; EscapeLikePattern prevents
+        // user input from acting as LIKE wildcards (% / _ / \). The 3-arg ILike
+        // overload emits "ESCAPE '\'" so the escaped metacharacters match literally.
         if (!string.IsNullOrWhiteSpace(query))
         {
             var trimmed = query.Trim();
+            var pattern = $"%{EscapeLikePattern(trimmed)}%";
             peopleQuery = peopleQuery.Where(x =>
-                (x.FirstName + " " + x.LastName).Contains(trimmed)
-                || (x.Email != null && x.Email.Contains(trimmed))
-                || (x.Phone != null && x.Phone.Contains(trimmed)));
+                EF.Functions.ILike(x.FirstName + " " + x.LastName, pattern, LikeEscape)
+                || (x.Email != null && EF.Functions.ILike(x.Email, pattern, LikeEscape))
+                || (x.Phone != null && EF.Functions.ILike(x.Phone, pattern, LikeEscape)));
         }
 
         var people = await peopleQuery
@@ -486,15 +490,17 @@ public sealed class PeopleReviewService(
         await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
 
         var trimmed = query.Trim();
+        var pattern = $"%{EscapeLikePattern(trimmed)}%";
 
-        // Coarse SQL filter first (case-insensitive via DB collation)
+        // Coarse SQL filter first (case-insensitive via Postgres ILIKE).
+        // EscapeLikePattern + ESCAPE '\' keeps %, _, and \ literal in the match.
         var candidates = await db.People
             .AsNoTracking()
             .Where(x => x.Id != excludePersonId)
             .Where(x =>
-                (x.FirstName + " " + x.LastName).Contains(trimmed)
-                || (x.Email != null && x.Email.Contains(trimmed))
-                || (x.Phone != null && x.Phone.Contains(trimmed)))
+                EF.Functions.ILike(x.FirstName + " " + x.LastName, pattern, LikeEscape)
+                || (x.Email != null && EF.Functions.ILike(x.Email, pattern, LikeEscape))
+                || (x.Phone != null && EF.Functions.ILike(x.Phone, pattern, LikeEscape)))
             .Select(x => new PersonSearchProjection(
                 x.Id,
                 x.FirstName,
@@ -643,6 +649,19 @@ public sealed class PeopleReviewService(
             .Cast<PersonMatchCandidateItem>()
             .ToList();
     }
+
+    // Escape character passed to Postgres ILIKE via the 3-arg overload so that
+    // EscapeLikePattern's "\%", "\_", "\\" output is interpreted as literals.
+    private const string LikeEscape = "\\";
+
+    // Escape user input for safe inclusion inside an ILIKE pattern.
+    // Order matters: escape the backslash first, then the LIKE wildcards
+    // (% and _), so \% in raw input is not double-interpreted.
+    internal static string EscapeLikePattern(string input) =>
+        input
+            .Replace("\\", "\\\\")
+            .Replace("%", "\\%")
+            .Replace("_", "\\_");
 
     private static string BuildUserLabel(ApplicationUser user) =>
         string.IsNullOrWhiteSpace(user.DisplayName)
