@@ -81,6 +81,8 @@ public sealed class AccountLinkingService(
             .ToListAsync(ct);
 
         // Only propose Persons that have no ApplicationUser pointing at them.
+        // NOTE: this also protects against proposing a Person that's already claimed —
+        // ProposeAsync filters them out upfront so the admin page never offers them.
         var linkedPersonIds = await db.Users.AsNoTracking()
             .Where(u => u.PersonId != null)
             .Select(u => u.PersonId!.Value)
@@ -318,11 +320,21 @@ public sealed class AccountLinkingService(
         var alreadyLinkedSet = new HashSet<int>(alreadyLinkedPersonIds);
 
         var count = 0;
+        var skippedPersonAlreadyLinked = 0;
         foreach (var proposal in bucket.HighConfidence)
         {
             if (!usersById.TryGetValue(proposal.UserId, out var user)) continue;
             if (user.PersonId != null) continue; // already linked — no-op
-            if (alreadyLinkedSet.Contains(proposal.PersonId)) continue; // person taken
+            if (alreadyLinkedSet.Contains(proposal.PersonId))
+            {
+                // Person is already linked to a different User — skip this proposal
+                // rather than creating a duplicate PersonId link.
+                skippedPersonAlreadyLinked++;
+                logger.LogInformation(
+                    "AutoLink: skipping proposal for user {UserId} → person {PersonId} because the person is already linked to another account.",
+                    proposal.UserId, proposal.PersonId);
+                continue;
+            }
 
             user.PersonId = proposal.PersonId;
             alreadyLinkedSet.Add(proposal.PersonId);
@@ -347,7 +359,9 @@ public sealed class AccountLinkingService(
         }
 
         await db.SaveChangesAsync(ct);
-        logger.LogInformation("Auto-linked {Count} accounts (actor {ActorId}).", count, actorUserId);
+        logger.LogInformation(
+            "Auto-linked {Count} accounts, skipped {Skipped} proposals whose target person was already linked (actor {ActorId}).",
+            count, skippedPersonAlreadyLinked, actorUserId);
         return count;
     }
 
@@ -381,11 +395,17 @@ public sealed class AccountLinkingService(
         }
 
         var personAlreadyLinked = await db.Users.AsNoTracking()
-            .AnyAsync(u => u.PersonId == personId, ct);
+            .AnyAsync(u => u.PersonId == personId && u.Id != userId, ct);
         if (personAlreadyLinked)
         {
-            logger.LogDebug("LinkAsync: person {PersonId} already linked to another user — no-op.", personId);
-            return;
+            // Surface the conflict so the admin UI can show a meaningful error instead of
+            // silently dropping the link (or worse, letting a duplicate through, which then
+            // crashes /organizace/role).
+            logger.LogWarning(
+                "LinkAsync: refused — person {PersonId} is already linked to another user (attempted by actor {ActorId} for user {UserId}).",
+                personId, actorUserId, userId);
+            throw new InvalidOperationException(
+                "Another account is already linked to this Person. Unlink the existing link first.");
         }
 
         user.PersonId = personId;

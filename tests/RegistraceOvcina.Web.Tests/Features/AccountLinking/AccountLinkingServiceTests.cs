@@ -496,7 +496,140 @@ public sealed class AccountLinkingServiceTests
         Assert.Equal("Free Two", row.PersonFullName);
     }
 
-    // 14 -----------------------------------------------------------
+    // 14a -----------------------------------------------------------
+    // v0.9.22 hotfix: guard against creating duplicate PersonId links.
+    [Fact]
+    public async Task LinkAsync_throws_when_person_already_linked_to_another_user()
+    {
+        var options = CreateOptions();
+        int personId;
+
+        await using (var db = new ApplicationDbContext(options))
+        {
+            var person = new Person
+            {
+                FirstName = "Shared",
+                LastName = "Person",
+                BirthYear = 1990,
+                Email = null,
+                CreatedAtUtc = FixedDate(),
+                UpdatedAtUtc = FixedDate()
+            };
+            db.People.Add(person);
+            await db.SaveChangesAsync();
+            personId = person.Id;
+
+            // user-existing already claims the person.
+            var existing = CreateUser("user-existing", "Existing", "existing@example.cz");
+            existing.PersonId = personId;
+            db.Users.Add(existing);
+            // user-new is the one we'll try to link — and it should fail.
+            db.Users.Add(CreateUser("user-new", "New", "new@example.cz"));
+            await db.SaveChangesAsync();
+        }
+
+        var service = CreateService(options);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            service.LinkAsync("user-new", personId, ActorId, CancellationToken.None));
+
+        // Existing link must be unchanged; new user must NOT be linked.
+        await using var verify = new ApplicationDbContext(options);
+        var existingUser = await verify.Users.SingleAsync(u => u.Id == "user-existing");
+        var newUser = await verify.Users.SingleAsync(u => u.Id == "user-new");
+        Assert.Equal(personId, existingUser.PersonId);
+        Assert.Null(newUser.PersonId);
+    }
+
+    // 14b -----------------------------------------------------------
+    [Fact]
+    public async Task AutoLinkHighConfidenceAsync_skips_proposals_whose_person_already_linked()
+    {
+        // In-memory provider doesn't enforce Person.Email uniqueness, so we can have two
+        // ApplicationUsers matched to the same Person's email and observe that AutoLink
+        // only links the first and skips the second (instead of creating a duplicate).
+        var options = CreateOptions();
+
+        await using (var db = new ApplicationDbContext(options))
+        {
+            // user-a is already linked to the target Person.
+            var person = new Person
+            {
+                FirstName = "Alice",
+                LastName = "Shared",
+                BirthYear = 1990,
+                Email = "shared@example.cz",
+                CreatedAtUtc = FixedDate(),
+                UpdatedAtUtc = FixedDate()
+            };
+            db.People.Add(person);
+            await db.SaveChangesAsync();
+
+            // user-b: unlinked, but shares the same normalized email as the Person.
+            // Without the guard, ProposeAsync would propose user-b → person, and
+            // AutoLink would create the duplicate that crashes /organizace/role.
+            var userA = CreateUser("user-a", "Alice Primary", "shared@example.cz");
+            userA.PersonId = person.Id;
+            db.Users.Add(userA);
+            db.Users.Add(CreateUser("user-b", "Alice Other", "shared@example.cz"));
+            await db.SaveChangesAsync();
+        }
+
+        var service = CreateService(options);
+        var count = await service.AutoLinkHighConfidenceAsync(ActorId, CancellationToken.None);
+
+        // user-b must NOT be linked because user-a already owns the Person.
+        // ProposeAsync already filters already-linked Persons out, so count is 0.
+        Assert.Equal(0, count);
+
+        await using var verify = new ApplicationDbContext(options);
+        var userB = await verify.Users.SingleAsync(u => u.Id == "user-b");
+        Assert.Null(userB.PersonId);
+
+        // And only one user points at the Person.
+        var linkedCount = await verify.Users.CountAsync(u => u.PersonId != null);
+        Assert.Equal(1, linkedCount);
+    }
+
+    // 14c -----------------------------------------------------------
+    [Fact]
+    public async Task ProposeAsync_excludes_persons_already_linked_to_another_user()
+    {
+        var options = CreateOptions();
+
+        await using (var db = new ApplicationDbContext(options))
+        {
+            var person = new Person
+            {
+                FirstName = "Taken",
+                LastName = "Person",
+                BirthYear = 1990,
+                Email = "taken@example.cz",
+                CreatedAtUtc = FixedDate(),
+                UpdatedAtUtc = FixedDate()
+            };
+            db.People.Add(person);
+            await db.SaveChangesAsync();
+
+            // user-owner already owns the Person.
+            var owner = CreateUser("user-owner", "Owner", "taken@example.cz");
+            owner.PersonId = person.Id;
+            db.Users.Add(owner);
+
+            // user-candidate shares the email but the Person is already claimed —
+            // ProposeAsync must NOT surface it as a proposal.
+            db.Users.Add(CreateUser("user-candidate", "Candidate", "taken@example.cz"));
+            await db.SaveChangesAsync();
+        }
+
+        var service = CreateService(options);
+        var bucket = await service.ProposeAsync(CancellationToken.None);
+
+        Assert.Empty(bucket.HighConfidence);
+        Assert.Empty(bucket.MediumConfidence);
+    }
+
+    // 15 -----------------------------------------------------------
     [Fact]
     public async Task SearchUsersAsync_matches_email_and_displayname()
     {

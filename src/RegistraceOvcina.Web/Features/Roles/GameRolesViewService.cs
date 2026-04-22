@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using RegistraceOvcina.Web.Data;
 
 namespace RegistraceOvcina.Web.Features.Roles;
@@ -7,7 +8,9 @@ namespace RegistraceOvcina.Web.Features.Roles;
 /// View-model assembly for the /organizace/role (GameRoles.razor) page.
 /// Extracted from the razor file so the logic is unit-testable against an InMemory DbContext.
 /// </summary>
-public sealed class GameRolesViewService(IDbContextFactory<ApplicationDbContext> dbFactory)
+public sealed class GameRolesViewService(
+    IDbContextFactory<ApplicationDbContext> dbFactory,
+    ILogger<GameRolesViewService>? logger = null)
 {
     /// <summary>
     /// Loads all adult registrations for a game along with their current account-linking
@@ -69,7 +72,26 @@ public sealed class GameRolesViewService(IDbContextFactory<ApplicationDbContext>
                 .ToListAsync(ct)
             : [];
 
-        var userIdByPersonId = personIdLinks.ToDictionary(l => l.PersonId, l => l.Id);
+        // Data-quality guard: if multiple ApplicationUsers are linked to the same Person (which
+        // v0.9.19's AccountLinkingService was not defensive enough to prevent), picking the
+        // naive ToDictionary(PersonId) throws ArgumentException and takes the whole page down.
+        // Deterministically pick the earliest user Id and log the conflict so an admin can fix it.
+        var duplicatePersonIds = personIdLinks
+            .GroupBy(l => l.PersonId)
+            .Where(g => g.Count() > 1)
+            .Select(g => g.Key)
+            .ToList();
+
+        if (duplicatePersonIds.Count > 0)
+        {
+            logger?.LogWarning(
+                "Multiple ApplicationUsers linked to the same PersonId(s): {PersonIds}. Using the earliest user per person.",
+                string.Join(",", duplicatePersonIds));
+        }
+
+        var userIdByPersonId = personIdLinks
+            .GroupBy(l => l.PersonId)
+            .ToDictionary(g => g.Key, g => g.OrderBy(x => x.Id, StringComparer.Ordinal).First().Id);
 
         // Load assigned game roles for this game keyed by UserId (not by email string),
         // so adults linked only via PersonId still see their roles.

@@ -92,6 +92,51 @@ public sealed class GameRolesViewServiceTests
     }
 
     // ---------------------------------------------------------------
+    // BuildAdultViewsAsync — data-quality guard
+    // ---------------------------------------------------------------
+
+    /// <summary>
+    /// Regression test for v0.9.22 hotfix: /organizace/role crashed with
+    /// ArgumentException ("An item with the same key has already been added. Key: 114")
+    /// when two ApplicationUsers shared the same PersonId. The page must not crash;
+    /// it should pick one user deterministically (earliest Id) and log a warning.
+    /// </summary>
+    [Fact]
+    public async Task BuildAdultViewsAsync_does_not_crash_when_duplicate_personid_links_exist()
+    {
+        var options = CreateOptions();
+        int personId;
+        await using (var db = new ApplicationDbContext(options))
+        {
+            await SeedGameAsync(db);
+
+            var person = CreatePerson("Bob", "Duplicate", email: null);
+            db.People.Add(person);
+            await db.SaveChangesAsync();
+            personId = person.Id;
+
+            // Two ApplicationUsers linked to the SAME PersonId — the exact prod data-quality
+            // defect that crashed v0.9.21's .ToDictionary(l => l.PersonId, ...) call.
+            var userA = CreateUser("user-a", "Bob A", "bob-a@example.cz");
+            userA.PersonId = personId;
+            var userB = CreateUser("user-b", "Bob B", "bob-b@example.cz");
+            userB.PersonId = personId;
+            db.Users.AddRange(userA, userB);
+            await db.SaveChangesAsync();
+
+            await AddAdultRegistrationAsync(db, person, AdultRoleFlags.None);
+        }
+
+        // Must not throw.
+        var views = await CreateService(options).BuildAdultViewsAsync(GameId);
+
+        var view = Assert.Single(views);
+        Assert.True(view.HasAccount);
+        // Deterministic pick: earliest user-id by ordinal comparison.
+        Assert.Equal("user-a", view.UserId);
+    }
+
+    // ---------------------------------------------------------------
     // BuildAdultViewsAsync — assigned-roles lookup via PersonId link
     // ---------------------------------------------------------------
 
