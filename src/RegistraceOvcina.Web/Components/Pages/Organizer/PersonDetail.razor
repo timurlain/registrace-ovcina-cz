@@ -48,6 +48,36 @@ else
             <div class="alert alert-danger mb-0">@errorMessage</div>
         }
 
+        <form method="post" action="/organizace/osoby/@PersonId/kontakt" class="card card-body border-0 bg-light" data-testid="person-contact-editor">
+            <AntiforgeryToken />
+            <h2 class="h6 mb-2">Kontakt</h2>
+            <div class="row g-2">
+                <div class="col-md-6">
+                    <label class="form-label small" for="email-input">E-mail</label>
+                    <input id="email-input" type="email" name="email" class="form-control" value="@model.Email" placeholder="jmeno@domena.cz" />
+                </div>
+                <div class="col-md-4">
+                    <label class="form-label small" for="phone-input">Telefon</label>
+                    <input id="phone-input" type="tel" name="phone" class="form-control" value="@model.Phone" placeholder="+420 ..." />
+                </div>
+                <div class="col-md-2 d-flex align-items-end">
+                    <button type="submit" class="btn btn-primary w-100">Uložit</button>
+                </div>
+            </div>
+            @if (!string.IsNullOrWhiteSpace(contactMessage))
+            {
+                <div class="small mt-2 @(contactOk ? "text-success" : contactNeutral ? "text-secondary" : "text-danger")" data-testid="contact-status">
+                    @contactMessage
+                </div>
+            }
+            @if (showLinkOrCreateHint)
+            {
+                <div class="small mt-2 text-secondary" data-testid="contact-link-hint">
+                    Tip: V sekci <a href="/organizace/role">/organizace/role</a> nyní klikni "Vytvořit/propojit účet" u této osoby.
+                </div>
+            }
+        </form>
+
         <div class="row g-4">
             <div class="col-xl-5">
                 <section class="card shadow-sm border-0 h-100">
@@ -438,12 +468,19 @@ else
     [SupplyParameterFromQuery(Name = "confirmMerge")]
     private int? ConfirmMerge { get; set; }
 
+    [SupplyParameterFromQuery(Name = "contact")]
+    private string? ContactStatus { get; set; }
+
     private PersonReviewDetailPageModel? model;
     private string? statusMessage;
     private string? errorMessage;
     private bool isLoaded;
     private List<PersonSearchResultItem>? searchResults;
     private int? confirmingMergePersonId;
+    private string? contactMessage;
+    private bool contactOk;
+    private bool contactNeutral;
+    private bool showLinkOrCreateHint;
 
     protected override async Task OnParametersSetAsync()
     {
@@ -464,6 +501,22 @@ else
             searchResults = await PeopleReviewService.SearchPersonsAsync(SearchMerge, PersonId);
             confirmingMergePersonId = ConfirmMerge;
         }
+
+        (contactMessage, contactOk, contactNeutral) = ContactStatus switch
+        {
+            "updated" => ("Kontakt uložen.", true, false),
+            "email-conflict" => ("E-mail už používá jiná osoba. Pokud to je ta stejná, zkus nejprve sloučit osoby.", false, false),
+            "no-change" => ("Nebyly uloženy žádné změny.", false, true),
+            _ => (null, false, false)
+        };
+
+        // After a successful save, nudge the organizer toward the link-or-create step
+        // — it's the usual next move when filling in an email for a legacy Person that
+        // doesn't yet have a User account attached.
+        showLinkOrCreateHint = model is not null
+            && ContactStatus == "updated"
+            && !string.IsNullOrWhiteSpace(model.Email)
+            && model.LinkedAccounts.Count == 0;
 
         isLoaded = true;
     }
