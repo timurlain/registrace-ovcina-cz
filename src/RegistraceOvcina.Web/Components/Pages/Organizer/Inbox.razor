@@ -61,6 +61,11 @@ else
                             {
                                 <span class="badge bg-danger align-self-center">Odeslání se nezdařilo.</span>
                             }
+                            @if (bulkSent.HasValue)
+                            {
+                                var failedNote = bulkFailed is > 0 ? $" (selhalo {bulkFailed})" : "";
+                                <span class="badge bg-success align-self-center" data-testid="bulk-send-result">Hromadně odesláno: @bulkSent zpráv@(failedNote)</span>
+                            }
                             <form method="post" action="/organizace/posta/sync">
                                 <AntiforgeryToken />
                                 <button type="submit" class="btn btn-outline-primary" data-testid="inbox-sync-button">Synchronizovat</button>
@@ -74,9 +79,14 @@ else
         @if (InboxService.CanReply)
         {
             <div class="col-12">
-                <button type="button" class="btn btn-primary mb-3" @onclick="ToggleCompose">
-                    @(showCompose ? "Skrýt" : "Nová zpráva")
-                </button>
+                <div class="d-flex gap-2 mb-3">
+                    <button type="button" class="btn btn-primary" @onclick="ToggleCompose" data-testid="inbox-compose-toggle">
+                        @(showCompose ? "Skrýt" : "Nová zpráva")
+                    </button>
+                    <button type="button" class="btn btn-outline-primary" @onclick="ToggleBulkCompose" data-testid="inbox-bulk-compose-toggle">
+                        @(showBulkCompose ? "Skrýt hromadnou" : "Hromadná zpráva")
+                    </button>
+                </div>
 
                 @if (showCompose)
                 {
@@ -98,6 +108,62 @@ else
                                     <textarea name="Body" class="form-control" rows="5" placeholder="Dobrý den,..." required></textarea>
                                 </div>
                                 <button type="submit" class="btn btn-primary">Odeslat</button>
+                            </form>
+                        </div>
+                    </div>
+                }
+
+                @if (showBulkCompose)
+                {
+                    <div class="card shadow-sm mb-4 border-primary-subtle" data-testid="inbox-bulk-compose-card">
+                        <div class="card-body p-4">
+                            <h3 class="h5 mb-3">Hromadná zpráva</h3>
+                            <p class="text-secondary small mb-3">
+                                Odešle stejnou zprávu všem vybraným příjemcům. Adresy se deduplikují &mdash; jedna domácnost dostane zprávu jen jednou, i když je přihlášena na více her.
+                            </p>
+                            <form method="post" action="/organizace/posta/hromadne"
+                                  onsubmit="return confirm('Opravdu odeslat zprávu všem vybraným příjemcům? Tato akce nelze vrátit.');">
+                                <AntiforgeryToken />
+
+                                <div class="mb-3">
+                                    <label class="form-label fw-semibold">Příjemci</label>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="radio" name="recipientMode" id="bulk-mode-game" value="game" checked />
+                                        <label class="form-check-label" for="bulk-mode-game">
+                                            Účastníci konkrétní hry
+                                        </label>
+                                    </div>
+                                    <div class="ms-4 mb-2">
+                                        <select name="gameId" class="form-select" data-testid="inbox-bulk-game">
+                                            @if (bulkGames.Count == 0)
+                                            {
+                                                <option value="">(Žádné hry)</option>
+                                            }
+                                            @foreach (var g in bulkGames)
+                                            {
+                                                var c = bulkRecipientCounts is not null && bulkRecipientCounts.CountByGameId.TryGetValue(g.Id, out var n) ? n : 0;
+                                                <option value="@g.Id">@g.Name (@c příjemců)</option>
+                                            }
+                                        </select>
+                                    </div>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="radio" name="recipientMode" id="bulk-mode-all" value="all" />
+                                        <label class="form-check-label" for="bulk-mode-all">
+                                            Všichni registrovaní účastníci
+                                            <span class="text-muted small">(@(bulkRecipientCounts?.AllCount ?? 0) příjemců)</span>
+                                        </label>
+                                    </div>
+                                </div>
+
+                                <div class="mb-3">
+                                    <label class="form-label">Předmět</label>
+                                    <input name="Subject" class="form-control" placeholder="Ovčina — ..." required />
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label">Text zprávy</label>
+                                    <textarea name="Body" class="form-control" rows="6" placeholder="Dobrý den,..." required></textarea>
+                                </div>
+                                <button type="submit" class="btn btn-primary" data-testid="inbox-bulk-submit">Odeslat hromadně</button>
                             </form>
                         </div>
                     </div>
@@ -232,13 +298,27 @@ else
     [SupplyParameterFromQuery(Name = "sendError")]
     private int? sendError { get; set; }
 
+    [SupplyParameterFromQuery(Name = "bulkSent")]
+    private int? bulkSent { get; set; }
+
+    [SupplyParameterFromQuery(Name = "bulkFailed")]
+    private int? bulkFailed { get; set; }
+
     private InboxPageResult? result;
     private bool showCompose;
+    private bool showBulkCompose;
     private bool autoSynced;
+    private List<GameLookupItem> bulkGames = new();
+    private BulkRecipientCounts? bulkRecipientCounts;
 
     private void ToggleCompose()
     {
         showCompose = !showCompose;
+    }
+
+    private void ToggleBulkCompose()
+    {
+        showBulkCompose = !showBulkCompose;
     }
 
     private EmailDirection? GetDirectionFilter() => tab switch
@@ -270,5 +350,12 @@ else
         }
 
         result = await InboxService.GetMessagesAsync(page, directionFilter: GetDirectionFilter());
+
+        // Load bulk-compose data only when the organizer can actually send (mailbox configured).
+        if (InboxService.CanReply)
+        {
+            bulkGames = await InboxService.GetGamesForBulkEmailAsync();
+            bulkRecipientCounts = await InboxService.GetBulkRecipientCountsAsync();
+        }
     }
 }

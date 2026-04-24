@@ -469,6 +469,25 @@ public sealed class InboxService(
             .ToList();
     }
 
+    /// <summary>
+    /// Returns recipient counts for the bulk-compose UI so organizers can see
+    /// how many addresses each scope hits before they send. The "all" count
+    /// is computed via the same DISTINCT pipeline as <see cref="GetBulkRecipientsAsync"/>,
+    /// so it equals the actual send target — not a naive sum of per-game counts
+    /// (a household registered for two games is a single recipient).
+    /// </summary>
+    public async Task<BulkRecipientCounts> GetBulkRecipientCountsAsync(CancellationToken ct = default)
+    {
+        var allCount = (await GetBulkRecipientsAsync(null, ct)).Count;
+        var games = await GetGamesForBulkEmailAsync(ct);
+        var perGame = new Dictionary<int, int>(games.Count);
+        foreach (var g in games)
+        {
+            perGame[g.Id] = (await GetBulkRecipientsAsync(g.Id, ct)).Count;
+        }
+        return new BulkRecipientCounts(allCount, perGame);
+    }
+
     public async Task<(int Sent, int Failed)> SendBulkEmailAsync(
         List<string> recipients,
         string subject,
@@ -512,3 +531,5 @@ public sealed record InboxPageResult(
 public sealed record SubmissionLookupItem(int Id, string Label);
 public sealed record PersonLookupItem(int Id, string Name);
 public sealed record GameLookupItem(int Id, string Name);
+
+public sealed record BulkRecipientCounts(int AllCount, IReadOnlyDictionary<int, int> CountByGameId);

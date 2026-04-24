@@ -1163,7 +1163,7 @@ public class Program
             .RequireAuthorization(AuthorizationPolicies.StaffOnly);
         app.MapPost(
                 "/organizace/posta/hromadne",
-                async ([FromForm] string subject, [FromForm] string body, [FromForm] int? gameId, HttpContext httpContext, UserManager<ApplicationUser> userManager, InboxService inboxService) =>
+                async ([FromForm] string subject, [FromForm] string body, [FromForm] string? recipientMode, [FromForm] int? gameId, HttpContext httpContext, UserManager<ApplicationUser> userManager, InboxService inboxService) =>
                 {
                     var user = await userManager.GetUserAsync(httpContext.User);
                     if (user is null)
@@ -1176,7 +1176,11 @@ public class Program
                         return Results.LocalRedirect("/organizace/posta?sendError=1");
                     }
 
-                    var recipients = await inboxService.GetBulkRecipientsAsync(gameId, httpContext.RequestAborted);
+                    // recipientMode == "all" → null (every registered household);
+                    // otherwise scope to the chosen game.
+                    var scopeGameId = string.Equals(recipientMode, "all", StringComparison.Ordinal) ? null : gameId;
+
+                    var recipients = await inboxService.GetBulkRecipientsAsync(scopeGameId, httpContext.RequestAborted);
                     if (recipients.Count == 0)
                     {
                         return Results.LocalRedirect("/organizace/posta?sendError=1");
