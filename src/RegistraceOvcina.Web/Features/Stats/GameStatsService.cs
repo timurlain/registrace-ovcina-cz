@@ -1,9 +1,12 @@
 using Microsoft.EntityFrameworkCore;
 using RegistraceOvcina.Web.Data;
+using RegistraceOvcina.Web.Features.Submissions;
 
 namespace RegistraceOvcina.Web.Features.Stats;
 
-public sealed class GameStatsService(IDbContextFactory<ApplicationDbContext> dbContextFactory)
+public sealed class GameStatsService(
+    IDbContextFactory<ApplicationDbContext> dbContextFactory,
+    SubmissionPricingService pricingService)
 {
     public async Task<GameStats?> GetGameStatsAsync(int gameId, CancellationToken cancellationToken = default)
     {
@@ -149,29 +152,60 @@ public sealed class GameStatsService(IDbContextFactory<ApplicationDbContext> dbC
         var kingdomUnassigned = playerCount - totalAssignedPlayers;
 
         // --- Financial ---
+        // Recompute expected total per submission from active registrations on every
+        // load — the persisted ExpectedTotalAmount drifts when an attendee is
+        // cancelled (Registration.Status → Cancelled) without a re-save of the
+        // submission. /organizace/platby (PaymentService) does the same recompute,
+        // so dashboard and payments view can't disagree (issue #181).
+        //
+        // We reuse the `game` instance and the `registrations` list loaded above
+        // (already filtered to Status == Active), grouped by SubmissionId — no need
+        // to round-trip Game / Registrations / Person / FoodOrders again.
+        var registrationsBySubmission = registrations
+            .GroupBy(r => r.SubmissionId)
+            .ToDictionary(g => g.Key, g => g.ToList());
+
         var submittedSubmissions = await db.RegistrationSubmissions
             .AsNoTracking()
             .Include(x => x.Payments)
             .Where(x => x.GameId == gameId && x.Status == SubmissionStatus.Submitted)
             .ToListAsync(cancellationToken);
 
-        var expectedTotal = submittedSubmissions.Sum(x => x.ExpectedTotalAmount);
-        var paidTotal = submittedSubmissions.Sum(x => x.Payments.Sum(p => p.Amount));
-        var donationTotal = submittedSubmissions.Sum(x => x.VoluntaryDonation);
-        var unpaidSubmissionCount = submittedSubmissions
-            .Count(x => x.Payments.Sum(p => p.Amount) < x.ExpectedTotalAmount && x.ExpectedTotalAmount > 0);
+        var expectedTotal = 0m;
+        var paidTotal = 0m;
+        var donationTotal = 0m;
+        var unpaidSubmissionCount = 0;
+        var donorEntries = new List<DonorEntry>();
 
-        // Named donor breakdown, sorted largest-first. Only submissions with an
-        // actual voluntary contribution are included.
-        var donors = submittedSubmissions
-            .Where(x => x.VoluntaryDonation > 0m)
-            .OrderByDescending(x => x.VoluntaryDonation)
-            .ThenBy(x => x.PrimaryContactName, StringComparer.CurrentCulture)
-            .Select(x => new DonorEntry(
-                x.Id,
-                string.IsNullOrWhiteSpace(x.PrimaryContactName) ? "(bez jména)" : x.PrimaryContactName,
-                x.PrimaryEmail,
-                x.VoluntaryDonation))
+        foreach (var sub in submittedSubmissions)
+        {
+            var subRegistrations = registrationsBySubmission.GetValueOrDefault(sub.Id, []);
+            var computedExpected = pricingService.CalculateExpectedTotal(game, subRegistrations, sub.VoluntaryDonation);
+            var paid = sub.Payments.Sum(p => p.Amount);
+
+            expectedTotal += computedExpected;
+            paidTotal += paid;
+            donationTotal += sub.VoluntaryDonation;
+
+            if (computedExpected > 0 && paid < computedExpected)
+            {
+                unpaidSubmissionCount++;
+            }
+
+            if (sub.VoluntaryDonation > 0m)
+            {
+                donorEntries.Add(new DonorEntry(
+                    sub.Id,
+                    string.IsNullOrWhiteSpace(sub.PrimaryContactName) ? "(bez jména)" : sub.PrimaryContactName,
+                    sub.PrimaryEmail,
+                    sub.VoluntaryDonation));
+            }
+        }
+
+        // Named donor breakdown, sorted largest-first.
+        var donors = donorEntries
+            .OrderByDescending(x => x.Amount)
+            .ThenBy(x => x.ContactName, StringComparer.CurrentCulture)
             .ToList();
 
         // --- Food / Meals ---
