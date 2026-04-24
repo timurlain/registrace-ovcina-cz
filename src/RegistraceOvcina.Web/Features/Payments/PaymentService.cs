@@ -79,9 +79,16 @@ public sealed class PaymentService(
         string actorUserId,
         CancellationToken cancellationToken = default)
     {
-        if (amount == 0m)
+        // Payment.Amount is stored as numeric(18,2) in Postgres. Reject anything
+        // that would silently round to 0.00 (e.g. 0.001) or anything with sub-haléř
+        // precision the DB will round away — those are footguns, not refunds.
+        if (decimal.Round(amount, 2, MidpointRounding.AwayFromZero) == 0m)
         {
             throw new InvalidOperationException("Částka nesmí být nulová.");
+        }
+        if (amount != decimal.Round(amount, 2, MidpointRounding.AwayFromZero))
+        {
+            throw new InvalidOperationException("Částka může mít nejvýše dvě desetinná místa.");
         }
 
         await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);

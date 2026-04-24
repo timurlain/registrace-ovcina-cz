@@ -57,6 +57,59 @@ public sealed class PaymentServiceRefundTests
         Assert.Equal(1500m, stored.Amount);
     }
 
+    [Theory]
+    [InlineData(0.001)]
+    [InlineData(-0.001)]
+    [InlineData(0.0049)]
+    public async Task RecordPaymentAsync_rejects_subhaler_amount_that_rounds_to_zero(decimal amount)
+    {
+        // Payment.Amount is numeric(18,2) in Postgres — anything below 0.005
+        // would be rounded to 0.00 and persisted as a meaningless no-op record.
+        var options = CreateOptions();
+        await SeedSubmissionAsync(options);
+
+        var service = BuildService(options);
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            service.RecordPaymentAsync(
+                SubmissionId,
+                amount,
+                PaymentMethod.BankTransfer,
+                reference: null,
+                note: null,
+                actorUserId: ActorUserId));
+
+        Assert.Contains("nesmí být nulová", ex.Message);
+
+        await using var db = new ApplicationDbContext(options);
+        Assert.Empty(db.Payments);
+    }
+
+    [Theory]
+    [InlineData(1.234)]
+    [InlineData(-99.999)]
+    public async Task RecordPaymentAsync_rejects_more_than_two_decimal_places(decimal amount)
+    {
+        var options = CreateOptions();
+        await SeedSubmissionAsync(options);
+
+        var service = BuildService(options);
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            service.RecordPaymentAsync(
+                SubmissionId,
+                amount,
+                PaymentMethod.BankTransfer,
+                reference: null,
+                note: null,
+                actorUserId: ActorUserId));
+
+        Assert.Contains("dvě desetinná místa", ex.Message);
+
+        await using var db = new ApplicationDbContext(options);
+        Assert.Empty(db.Payments);
+    }
+
     [Fact]
     public async Task RecordPaymentAsync_rejects_zero_amount()
     {
