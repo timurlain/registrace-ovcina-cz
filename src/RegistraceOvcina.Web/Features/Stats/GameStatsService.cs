@@ -157,13 +157,17 @@ public sealed class GameStatsService(
         // cancelled (Registration.Status → Cancelled) without a re-save of the
         // submission. /organizace/platby (PaymentService) does the same recompute,
         // so dashboard and payments view can't disagree (issue #181).
+        //
+        // We reuse the `game` instance and the `registrations` list loaded above
+        // (already filtered to Status == Active), grouped by SubmissionId — no need
+        // to round-trip Game / Registrations / Person / FoodOrders again.
+        var registrationsBySubmission = registrations
+            .GroupBy(r => r.SubmissionId)
+            .ToDictionary(g => g.Key, g => g.ToList());
+
         var submittedSubmissions = await db.RegistrationSubmissions
             .AsNoTracking()
-            .Include(x => x.Game)
-            .Include(x => x.Registrations).ThenInclude(r => r.Person)
-            .Include(x => x.Registrations).ThenInclude(r => r.FoodOrders)
             .Include(x => x.Payments)
-            .AsSplitQuery()
             .Where(x => x.GameId == gameId && x.Status == SubmissionStatus.Submitted)
             .ToListAsync(cancellationToken);
 
@@ -175,7 +179,8 @@ public sealed class GameStatsService(
 
         foreach (var sub in submittedSubmissions)
         {
-            var computedExpected = pricingService.CalculateExpectedTotal(sub.Game, sub.Registrations, sub.VoluntaryDonation);
+            var subRegistrations = registrationsBySubmission.GetValueOrDefault(sub.Id, []);
+            var computedExpected = pricingService.CalculateExpectedTotal(game, subRegistrations, sub.VoluntaryDonation);
             var paid = sub.Payments.Sum(p => p.Amount);
 
             expectedTotal += computedExpected;
