@@ -122,20 +122,29 @@ else
                                 Odešle stejnou zprávu všem vybraným příjemcům. Adresy se deduplikují &mdash; jedna domácnost dostane zprávu jen jednou, i když je přihlášena na více her.
                             </p>
                             <form method="post" action="/organizace/posta/hromadne"
-                                  onsubmit="return confirm('Opravdu odeslat zprávu všem vybraným příjemcům? Tato akce nelze vrátit.');">
+                                  onsubmit="return confirm('Opravdu odeslat zprávu všem vybraným příjemcům? Tuto akci nelze vrátit.');">
                                 <AntiforgeryToken />
 
+                                @{
+                                    // Default to "all" when there are no games — otherwise the
+                                    // "game" radio is checked but the gameId select is empty,
+                                    // and a strict server check would reject the submit. Server
+                                    // also enforces this; the UI default just keeps the
+                                    // happy path obvious.
+                                    var hasGames = bulkGames.Count > 0;
+                                    var defaultGameMode = hasGames;
+                                }
                                 <div class="mb-3">
                                     <label class="form-label fw-semibold">Příjemci</label>
                                     <div class="form-check">
-                                        <input class="form-check-input" type="radio" name="recipientMode" id="bulk-mode-game" value="game" checked />
+                                        <input class="form-check-input" type="radio" name="recipientMode" id="bulk-mode-game" value="game" checked="@defaultGameMode" disabled="@(!hasGames)" />
                                         <label class="form-check-label" for="bulk-mode-game">
                                             Účastníci konkrétní hry
                                         </label>
                                     </div>
                                     <div class="ms-4 mb-2">
-                                        <select name="gameId" class="form-select" data-testid="inbox-bulk-game">
-                                            @if (bulkGames.Count == 0)
+                                        <select name="gameId" class="form-select" data-testid="inbox-bulk-game" disabled="@(!hasGames)">
+                                            @if (!hasGames)
                                             {
                                                 <option value="">(Žádné hry)</option>
                                             }
@@ -147,7 +156,7 @@ else
                                         </select>
                                     </div>
                                     <div class="form-check">
-                                        <input class="form-check-input" type="radio" name="recipientMode" id="bulk-mode-all" value="all" />
+                                        <input class="form-check-input" type="radio" name="recipientMode" id="bulk-mode-all" value="all" checked="@(!hasGames)" />
                                         <label class="form-check-label" for="bulk-mode-all">
                                             Všichni registrovaní účastníci
                                             <span class="text-muted small">(@(bulkRecipientCounts?.AllCount ?? 0) příjemců)</span>

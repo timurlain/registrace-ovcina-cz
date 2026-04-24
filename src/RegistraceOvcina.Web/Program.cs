@@ -1176,9 +1176,23 @@ public class Program
                         return Results.LocalRedirect("/organizace/posta?sendError=1");
                     }
 
-                    // recipientMode == "all" → null (every registered household);
-                    // otherwise scope to the chosen game.
-                    var scopeGameId = string.Equals(recipientMode, "all", StringComparison.Ordinal) ? null : gameId;
+                    // Strict mode validation: only "all" or "game" are accepted, and
+                    // "game" requires a non-null gameId. A missing/garbled mode must
+                    // NOT silently fall through to "send to everyone" — that's the
+                    // worst-case footgun for a bulk-email button.
+                    int? scopeGameId;
+                    if (string.Equals(recipientMode, "all", StringComparison.Ordinal))
+                    {
+                        scopeGameId = null;
+                    }
+                    else if (string.Equals(recipientMode, "game", StringComparison.Ordinal) && gameId.HasValue)
+                    {
+                        scopeGameId = gameId;
+                    }
+                    else
+                    {
+                        return Results.LocalRedirect("/organizace/posta?sendError=1");
+                    }
 
                     var recipients = await inboxService.GetBulkRecipientsAsync(scopeGameId, httpContext.RequestAborted);
                     if (recipients.Count == 0)
