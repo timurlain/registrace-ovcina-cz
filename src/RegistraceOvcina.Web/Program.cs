@@ -1317,9 +1317,9 @@ public class Program
                         return Results.LocalRedirect($"/Account/Login?ReturnUrl={Uri.EscapeDataString("/organizace/platby")}");
                     }
 
-                    if (amount <= 0)
+                    if (amount == 0)
                     {
-                        return Results.LocalRedirect($"/organizace/platby?error={Uri.EscapeDataString("Částka musí být kladná.")}");
+                        return Results.LocalRedirect($"/organizace/platby?error={Uri.EscapeDataString("Částka nesmí být nulová.")}");
                     }
 
                     if (!Enum.IsDefined(typeof(PaymentMethod), method))

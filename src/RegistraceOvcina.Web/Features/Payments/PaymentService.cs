@@ -79,6 +79,11 @@ public sealed class PaymentService(
         string actorUserId,
         CancellationToken cancellationToken = default)
     {
+        if (amount == 0m)
+        {
+            throw new InvalidOperationException("Částka nesmí být nulová.");
+        }
+
         await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
 
         var exists = await db.RegistrationSubmissions
