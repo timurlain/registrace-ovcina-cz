@@ -1,6 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using RegistraceOvcina.Web.Data;
 using RegistraceOvcina.Web.Features.Stats;
+using RegistraceOvcina.Web.Features.Submissions;
 
 namespace RegistraceOvcina.Web.Tests.Features.CharacterPrep;
 
@@ -35,7 +36,7 @@ public sealed class GameStatsCharacterPrepWidgetTests
         await AddSubmissionAsync(options, submissionId: 3,
             players: new[] { new PlayerSpec(hasName: true, hasEquipment: false) });
 
-        var service = new GameStatsService(new TestDbContextFactory(options));
+        var service = new GameStatsService(new TestDbContextFactory(options), new SubmissionPricingService(TimeProvider.System));
         var stats = await service.GetGameStatsAsync(GameId);
 
         Assert.NotNull(stats);
@@ -63,7 +64,7 @@ public sealed class GameStatsCharacterPrepWidgetTests
             players: new[] { new PlayerSpec(hasName: true, hasEquipment: true) },
             isDeleted: true);
 
-        var service = new GameStatsService(new TestDbContextFactory(options));
+        var service = new GameStatsService(new TestDbContextFactory(options), new SubmissionPricingService(TimeProvider.System));
         var stats = await service.GetGameStatsAsync(GameId);
 
         Assert.NotNull(stats);
@@ -77,7 +78,7 @@ public sealed class GameStatsCharacterPrepWidgetTests
         var options = CreateOptions();
         await SeedGameAsync(options);
 
-        var service = new GameStatsService(new TestDbContextFactory(options));
+        var service = new GameStatsService(new TestDbContextFactory(options), new SubmissionPricingService(TimeProvider.System));
         var stats = await service.GetGameStatsAsync(GameId);
 
         Assert.NotNull(stats);
