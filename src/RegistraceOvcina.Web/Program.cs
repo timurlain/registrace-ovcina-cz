@@ -1163,7 +1163,7 @@ public class Program
             .RequireAuthorization(AuthorizationPolicies.StaffOnly);
         app.MapPost(
                 "/organizace/posta/hromadne",
-                async ([FromForm] string subject, [FromForm] string body, [FromForm] int? gameId, HttpContext httpContext, UserManager<ApplicationUser> userManager, InboxService inboxService) =>
+                async ([FromForm] string subject, [FromForm] string body, [FromForm] string? recipientMode, [FromForm] int? gameId, HttpContext httpContext, UserManager<ApplicationUser> userManager, InboxService inboxService) =>
                 {
                     var user = await userManager.GetUserAsync(httpContext.User);
                     if (user is null)
@@ -1176,7 +1176,25 @@ public class Program
                         return Results.LocalRedirect("/organizace/posta?sendError=1");
                     }
 
-                    var recipients = await inboxService.GetBulkRecipientsAsync(gameId, httpContext.RequestAborted);
+                    // Strict mode validation: only "all" or "game" are accepted, and
+                    // "game" requires a non-null gameId. A missing/garbled mode must
+                    // NOT silently fall through to "send to everyone" — that's the
+                    // worst-case footgun for a bulk-email button.
+                    int? scopeGameId;
+                    if (string.Equals(recipientMode, "all", StringComparison.Ordinal))
+                    {
+                        scopeGameId = null;
+                    }
+                    else if (string.Equals(recipientMode, "game", StringComparison.Ordinal) && gameId.HasValue)
+                    {
+                        scopeGameId = gameId;
+                    }
+                    else
+                    {
+                        return Results.LocalRedirect("/organizace/posta?sendError=1");
+                    }
+
+                    var recipients = await inboxService.GetBulkRecipientsAsync(scopeGameId, httpContext.RequestAborted);
                     if (recipients.Count == 0)
                     {
                         return Results.LocalRedirect("/organizace/posta?sendError=1");

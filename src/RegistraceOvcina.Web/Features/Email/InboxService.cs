@@ -469,6 +469,68 @@ public sealed class InboxService(
             .ToList();
     }
 
+    /// <summary>
+    /// Returns recipient counts for the bulk-compose UI so organizers can see
+    /// how many addresses each scope hits before they send. The counts equal
+    /// the actual send target (same DISTINCT-after-trim+lower pipeline as
+    /// <see cref="GetBulkRecipientsAsync"/>), so a household registered for
+    /// two games is counted once in "all" but once per game it appears in.
+    /// Counts are computed server-side via <c>UNION</c> + <c>CountAsync</c>
+    /// over a single shared DbContext — no full lists are materialized.
+    /// </summary>
+    public async Task<BulkRecipientCounts> GetBulkRecipientCountsAsync(CancellationToken ct = default)
+    {
+        await using var db = await dbContextFactory.CreateDbContextAsync(ct);
+
+        var allCount = await ComputeRecipientCountAsync(db, gameId: null, ct);
+
+        var gameIds = await db.Games
+            .Where(g => g.IsPublished)
+            .OrderByDescending(g => g.StartsAtUtc)
+            .Select(g => g.Id)
+            .ToListAsync(ct);
+
+        var perGame = new Dictionary<int, int>(gameIds.Count);
+        foreach (var gid in gameIds)
+        {
+            perGame[gid] = await ComputeRecipientCountAsync(db, gid, ct);
+        }
+        return new BulkRecipientCounts(allCount, perGame);
+    }
+
+    private static async Task<int> ComputeRecipientCountAsync(ApplicationDbContext db, int? gameId, CancellationToken ct)
+    {
+        // Trim + ToLower (NOT ToLowerInvariant — Npgsql can't translate that;
+        // see MEMORY.md / v0.9.18 outage) push to SQL; Union becomes UNION
+        // which is implicitly DISTINCT, and CountAsync stays server-side.
+        if (gameId is { } gid)
+        {
+            var submissionEmails = db.RegistrationSubmissions
+                .Where(s => s.GameId == gid && !s.IsDeleted && s.Status != SubmissionStatus.Cancelled
+                    && s.PrimaryEmail != null && s.PrimaryEmail != "")
+                .Select(s => s.PrimaryEmail.Trim().ToLower());
+
+            var registrationEmails = db.Registrations
+                .Where(r => r.Submission.GameId == gid && !r.Submission.IsDeleted
+                    && r.Submission.Status != SubmissionStatus.Cancelled
+                    && r.ContactEmail != null && r.ContactEmail != "")
+                .Select(r => r.ContactEmail!.Trim().ToLower());
+
+            return await submissionEmails.Union(registrationEmails).CountAsync(ct);
+        }
+
+        var personEmails = db.People
+            .Where(p => !p.IsDeleted && p.Email != null && p.Email != "")
+            .Select(p => p.Email!.Trim().ToLower());
+
+        var allSubmissionEmails = db.RegistrationSubmissions
+            .Where(s => !s.IsDeleted && s.Status != SubmissionStatus.Cancelled
+                && s.PrimaryEmail != null && s.PrimaryEmail != "")
+            .Select(s => s.PrimaryEmail.Trim().ToLower());
+
+        return await personEmails.Union(allSubmissionEmails).CountAsync(ct);
+    }
+
     public async Task<(int Sent, int Failed)> SendBulkEmailAsync(
         List<string> recipients,
         string subject,
@@ -512,3 +574,5 @@ public sealed record InboxPageResult(
 public sealed record SubmissionLookupItem(int Id, string Label);
 public sealed record PersonLookupItem(int Id, string Name);
 public sealed record GameLookupItem(int Id, string Name);
+
+public sealed record BulkRecipientCounts(int AllCount, IReadOnlyDictionary<int, int> CountByGameId);
