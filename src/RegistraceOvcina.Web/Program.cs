@@ -1335,11 +1335,8 @@ public class Program
                         return Results.LocalRedirect($"/Account/Login?ReturnUrl={Uri.EscapeDataString("/organizace/platby")}");
                     }
 
-                    if (amount <= 0)
-                    {
-                        return Results.LocalRedirect($"/organizace/platby?error={Uri.EscapeDataString("Částka musí být kladná.")}");
-                    }
-
+                    // Amount validation (zero / >2 decimal scale) lives in PaymentService
+                    // — the catch below surfaces the localized error message.
                     if (!Enum.IsDefined(typeof(PaymentMethod), method))
                     {
                         return Results.LocalRedirect($"/organizace/platby?error={Uri.EscapeDataString("Neplatný způsob platby.")}");
