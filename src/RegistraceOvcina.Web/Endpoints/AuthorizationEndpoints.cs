@@ -63,6 +63,12 @@ public static class AuthorizationEndpoints
             foreach (var role in roles)
                 identity.AddClaim(Claims.Role, role);
         }
+        else if (request.HasScope("organizer"))
+        {
+            var roles = await userManager.GetRolesAsync(user);
+            if (roles.Contains(Security.RoleNames.Organizer))
+                identity.AddClaim(Claims.Role, "organizer");
+        }
 
         identity.SetScopes(request.GetScopes());
         identity.SetDestinations(GetDestinations);
@@ -95,8 +101,16 @@ public static class AuthorizationEndpoints
                         identity.RemoveClaim(claim);
 
                     var freshRoles = await userManager.GetRolesAsync(user);
-                    foreach (var role in freshRoles)
-                        identity.AddClaim(Claims.Role, role);
+                    if (identity.HasScope("roles"))
+                    {
+                        foreach (var role in freshRoles)
+                            identity.AddClaim(Claims.Role, role);
+                    }
+                    else if (identity.HasScope("organizer"))
+                    {
+                        if (freshRoles.Contains(Security.RoleNames.Organizer))
+                            identity.AddClaim(Claims.Role, "organizer");
+                    }
                 }
             }
 
@@ -127,7 +141,7 @@ public static class AuthorizationEndpoints
         if (principal.HasScope(Scopes.Email))
             response["email"] = principal.GetClaim(Claims.Email);
 
-        if (principal.HasScope("roles"))
+        if (principal.HasScope("roles") || principal.HasScope("organizer"))
             response["role"] = principal.GetClaims(Claims.Role);
 
         return Results.Ok(response);
@@ -160,7 +174,8 @@ public static class AuthorizationEndpoints
                 yield return Destinations.IdentityToken;
                 yield break;
 
-            case Claims.Role when claim.Subject?.HasScope("roles") == true:
+            case Claims.Role when claim.Subject?.HasScope("roles") == true
+                              || claim.Subject?.HasScope("organizer") == true:
                 yield return Destinations.AccessToken;
                 yield return Destinations.IdentityToken;
                 yield break;
