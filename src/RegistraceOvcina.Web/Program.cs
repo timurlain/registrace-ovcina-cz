@@ -196,7 +196,7 @@ public class Program
                     .SetUserInfoEndpointUris("/connect/userinfo")
                     .SetEndSessionEndpointUris("/connect/logout");
 
-                options.RegisterScopes("openid", "profile", "email", "roles");
+                options.RegisterScopes("openid", "profile", "email", "roles", "organizer");
 
                 options.SetAccessTokenLifetime(TimeSpan.FromMinutes(30));
                 options.SetRefreshTokenLifetime(TimeSpan.FromDays(30));

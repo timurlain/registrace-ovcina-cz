@@ -430,6 +430,42 @@ public static class DatabaseInitializer
                 $"{OpenIddictConstants.Permissions.Prefixes.Scope}roles",
             },
         });
+
+        // Glejt — mobile companion PWA for organizers (PKCE public client).
+        // Single client with prod + localhost redirects, matching the baca/ovcinahra pattern.
+        await EnsureClientAsync(manager, new OpenIddictApplicationDescriptor
+        {
+            ClientId = "glejt",
+            DisplayName = "Glejt — Ovčina mobile companion",
+            ConsentType = OpenIddictConstants.ConsentTypes.Implicit,
+            ClientType = OpenIddictConstants.ClientTypes.Public,
+            RedirectUris =
+            {
+                new Uri("https://glejt.ovcina.cz/login/callback"),
+                new Uri("https://localhost:5193/login/callback"),
+            },
+            PostLogoutRedirectUris =
+            {
+                new Uri("https://glejt.ovcina.cz/"),
+                new Uri("https://localhost:5193/"),
+            },
+            Permissions =
+            {
+                OpenIddictConstants.Permissions.Endpoints.Authorization,
+                OpenIddictConstants.Permissions.Endpoints.Token,
+                OpenIddictConstants.Permissions.Endpoints.EndSession,
+                OpenIddictConstants.Permissions.GrantTypes.AuthorizationCode,
+                OpenIddictConstants.Permissions.GrantTypes.RefreshToken,
+                OpenIddictConstants.Permissions.ResponseTypes.Code,
+                OpenIddictConstants.Permissions.Scopes.Email,
+                OpenIddictConstants.Permissions.Scopes.Profile,
+                $"{OpenIddictConstants.Permissions.Prefixes.Scope}organizer",
+            },
+            Requirements =
+            {
+                OpenIddictConstants.Requirements.Features.ProofKeyForCodeExchange,
+            },
+        });
     }
 
     private static async Task EnsureClientAsync(
