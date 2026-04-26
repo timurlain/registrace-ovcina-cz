@@ -57,16 +57,17 @@ public static class AuthorizationEndpoints
         if (request.HasScope(Scopes.Email))
             identity.SetClaim(Claims.Email, await userManager.GetEmailAsync(user));
 
-        if (request.HasScope("roles"))
+        if (request.HasScope("roles") || request.HasScope("organizer"))
         {
             var roles = await userManager.GetRolesAsync(user);
-            foreach (var role in roles)
-                identity.AddClaim(Claims.Role, role);
-        }
-        else if (request.HasScope("organizer"))
-        {
-            var roles = await userManager.GetRolesAsync(user);
-            if (roles.Contains(Security.RoleNames.Organizer))
+
+            if (request.HasScope("roles"))
+            {
+                foreach (var role in roles)
+                    identity.AddClaim(Claims.Role, role);
+            }
+
+            if (request.HasScope("organizer") && roles.Contains(Security.RoleNames.Organizer))
                 identity.AddClaim(Claims.Role, "organizer");
         }
 
@@ -89,26 +90,30 @@ public static class AuthorizationEndpoints
             var identity = result.Principal?.Identity as ClaimsIdentity
                 ?? throw new InvalidOperationException("The claims identity cannot be retrieved.");
 
-            var userManager = context.RequestServices.GetRequiredService<UserManager<ApplicationUser>>();
-            var userId = identity.GetClaim(Claims.Subject);
-            if (userId is not null)
+            var hasRolesScope = identity.HasScope("roles");
+            var hasOrganizerScope = identity.HasScope("organizer");
+            if (hasRolesScope || hasOrganizerScope)
             {
-                var user = await userManager.FindByIdAsync(userId);
-                if (user is not null)
+                var userManager = context.RequestServices.GetRequiredService<UserManager<ApplicationUser>>();
+                var userId = identity.GetClaim(Claims.Subject);
+                if (userId is not null)
                 {
-                    var existingRoles = identity.FindAll(Claims.Role).ToList();
-                    foreach (var claim in existingRoles)
-                        identity.RemoveClaim(claim);
+                    var user = await userManager.FindByIdAsync(userId);
+                    if (user is not null)
+                    {
+                        var existingRoles = identity.FindAll(Claims.Role).ToList();
+                        foreach (var claim in existingRoles)
+                            identity.RemoveClaim(claim);
 
-                    var freshRoles = await userManager.GetRolesAsync(user);
-                    if (identity.HasScope("roles"))
-                    {
-                        foreach (var role in freshRoles)
-                            identity.AddClaim(Claims.Role, role);
-                    }
-                    else if (identity.HasScope("organizer"))
-                    {
-                        if (freshRoles.Contains(Security.RoleNames.Organizer))
+                        var freshRoles = await userManager.GetRolesAsync(user);
+
+                        if (hasRolesScope)
+                        {
+                            foreach (var role in freshRoles)
+                                identity.AddClaim(Claims.Role, role);
+                        }
+
+                        if (hasOrganizerScope && freshRoles.Contains(Security.RoleNames.Organizer))
                             identity.AddClaim(Claims.Role, "organizer");
                     }
                 }
