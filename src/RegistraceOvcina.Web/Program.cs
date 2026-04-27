@@ -364,7 +364,7 @@ public class Program
             });
         }
 
-        app.UseCors(AuthorizationEndpoints.OidcSpaCorsPolicy);
+        app.UseCors();
         app.UseAuthentication();
         app.UseAuthorization();
         app.UseAntiforgery();
