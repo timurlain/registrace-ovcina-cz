@@ -466,6 +466,44 @@ public static class DatabaseInitializer
                 OpenIddictConstants.Requirements.Features.ProofKeyForCodeExchange,
             },
         });
+
+        // Glejt (local dev) — companion PKCE public client for developers running
+        // Glejt on localhost. Mirrors the prod `glejt` shape but with localhost
+        // redirects only (5000 = default Kestrel HTTPS, 5193 = legacy Glejt port).
+        // Tracking: timurlain/registrace-ovcina-cz#192.
+        await EnsureClientAsync(manager, new OpenIddictApplicationDescriptor
+        {
+            ClientId = "glejt-dev",
+            DisplayName = "Glejt — local dev",
+            ConsentType = OpenIddictConstants.ConsentTypes.Implicit,
+            ClientType = OpenIddictConstants.ClientTypes.Public,
+            RedirectUris =
+            {
+                new Uri("https://localhost:5000/login/callback"),
+                new Uri("https://localhost:5193/login/callback"),
+            },
+            PostLogoutRedirectUris =
+            {
+                new Uri("https://localhost:5000/"),
+                new Uri("https://localhost:5193/"),
+            },
+            Permissions =
+            {
+                OpenIddictConstants.Permissions.Endpoints.Authorization,
+                OpenIddictConstants.Permissions.Endpoints.Token,
+                OpenIddictConstants.Permissions.Endpoints.EndSession,
+                OpenIddictConstants.Permissions.GrantTypes.AuthorizationCode,
+                OpenIddictConstants.Permissions.GrantTypes.RefreshToken,
+                OpenIddictConstants.Permissions.ResponseTypes.Code,
+                OpenIddictConstants.Permissions.Scopes.Email,
+                OpenIddictConstants.Permissions.Scopes.Profile,
+                $"{OpenIddictConstants.Permissions.Prefixes.Scope}organizer",
+            },
+            Requirements =
+            {
+                OpenIddictConstants.Requirements.Features.ProofKeyForCodeExchange,
+            },
+        });
     }
 
     private static async Task EnsureClientAsync(
