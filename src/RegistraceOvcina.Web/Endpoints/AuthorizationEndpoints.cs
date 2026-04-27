@@ -11,13 +11,16 @@ namespace RegistraceOvcina.Web.Endpoints;
 
 public static class AuthorizationEndpoints
 {
+    public const string OidcSpaCorsPolicy = "OidcSpa";
+
     public static void MapAuthorizationEndpoints(this WebApplication app)
     {
-        app.MapGet("/connect/authorize", (Delegate)HandleAuthorize);
-        app.MapPost("/connect/authorize", (Delegate)HandleAuthorize);
-        app.MapPost("/connect/token", (Delegate)HandleToken);
-        app.MapGet("/connect/userinfo", (Delegate)HandleUserinfo);
-        app.MapPost("/connect/logout", (Delegate)HandleLogout);
+        var group = app.MapGroup("/connect").RequireCors(OidcSpaCorsPolicy);
+        group.MapGet("/authorize", (Delegate)HandleAuthorize);
+        group.MapPost("/authorize", (Delegate)HandleAuthorize);
+        group.MapPost("/token", (Delegate)HandleToken);
+        group.MapGet("/userinfo", (Delegate)HandleUserinfo);
+        group.MapPost("/logout", (Delegate)HandleLogout);
     }
 
     private static async Task<IResult> HandleAuthorize(HttpContext context)

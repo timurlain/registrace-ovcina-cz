@@ -292,6 +292,13 @@ public class Program
             builder.Services.AddScoped<ICharacterPrepEmailSender, UnconfiguredCharacterPrepEmailSender>();
         }
 
+        builder.Services.AddCors(options =>
+            options.AddPolicy(AuthorizationEndpoints.OidcSpaCorsPolicy, policy => policy
+                .WithOrigins(builder.Configuration
+                    .GetSection("Cors:OidcOrigins").Get<string[]>() ?? [])
+                .WithMethods("GET", "POST")
+                .WithHeaders("Content-Type", "Authorization")));
+
         var app = builder.Build();
 
         app.UseForwardedHeaders();
@@ -357,6 +364,7 @@ public class Program
             });
         }
 
+        app.UseCors(AuthorizationEndpoints.OidcSpaCorsPolicy);
         app.UseAuthentication();
         app.UseAuthorization();
         app.UseAntiforgery();
