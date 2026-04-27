@@ -497,6 +497,7 @@ public static class DatabaseInitializer
                 OpenIddictConstants.Permissions.ResponseTypes.Code,
                 OpenIddictConstants.Permissions.Scopes.Email,
                 OpenIddictConstants.Permissions.Scopes.Profile,
+                $"{OpenIddictConstants.Permissions.Prefixes.Scope}{OpenIddictConstants.Scopes.OfflineAccess}",
                 $"{OpenIddictConstants.Permissions.Prefixes.Scope}organizer",
             },
             Requirements =
