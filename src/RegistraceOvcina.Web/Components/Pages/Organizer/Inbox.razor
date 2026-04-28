@@ -90,92 +90,14 @@ else
 
                 @if (showCompose)
                 {
-                    <div class="card shadow-sm mb-4">
-                        <div class="card-body p-4">
-                            <h3 class="h5 mb-3">Nová zpráva</h3>
-                            <form method="post" action="/organizace/posta/odeslat">
-                                <AntiforgeryToken />
-                                <div class="mb-3">
-                                    <label class="form-label">Příjemce (e-mail)</label>
-                                    <input name="ToEmail" type="email" class="form-control" placeholder="jan@example.cz" required />
-                                </div>
-                                <div class="mb-3">
-                                    <label class="form-label">Předmět</label>
-                                    <input name="Subject" class="form-control" placeholder="Ovčina — ..." required />
-                                </div>
-                                <div class="mb-3">
-                                    <label class="form-label">Text zprávy</label>
-                                    <textarea name="Body" class="form-control" rows="5" placeholder="Dobrý den,..." required></textarea>
-                                </div>
-                                <button type="submit" class="btn btn-primary">Odeslat</button>
-                            </form>
-                        </div>
-                    </div>
+                    <EmailComposeCard Mode="EmailComposeCard.ComposeMode.Single" />
                 }
 
                 @if (showBulkCompose)
                 {
-                    <div class="card shadow-sm mb-4 border-primary-subtle" data-testid="inbox-bulk-compose-card">
-                        <div class="card-body p-4">
-                            <h3 class="h5 mb-3">Hromadná zpráva</h3>
-                            <p class="text-secondary small mb-3">
-                                Odešle stejnou zprávu všem vybraným příjemcům. Adresy se deduplikují &mdash; jedna domácnost dostane zprávu jen jednou, i když je přihlášena na více her.
-                            </p>
-                            <form method="post" action="/organizace/posta/hromadne"
-                                  onsubmit="return confirm('Opravdu odeslat zprávu všem vybraným příjemcům? Tuto akci nelze vrátit.');">
-                                <AntiforgeryToken />
-
-                                @{
-                                    // Default to "all" when there are no games — otherwise the
-                                    // "game" radio is checked but the gameId select is empty,
-                                    // and a strict server check would reject the submit. Server
-                                    // also enforces this; the UI default just keeps the
-                                    // happy path obvious.
-                                    var hasGames = bulkGames.Count > 0;
-                                    var defaultGameMode = hasGames;
-                                }
-                                <div class="mb-3">
-                                    <label class="form-label fw-semibold">Příjemci</label>
-                                    <div class="form-check">
-                                        <input class="form-check-input" type="radio" name="recipientMode" id="bulk-mode-game" value="game" checked="@defaultGameMode" disabled="@(!hasGames)" />
-                                        <label class="form-check-label" for="bulk-mode-game">
-                                            Účastníci konkrétní hry
-                                        </label>
-                                    </div>
-                                    <div class="ms-4 mb-2">
-                                        <select name="gameId" class="form-select" data-testid="inbox-bulk-game" disabled="@(!hasGames)">
-                                            @if (!hasGames)
-                                            {
-                                                <option value="">(Žádné hry)</option>
-                                            }
-                                            @foreach (var g in bulkGames)
-                                            {
-                                                var c = bulkRecipientCounts is not null && bulkRecipientCounts.CountByGameId.TryGetValue(g.Id, out var n) ? n : 0;
-                                                <option value="@g.Id">@g.Name (@c příjemců)</option>
-                                            }
-                                        </select>
-                                    </div>
-                                    <div class="form-check">
-                                        <input class="form-check-input" type="radio" name="recipientMode" id="bulk-mode-all" value="all" checked="@(!hasGames)" />
-                                        <label class="form-check-label" for="bulk-mode-all">
-                                            Všichni registrovaní účastníci
-                                            <span class="text-muted small">(@(bulkRecipientCounts?.AllCount ?? 0) příjemců)</span>
-                                        </label>
-                                    </div>
-                                </div>
-
-                                <div class="mb-3">
-                                    <label class="form-label">Předmět</label>
-                                    <input name="Subject" class="form-control" placeholder="Ovčina — ..." required />
-                                </div>
-                                <div class="mb-3">
-                                    <label class="form-label">Text zprávy</label>
-                                    <textarea name="Body" class="form-control" rows="6" placeholder="Dobrý den,..." required></textarea>
-                                </div>
-                                <button type="submit" class="btn btn-primary" data-testid="inbox-bulk-submit">Odeslat hromadně</button>
-                            </form>
-                        </div>
-                    </div>
+                    <EmailComposeCard Mode="EmailComposeCard.ComposeMode.Bulk"
+                                       BulkGames="bulkGames"
+                                       BulkCounts="bulkRecipientCounts" />
                 }
             </div>
         }

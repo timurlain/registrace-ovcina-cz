@@ -212,6 +212,7 @@ public sealed class InboxService(
         string body,
         int? linkToPersonId,
         string actorUserId,
+        bool isHtml = false,
         CancellationToken ct = default)
     {
         var emailOptions = mailboxOptions.Value;
@@ -236,7 +237,7 @@ public sealed class InboxService(
                 subject,
                 body = new
                 {
-                    contentType = "Text",
+                    contentType = isHtml ? "HTML" : "Text",
                     content = body
                 },
                 toRecipients = new[]
@@ -536,6 +537,7 @@ public sealed class InboxService(
         string subject,
         string body,
         string actorUserId,
+        bool isHtml = false,
         CancellationToken ct = default)
     {
         var sent = 0;
@@ -545,7 +547,7 @@ public sealed class InboxService(
         {
             try
             {
-                await SendNewMessageAsync(email, subject, body, null, actorUserId, ct);
+                await SendNewMessageAsync(email, subject, body, null, actorUserId, isHtml, ct);
                 sent++;
             }
             catch (Exception ex) when (ex is InvalidOperationException or HttpRequestException or TaskCanceledException)

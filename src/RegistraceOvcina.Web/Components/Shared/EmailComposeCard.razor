@@ -1,0 +1,222 @@
+@rendermode InteractiveServer
+
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.Identity
+@using RegistraceOvcina.Web.Data
+@using RegistraceOvcina.Web.Features.Email
+@using RegistraceOvcina.Web.Security
+
+@inject InboxService InboxService
+@inject AuthenticationStateProvider AuthState
+@inject UserManager<ApplicationUser> UserManager
+@inject NavigationManager Nav
+
+<div class="card shadow-sm mb-4 @(Mode == ComposeMode.Bulk ? "border-primary-subtle" : "")"
+     data-testid="@(Mode == ComposeMode.Bulk ? "inbox-bulk-compose-card" : "inbox-compose-card")">
+    <div class="card-body p-4">
+        <h3 class="h5 mb-3">@(Mode == ComposeMode.Bulk ? "Hromadná zpráva" : "Nová zpráva")</h3>
+
+        @if (Mode == ComposeMode.Bulk)
+        {
+            <p class="text-secondary small mb-3">
+                Odešle stejnou zprávu všem vybraným příjemcům. Adresy se deduplikují &mdash; jedna domácnost dostane zprávu jen jednou, i když je přihlášena na více her.
+            </p>
+
+            var hasGames = BulkGames.Count > 0;
+            <div class="mb-3">
+                <label class="form-label fw-semibold">Příjemci</label>
+                <div class="form-check">
+                    <input class="form-check-input" type="radio"
+                           name="@($"recipientMode-{instanceId}")"
+                           id="@($"bulk-mode-game-{instanceId}")"
+                           checked="@(recipientMode == "game")"
+                           disabled="@(!hasGames)"
+                           @onchange="@(() => recipientMode = "game")" />
+                    <label class="form-check-label" for="@($"bulk-mode-game-{instanceId}")">
+                        Účastníci konkrétní hry
+                    </label>
+                </div>
+                <div class="ms-4 mb-2">
+                    <select class="form-select" data-testid="inbox-bulk-game"
+                            disabled="@(!hasGames)"
+                            value="@(gameId?.ToString() ?? "")"
+                            @onchange="OnGameChanged">
+                        @if (!hasGames)
+                        {
+                            <option value="">(Žádné hry)</option>
+                        }
+                        @foreach (var g in BulkGames)
+                        {
+                            var c = BulkCounts is not null && BulkCounts.CountByGameId.TryGetValue(g.Id, out var n) ? n : 0;
+                            <option value="@g.Id">@g.Name (@c příjemců)</option>
+                        }
+                    </select>
+                </div>
+                <div class="form-check">
+                    <input class="form-check-input" type="radio"
+                           name="@($"recipientMode-{instanceId}")"
+                           id="@($"bulk-mode-all-{instanceId}")"
+                           checked="@(recipientMode == "all")"
+                           @onchange="@(() => recipientMode = "all")" />
+                    <label class="form-check-label" for="@($"bulk-mode-all-{instanceId}")">
+                        Všichni registrovaní účastníci
+                        <span class="text-muted small">(@(BulkCounts?.AllCount ?? 0) příjemců)</span>
+                    </label>
+                </div>
+            </div>
+        }
+        else
+        {
+            <div class="mb-3">
+                <label class="form-label">Příjemce (e-mail)</label>
+                <input @bind="toEmail" type="email" class="form-control" placeholder="jan@example.cz" />
+            </div>
+        }
+
+        <div class="mb-3">
+            <label class="form-label">Předmět</label>
+            <input @bind="subject" class="form-control" placeholder="Ovčina — ..." />
+        </div>
+
+        <div class="mb-3">
+            <label class="form-label">Text zprávy</label>
+            <RichTextEditor @ref="editor" Value="@bodyHtml" MinHeight="@(Mode == ComposeMode.Bulk ? 240 : 200)" />
+            <div class="form-text">
+                Editor má záložky <strong>HTML</strong> (vlož ručně připravenou šablonu), <strong>Náhled</strong> a vizuální <strong>Editor</strong>. Zpráva se odešle jako HTML.
+            </div>
+        </div>
+
+        @if (errorMessage is not null)
+        {
+            <div class="alert alert-danger" role="alert">@errorMessage</div>
+        }
+
+        <button type="button" class="btn btn-primary"
+                disabled="@isSending"
+                data-testid="@(Mode == ComposeMode.Bulk ? "inbox-bulk-submit" : "inbox-compose-submit")"
+                @onclick="SubmitAsync">
+            @if (isSending)
+            {
+                <span class="spinner-border spinner-border-sm me-1" role="status"></span>
+                <text>Odesílám...</text>
+            }
+            else
+            {
+                @(Mode == ComposeMode.Bulk ? "Odeslat hromadně" : "Odeslat")
+            }
+        </button>
+    </div>
+</div>
+
+@code {
+    public enum ComposeMode { Single, Bulk }
+
+    [Parameter] public ComposeMode Mode { get; set; }
+    [Parameter] public IReadOnlyList<GameLookupItem> BulkGames { get; set; } = Array.Empty<GameLookupItem>();
+    [Parameter] public BulkRecipientCounts? BulkCounts { get; set; }
+    [Parameter] public int? DefaultGameId { get; set; }
+
+    private readonly string instanceId = Guid.NewGuid().ToString("N")[..8];
+
+    private string toEmail = "";
+    private string subject = "";
+    private string bodyHtml = "";
+    private string recipientMode = "game";
+    private int? gameId;
+    private RichTextEditor? editor;
+    private bool isSending;
+    private string? errorMessage;
+
+    protected override void OnInitialized()
+    {
+        if (Mode == ComposeMode.Bulk)
+        {
+            recipientMode = BulkGames.Count > 0 ? "game" : "all";
+            gameId = DefaultGameId ?? BulkGames.FirstOrDefault()?.Id;
+        }
+    }
+
+    private void OnGameChanged(ChangeEventArgs e)
+    {
+        gameId = int.TryParse(e.Value?.ToString(), out var id) ? id : null;
+    }
+
+    private async Task SubmitAsync()
+    {
+        errorMessage = null;
+
+        if (string.IsNullOrWhiteSpace(subject))
+        {
+            errorMessage = "Vyplňte předmět zprávy.";
+            return;
+        }
+
+        var html = editor is not null ? await editor.GetHtmlAsync() : bodyHtml;
+        if (string.IsNullOrWhiteSpace(html))
+        {
+            errorMessage = "Vyplňte text zprávy.";
+            return;
+        }
+
+        var authState = await AuthState.GetAuthenticationStateAsync();
+        var user = await UserManager.GetUserAsync(authState.User);
+        if (user is null)
+        {
+            errorMessage = "Nepodařilo se ověřit uživatele. Přihlaste se znovu.";
+            return;
+        }
+
+        isSending = true;
+        try
+        {
+            if (Mode == ComposeMode.Single)
+            {
+                if (string.IsNullOrWhiteSpace(toEmail))
+                {
+                    errorMessage = "Vyplňte e-mail příjemce.";
+                    return;
+                }
+
+                await InboxService.SendNewMessageAsync(
+                    toEmail.Trim(), subject.Trim(), html, null, user.Id, isHtml: true);
+                Nav.NavigateTo("/organizace/posta?sent=1", forceLoad: true);
+            }
+            else
+            {
+                int? scopeGameId;
+                if (recipientMode == "all")
+                {
+                    scopeGameId = null;
+                }
+                else if (recipientMode == "game" && gameId.HasValue)
+                {
+                    scopeGameId = gameId;
+                }
+                else
+                {
+                    errorMessage = "Vyberte hru nebo zvolte všechny účastníky.";
+                    return;
+                }
+
+                var recipients = await InboxService.GetBulkRecipientsAsync(scopeGameId);
+                if (recipients.Count == 0)
+                {
+                    errorMessage = "Žádní příjemci ke kterým by se zpráva odeslala.";
+                    return;
+                }
+
+                var (sent, failed) = await InboxService.SendBulkEmailAsync(
+                    recipients, subject.Trim(), html, user.Id, isHtml: true);
+                Nav.NavigateTo($"/organizace/posta?bulkSent={sent}&bulkFailed={failed}", forceLoad: true);
+            }
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or HttpRequestException or TaskCanceledException)
+        {
+            errorMessage = "Odeslání selhalo: " + ex.Message;
+        }
+        finally
+        {
+            isSending = false;
+        }
+    }
+}

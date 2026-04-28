@@ -1145,7 +1145,7 @@ public class Program
             .RequireAuthorization(AuthorizationPolicies.StaffOnly);
         app.MapPost(
                 "/organizace/posta/odeslat",
-                async ([FromForm] string toEmail, [FromForm] string subject, [FromForm] string body, HttpContext httpContext, UserManager<ApplicationUser> userManager, InboxService inboxService) =>
+                async ([FromForm] string toEmail, [FromForm] string subject, [FromForm] string body, [FromForm] bool? isHtml, HttpContext httpContext, UserManager<ApplicationUser> userManager, InboxService inboxService) =>
                 {
                     var user = await userManager.GetUserAsync(httpContext.User);
                     if (user is null)
@@ -1160,7 +1160,7 @@ public class Program
 
                     try
                     {
-                        await inboxService.SendNewMessageAsync(toEmail.Trim(), subject.Trim(), body.Trim(), null, user.Id, httpContext.RequestAborted);
+                        await inboxService.SendNewMessageAsync(toEmail.Trim(), subject.Trim(), body.Trim(), null, user.Id, isHtml: isHtml ?? false, ct: httpContext.RequestAborted);
                         return Results.LocalRedirect("/organizace/posta?sent=1");
                     }
                     catch (Exception ex) when (ex is InvalidOperationException or HttpRequestException or TaskCanceledException)
@@ -1171,7 +1171,7 @@ public class Program
             .RequireAuthorization(AuthorizationPolicies.StaffOnly);
         app.MapPost(
                 "/organizace/posta/hromadne",
-                async ([FromForm] string subject, [FromForm] string body, [FromForm] string? recipientMode, [FromForm] int? gameId, HttpContext httpContext, UserManager<ApplicationUser> userManager, InboxService inboxService) =>
+                async ([FromForm] string subject, [FromForm] string body, [FromForm] string? recipientMode, [FromForm] int? gameId, [FromForm] bool? isHtml, HttpContext httpContext, UserManager<ApplicationUser> userManager, InboxService inboxService) =>
                 {
                     var user = await userManager.GetUserAsync(httpContext.User);
                     if (user is null)
@@ -1211,7 +1211,7 @@ public class Program
                     try
                     {
                         var (sent, failed) = await inboxService.SendBulkEmailAsync(
-                            recipients, subject.Trim(), body.Trim(), user.Id, httpContext.RequestAborted);
+                            recipients, subject.Trim(), body.Trim(), user.Id, isHtml: isHtml ?? false, ct: httpContext.RequestAborted);
                         return Results.LocalRedirect($"/organizace/posta?bulkSent={sent}&bulkFailed={failed}");
                     }
                     catch (Exception ex) when (ex is InvalidOperationException or HttpRequestException or TaskCanceledException)
