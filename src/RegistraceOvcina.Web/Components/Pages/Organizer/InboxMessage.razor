@@ -43,7 +43,20 @@ else
             <section class="card shadow-sm">
                 <div class="card-body p-4">
                     <h2 class="h5 mb-3">Obsah zprávy</h2>
-                    <pre class="mb-0" style="white-space: pre-wrap; font-family: inherit;" data-testid="message-body">@(message.BodyText ?? "")</pre>
+                    @if (LooksLikeHtml(message.BodyText))
+                    {
+                        @* Sandbox the iframe — even our heuristic is wrong, scripts/forms/navigation cannot run. *@
+                        <div class="border rounded bg-white overflow-hidden" data-testid="message-body">
+                            <iframe title="Obsah HTML zprávy"
+                                    sandbox=""
+                                    srcdoc="@(message.BodyText ?? "")"
+                                    style="width: 100%; min-height: 30rem; border: 0; display: block;"></iframe>
+                        </div>
+                    }
+                    else
+                    {
+                        <pre class="mb-0" style="white-space: pre-wrap; font-family: inherit;" data-testid="message-body">@(message.BodyText ?? "")</pre>
+                    }
                 </div>
             </section>
         </div>
@@ -221,5 +234,23 @@ else
     {
         var text = e.Value?.ToString();
         selectedPersonId = people?.FirstOrDefault(p => p.Name == text)?.Id;
+    }
+
+    private static bool LooksLikeHtml(string? body)
+    {
+        if (string.IsNullOrWhiteSpace(body))
+        {
+            return false;
+        }
+
+        var trimmed = body.AsSpan().TrimStart();
+        if (trimmed.Length == 0 || trimmed[0] != '<')
+        {
+            return false;
+        }
+
+        return body.Contains("</", StringComparison.Ordinal)
+            || body.Contains("<br", StringComparison.OrdinalIgnoreCase)
+            || body.Contains("<!doctype", StringComparison.OrdinalIgnoreCase);
     }
 }
