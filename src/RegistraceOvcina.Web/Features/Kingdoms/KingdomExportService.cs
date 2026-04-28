@@ -96,12 +96,15 @@ public sealed class KingdomExportService
         return stream.ToArray();
     }
 
+    // Same wording as SubmissionDetail.razor:638-641 / SubmissionEditor.razor:1184.
+    // TODO: extract a shared helper once we're past the 2026-05-01 game — currently 4 places.
     private static string PlayerSubTypeLabel(PlayerSubType? subType) => subType switch
     {
+        null => "",
         PlayerSubType.Pvp => "PVP hráč (10+)",
         PlayerSubType.Independent => "Samostatné dítě (8+)",
         PlayerSubType.WithRanger => "S hraničářem (5–7)",
         PlayerSubType.WithParent => "S rodičem (4+)",
-        _ => ""
+        var value => value.ToString() ?? ""
     };
 }
