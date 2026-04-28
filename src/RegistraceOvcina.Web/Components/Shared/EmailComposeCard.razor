@@ -10,6 +10,7 @@
 @inject AuthenticationStateProvider AuthState
 @inject UserManager<ApplicationUser> UserManager
 @inject NavigationManager Nav
+@inject IJSRuntime JS
 
 <div class="card shadow-sm mb-4 @(Mode == ComposeMode.Bulk ? "border-primary-subtle" : "")"
      data-testid="@(Mode == ComposeMode.Bulk ? "inbox-bulk-compose-card" : "inbox-compose-card")">
@@ -31,7 +32,7 @@
                            id="@($"bulk-mode-game-{instanceId}")"
                            checked="@(recipientMode == "game")"
                            disabled="@(!hasGames)"
-                           @onchange="@(() => recipientMode = "game")" />
+                           @onchange="@(() => OnRecipientModeChanged("game"))" />
                     <label class="form-check-label" for="@($"bulk-mode-game-{instanceId}")">
                         Účastníci konkrétní hry
                     </label>
@@ -57,7 +58,7 @@
                            name="@($"recipientMode-{instanceId}")"
                            id="@($"bulk-mode-all-{instanceId}")"
                            checked="@(recipientMode == "all")"
-                           @onchange="@(() => recipientMode = "all")" />
+                           @onchange="@(() => OnRecipientModeChanged("all"))" />
                     <label class="form-check-label" for="@($"bulk-mode-all-{instanceId}")">
                         Všichni registrovaní účastníci
                         <span class="text-muted small">(@(BulkCounts?.AllCount ?? 0) příjemců)</span>
@@ -123,21 +124,36 @@
     private string bodyHtml = "";
     private string recipientMode = "game";
     private int? gameId;
+    private bool userPickedRecipientMode;
+    private bool userPickedGameId;
     private RichTextEditor? editor;
     private bool isSending;
     private string? errorMessage;
 
-    protected override void OnInitialized()
+    protected override void OnParametersSet()
     {
-        if (Mode == ComposeMode.Bulk)
+        if (Mode != ComposeMode.Bulk) return;
+
+        // Re-derive defaults whenever parent params change, but never clobber a user pick.
+        if (!userPickedRecipientMode)
         {
             recipientMode = BulkGames.Count > 0 ? "game" : "all";
+        }
+        if (!userPickedGameId)
+        {
             gameId = DefaultGameId ?? BulkGames.FirstOrDefault()?.Id;
         }
     }
 
+    private void OnRecipientModeChanged(string value)
+    {
+        userPickedRecipientMode = true;
+        recipientMode = value;
+    }
+
     private void OnGameChanged(ChangeEventArgs e)
     {
+        userPickedGameId = true;
         gameId = int.TryParse(e.Value?.ToString(), out var id) ? id : null;
     }
 
@@ -201,7 +217,15 @@
                 var recipients = await InboxService.GetBulkRecipientsAsync(scopeGameId);
                 if (recipients.Count == 0)
                 {
-                    errorMessage = "Žádní příjemci ke kterým by se zpráva odeslala.";
+                    errorMessage = "Žádní příjemci, kterým by se zpráva odeslala.";
+                    return;
+                }
+
+                var confirmed = await JS.InvokeAsync<bool>(
+                    "confirm",
+                    $"Opravdu odeslat zprávu {recipients.Count} příjemcům? Tuto akci nelze vrátit.");
+                if (!confirmed)
+                {
                     return;
                 }
 

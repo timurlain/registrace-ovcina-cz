@@ -45,8 +45,12 @@ else
                     <h2 class="h5 mb-3">Obsah zprávy</h2>
                     @if (LooksLikeHtml(message.BodyText))
                     {
-                        <div class="border rounded p-3 bg-white" data-testid="message-body">
-                            @((MarkupString)(message.BodyText ?? ""))
+                        @* Sandbox the iframe — even our heuristic is wrong, scripts/forms/navigation cannot run. *@
+                        <div class="border rounded bg-white overflow-hidden" data-testid="message-body">
+                            <iframe title="Obsah HTML zprávy"
+                                    sandbox=""
+                                    srcdoc="@(message.BodyText ?? "")"
+                                    style="width: 100%; min-height: 30rem; border: 0; display: block;"></iframe>
                         </div>
                     }
                     else
