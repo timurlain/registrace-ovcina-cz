@@ -271,6 +271,7 @@ public class Program
         builder.Services.AddScoped<IAccountLinkingService, AccountLinkingService>();
         builder.Services.AddScoped<GameRoleService>();
         builder.Services.AddScoped<GameRolesViewService>();
+        builder.Services.AddScoped<RoleEmailSuggestionService>();
         builder.Services.AddScoped<IStubAccountCreator, IdentityStubAccountCreator>();
         builder.Services.AddScoped<IGameRoleAccountService, GameRoleAccountService>();
         builder.Services.AddScoped<AnnouncementService>();

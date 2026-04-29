@@ -31,6 +31,14 @@
                 }
             }
         </select>
+        @if (selectedGameId.HasValue)
+        {
+            <a class="btn btn-outline-secondary btn-sm text-nowrap"
+               href="/admin/role-email-suggestions/@selectedGameId.Value"
+               title="Najít e-maily pro dospělé bez kontaktu">
+                Návrhy e-mailů
+            </a>
+        }
     </div>
 </div>
 
