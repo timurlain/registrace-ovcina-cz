@@ -294,16 +294,22 @@ public static class DatabaseInitializer
             return;
         }
 
+        // Original anchor: 30. Ovčina was 2026-05-01 with registration closing 2026-04-28.
+        // Production seeded once on those exact dates and is unaffected by this code path
+        // (the AnyAsync guard above means the seed never re-runs in prod). We compute
+        // dates relative to nowUtc so fresh envs (E2E test DBs, new dev installs) get a
+        // game with registration still open instead of a time-bombed past deadline.
+        var startsAt = nowUtc.Date.AddDays(7).AddHours(7);
         var game = new Game
         {
             Name = "30. Ovčina Balinova pozvánka",
             Description = "Co se skrývá v Morii?",
-            StartsAtUtc = new DateTime(2026, 5, 1, 7, 0, 0, DateTimeKind.Utc),
-            EndsAtUtc = new DateTime(2026, 5, 2, 16, 0, 0, DateTimeKind.Utc),
-            RegistrationClosesAtUtc = new DateTime(2026, 4, 28, 15, 0, 0, DateTimeKind.Utc),
-            MealOrderingClosesAtUtc = new DateTime(2026, 4, 28, 15, 0, 0, DateTimeKind.Utc),
-            PaymentDueAtUtc = new DateTime(2026, 4, 29, 15, 0, 0, DateTimeKind.Utc),
-            AssignmentFreezeAtUtc = new DateTime(2026, 4, 30, 21, 30, 0, DateTimeKind.Utc),
+            StartsAtUtc = startsAt,
+            EndsAtUtc = startsAt.AddDays(1).AddHours(9),
+            RegistrationClosesAtUtc = startsAt.AddDays(-3),
+            MealOrderingClosesAtUtc = startsAt.AddDays(-3),
+            PaymentDueAtUtc = startsAt.AddDays(-2),
+            AssignmentFreezeAtUtc = startsAt.AddDays(-1).AddHours(14).AddMinutes(30),
             PlayerBasePrice = 100m,
             AdultHelperBasePrice = 0m,
             BankAccount = "CZ6508000000192000145399",
