@@ -1,0 +1,124 @@
+@page "/admin/role-email-suggestions/{gameId:int}"
+@attribute [Authorize(Policy = AuthorizationPolicies.AdminOnly)]
+
+@using RegistraceOvcina.Web.Features.Roles
+@using RegistraceOvcina.Web.Security
+
+@inject RoleEmailSuggestionService Suggestions
+
+<PageTitle>Návrhy e-mailů pro dospělé bez kontaktu</PageTitle>
+
+<div class="row g-4">
+    <div class="col-12">
+        <section class="card shadow-sm">
+            <div class="card-body p-4">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <div>
+                        <h1 class="h3 mb-1">Návrhy e-mailů pro dospělé bez kontaktu</h1>
+                        <p class="text-secondary mb-0">
+                            Pro každého dospělého na hře #@GameId, jehož <code>Person.Email</code> je prázdný,
+                            ukáže nalezené kandidáty z propojených zdrojů. Read-only diagnostika &mdash;
+                            úprava se dělá ručně přes <code>/organizace/osoby/&hellip;</code>.
+                        </p>
+                    </div>
+                    <a href="/organizace/role" class="btn btn-outline-secondary btn-sm">Zpět na role</a>
+                </div>
+
+                @if (suggestions is null)
+                {
+                    <p class="text-secondary">Načítám...</p>
+                }
+                else if (suggestions.Count == 0)
+                {
+                    <div class="alert alert-success mb-0">
+                        Všichni dospělí na této hře mají vyplněný e-mail. Nic k navrhování.
+                    </div>
+                }
+                else
+                {
+                    <p class="small text-secondary mb-3">
+                        Bez e-mailu: <strong>@suggestions.Count</strong> &middot;
+                        S aspoň jedním kandidátem:
+                        <strong>@suggestions.Count(s => s.Candidates.Count > 0)</strong> &middot;
+                        Bez kandidáta:
+                        <strong>@suggestions.Count(s => s.Candidates.Count == 0)</strong>
+                    </p>
+
+                    <div class="table-responsive">
+                        <table class="table align-middle table-sm">
+                            <thead>
+                                <tr>
+                                    <th style="min-width: 12rem;">Jméno</th>
+                                    <th>Skupina</th>
+                                    <th>Návrh e-mailu</th>
+                                    <th>Zdroj</th>
+                                    <th>Spolehlivost</th>
+                                    <th>Akce</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                @foreach (var s in suggestions)
+                                {
+                                    if (s.Candidates.Count == 0)
+                                    {
+                                        <tr class="table-warning">
+                                            <td><strong>@s.FullName</strong></td>
+                                            <td><span class="text-secondary small">@(s.GroupName ?? "—")</span></td>
+                                            <td colspan="3"><em class="text-secondary">Žádný kandidát nenalezen</em></td>
+                                            <td>
+                                                <a class="btn btn-outline-secondary btn-sm" href="/organizace/osoby/@s.PersonId">Otevřít osobu</a>
+                                            </td>
+                                        </tr>
+                                    }
+                                    else
+                                    {
+                                        for (var i = 0; i < s.Candidates.Count; i++)
+                                        {
+                                            var c = s.Candidates[i];
+                                            <tr>
+                                                @if (i == 0)
+                                                {
+                                                    <td rowspan="@s.Candidates.Count"><strong>@s.FullName</strong></td>
+                                                    <td rowspan="@s.Candidates.Count"><span class="text-secondary small">@(s.GroupName ?? "—")</span></td>
+                                                }
+                                                <td><code>@c.Email</code></td>
+                                                <td><span class="badge bg-secondary-subtle text-secondary-emphasis">@c.Source</span></td>
+                                                <td>@ConfidenceBadge(c.Confidence)</td>
+                                                @if (i == 0)
+                                                {
+                                                    <td rowspan="@s.Candidates.Count">
+                                                        <a class="btn btn-outline-secondary btn-sm" href="/organizace/osoby/@s.PersonId">Otevřít osobu</a>
+                                                    </td>
+                                                }
+                                            </tr>
+                                        }
+                                    }
+                                }
+                            </tbody>
+                        </table>
+                    </div>
+                }
+            </div>
+        </section>
+    </div>
+</div>
+
+@code {
+    [Parameter] public int GameId { get; set; }
+
+    private List<AdultEmailSuggestion>? suggestions;
+
+    protected override async Task OnInitializedAsync()
+    {
+        suggestions = await Suggestions.BuildAsync(GameId);
+    }
+
+    private static RenderFragment ConfidenceBadge(string confidence) => @<span class="badge @ConfidenceClass(confidence)">@confidence</span>;
+
+    private static string ConfidenceClass(string confidence) => confidence switch
+    {
+        "Vysoká" => "bg-success",
+        "Střední" => "bg-warning text-dark",
+        _ => "bg-danger-subtle text-danger-emphasis"
+    };
+}
