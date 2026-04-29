@@ -1,4 +1,5 @@
 using ClosedXML.Excel;
+using RegistraceOvcina.Web.Data;
 
 namespace RegistraceOvcina.Web.Features.Kingdoms;
 
@@ -49,7 +50,7 @@ public sealed class KingdomExportService
 
             var headers = new[]
             {
-                "Jméno", "Příjmení", "Věk", "Skupina", "Preference",
+                "Jméno", "Příjmení", "Věk", "Kategorie", "Skupina", "Preference",
                 "Postava", "Poznámka hráče", "Poznámka skupiny",
                 "Org. poznámky", "Zákonný zástupce", "Předchozí království"
             };
@@ -71,14 +72,15 @@ public sealed class KingdomExportService
                 sheet.Cell(xlRow, 1).Value = firstName;
                 sheet.Cell(xlRow, 2).Value = lastName;
                 sheet.Cell(xlRow, 3).Value = p.Age(currentYear);
-                sheet.Cell(xlRow, 4).Value = p.GroupName ?? "";
-                sheet.Cell(xlRow, 5).Value = p.PreferredKingdomName ?? "";
-                sheet.Cell(xlRow, 6).Value = p.CharacterName ?? "";
-                sheet.Cell(xlRow, 7).Value = p.RegistrantNote ?? "";
-                sheet.Cell(xlRow, 8).Value = p.SubmissionNote ?? "";
-                sheet.Cell(xlRow, 9).Value = p.OrganizerNotes ?? "";
-                sheet.Cell(xlRow, 10).Value = p.GuardianName ?? "";
-                sheet.Cell(xlRow, 11).Value = p.PreviousKingdomName ?? "";
+                sheet.Cell(xlRow, 4).Value = PlayerSubTypeLabel(p.PlayerSubType);
+                sheet.Cell(xlRow, 5).Value = p.GroupName ?? "";
+                sheet.Cell(xlRow, 6).Value = p.PreferredKingdomName ?? "";
+                sheet.Cell(xlRow, 7).Value = p.CharacterName ?? "";
+                sheet.Cell(xlRow, 8).Value = p.RegistrantNote ?? "";
+                sheet.Cell(xlRow, 9).Value = p.SubmissionNote ?? "";
+                sheet.Cell(xlRow, 10).Value = p.OrganizerNotes ?? "";
+                sheet.Cell(xlRow, 11).Value = p.GuardianName ?? "";
+                sheet.Cell(xlRow, 12).Value = p.PreviousKingdomName ?? "";
             }
 
             sheet.Columns().AdjustToContents(1, players.Count + 1, 8, 40);
@@ -93,4 +95,16 @@ public sealed class KingdomExportService
         workbook.SaveAs(stream);
         return stream.ToArray();
     }
+
+    // Same wording as SubmissionDetail.razor:638-641 / SubmissionEditor.razor:1184.
+    // TODO: extract a shared helper once we're past the 2026-05-01 game — currently 4 places.
+    private static string PlayerSubTypeLabel(PlayerSubType? subType) => subType switch
+    {
+        null => "",
+        PlayerSubType.Pvp => "PVP hráč (10+)",
+        PlayerSubType.Independent => "Samostatné dítě (8+)",
+        PlayerSubType.WithRanger => "S hraničářem (5–7)",
+        PlayerSubType.WithParent => "S rodičem (4+)",
+        var value => value.ToString() ?? ""
+    };
 }
