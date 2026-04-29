@@ -1,5 +1,5 @@
 @page "/admin/role-email-suggestions/{gameId:int}"
-@attribute [Authorize(Policy = AuthorizationPolicies.AdminOnly)]
+@attribute [Authorize(Policy = AuthorizationPolicies.StaffOnly)]
 
 @using RegistraceOvcina.Web.Features.Roles
 @using RegistraceOvcina.Web.Security
@@ -107,10 +107,17 @@
     [Parameter] public int GameId { get; set; }
 
     private List<AdultEmailSuggestion>? suggestions;
+    private int? loadedForGameId;
 
-    protected override async Task OnInitializedAsync()
+    protected override async Task OnParametersSetAsync()
     {
+        // Re-load when navigating between /admin/role-email-suggestions/{gameId} URLs.
+        if (loadedForGameId == GameId) return;
+
+        suggestions = null;
+        StateHasChanged();
         suggestions = await Suggestions.BuildAsync(GameId);
+        loadedForGameId = GameId;
     }
 
     private static RenderFragment ConfidenceBadge(string confidence) => @<span class="badge @ConfidenceClass(confidence)">@confidence</span>;

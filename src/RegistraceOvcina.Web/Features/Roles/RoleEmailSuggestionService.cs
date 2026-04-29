@@ -16,11 +16,14 @@ public sealed class RoleEmailSuggestionService(
     {
         await using var db = await dbContextFactory.CreateDbContextAsync(ct);
 
-        // Adults on this game whose Person has no email.
+        // Adults on this game whose Person has no email — mirrors the WHERE clause in
+        // GameRolesViewService.BuildAdultViewsAsync so the diagnostic stays in sync with
+        // what /organizace/role actually shows (Active registrations only).
         var adults = await db.Registrations
             .Where(r => r.Submission.GameId == gameId
                 && !r.Submission.IsDeleted
                 && r.AttendeeType == AttendeeType.Adult
+                && r.Status == RegistrationStatus.Active
                 && !r.Person.IsDeleted
                 && (r.Person.Email == null || r.Person.Email == ""))
             .OrderBy(r => r.Person.LastName)
@@ -60,7 +63,10 @@ public sealed class RoleEmailSuggestionService(
         // Channel B: any other Person sharing this person's last name AND has a non-empty email.
         // We pull by last-name match (ToUpper-safe in Postgres) and filter first-name in memory
         // to avoid building a complex tuple-OR clause.
-        var lastNamesUpper = adults.Select(a => a.LastName.ToUpper()).Distinct().ToList();
+        // Use Invariant for the in-memory list so it matches in non-en-US server cultures
+        // (e.g. Turkish dotted-i). The DB-side `p.LastName.ToUpper()` translates to
+        // Postgres UPPER() which is locale-driven by the database collation.
+        var lastNamesUpper = adults.Select(a => a.LastName.ToUpperInvariant()).Distinct().ToList();
         var sameLastNamePersons = await db.People
             .Where(p => p.Email != null && p.Email != ""
                 && !p.IsDeleted
