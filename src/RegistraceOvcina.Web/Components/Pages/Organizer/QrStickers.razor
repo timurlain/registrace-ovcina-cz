@@ -11,7 +11,15 @@
 <style>
     /* 7×7 cm physical sticker. Fixed box on screen + print so the preview matches the
        cut size. Text hierarchy per issue #195: character name dominates, player name
-       second, person ID third (smallest). */
+       second (with #ID inline), QR code below. */
+    .sticker-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, 70mm);
+        gap: 4mm;
+        justify-content: center;
+        padding: 4mm 0;
+    }
+
     .sticker {
         box-sizing: border-box;
         width: 70mm;
@@ -19,11 +27,11 @@
         border: 1px dashed #ccc;
         padding: 4mm;
         text-align: center;
-        margin: 0 auto 8mm auto;
         display: flex;
         flex-direction: column;
-        justify-content: space-between;
+        justify-content: center;
         align-items: center;
+        gap: 2mm;
     }
 
     .sticker-character {
@@ -31,22 +39,20 @@
         font-size: 5mm;
         line-height: 1.15;
         color: #1a1a1a;
-        margin-bottom: 1mm;
         word-break: break-word;
     }
 
     .sticker-name {
-        font-weight: 500;
         font-size: 3.5mm;
         line-height: 1.1;
         color: #444;
-        margin-bottom: 1mm;
     }
 
-    .sticker-person-id {
+    .sticker-name .person-id {
         font-size: 2.6mm;
         color: #888;
         font-variant-numeric: tabular-nums;
+        margin-left: 1mm;
     }
 
     .sticker-qr img {
@@ -55,9 +61,17 @@
         display: block;
     }
 
+    .print-fab {
+        position: fixed;
+        top: 12px;
+        right: 12px;
+        z-index: 1000;
+    }
+
     @@media print {
         .no-print { display: none !important; }
         body { margin: 0; padding: 0; }
+        .sticker-grid { padding: 0; gap: 0; }
         .sticker {
             border: 1px dashed #999;
             break-inside: avoid;
@@ -71,30 +85,15 @@
 }
 else
 {
-    <div class="no-print mb-3">
-        <a href="/admin/hry" class="text-decoration-none small">&larr; Zpět na správu her</a>
-    </div>
+    <button onclick="window.print()" class="btn btn-primary btn-sm no-print print-fab" title="Vytisknout">Vytisknout</button>
 
-    <div class="no-print d-flex justify-content-between align-items-center mb-3">
-        <div>
-            <h1 class="h4 mb-1">QR štítky &mdash; @game.Name</h1>
-            <p class="text-secondary small mb-0">Celkem štítků: @registrations.Count</p>
-        </div>
-        <button onclick="window.print()" class="btn btn-primary">Vytisknout</button>
-    </div>
-
-    <div class="row">
+    <div class="sticker-grid">
         @foreach (var reg in registrations)
         {
-            <div class="col-auto">
-                <div class="sticker">
-                    <div>
-                        <div class="sticker-character">@(string.IsNullOrWhiteSpace(reg.CharacterName) ? $"{reg.FirstName} {reg.LastName}" : reg.CharacterName)</div>
-                        <div class="sticker-name">@reg.FirstName @reg.LastName</div>
-                        <div class="sticker-person-id">#@reg.PersonId</div>
-                    </div>
-                    <div class="sticker-qr"><img src="@GenerateQrDataUri(reg.PersonId)" alt="QR" /></div>
-                </div>
+            <div class="sticker">
+                <div class="sticker-character">@(string.IsNullOrWhiteSpace(reg.CharacterName) ? $"{reg.FirstName} {reg.LastName}" : reg.CharacterName)</div>
+                <div class="sticker-name">@reg.FirstName @reg.LastName <span class="person-id">#@reg.PersonId</span></div>
+                <div class="sticker-qr"><img src="@GenerateQrDataUri(reg.PersonId)" alt="QR" /></div>
             </div>
         }
     </div>
