@@ -641,7 +641,15 @@ public sealed class SubmissionService(
 
         if (!hasOtherRegistrations && registration.Person is not null)
         {
-            db.People.Remove(registration.Person);
+            // Soft-delete the Person — a hard Remove() throws on the Restrict FK from
+            // Character (and OrganizerNote) when the person has any history from past
+            // games. Soft-delete is the established pattern (see
+            // PeopleReviewService.cs:457). Email/Phone get nulled to free the unique
+            // email constraint so the same email can be reused on a fresh registration.
+            registration.Person.IsDeleted = true;
+            registration.Person.Email = null;
+            registration.Person.Phone = null;
+            registration.Person.UpdatedAtUtc = timeProvider.GetUtcNow().UtcDateTime;
         }
 
         submission.LastEditedAtUtc = timeProvider.GetUtcNow().UtcDateTime;
