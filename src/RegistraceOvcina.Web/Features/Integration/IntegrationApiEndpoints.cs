@@ -277,17 +277,27 @@ public static class IntegrationApiEndpoints
                 .ToListAsync(ct);
 
             // Same adult can sit on multiple submissions; group by PersonId and union notes.
+            // FirstName / LastName / BirthYear / PersonNotes come from Person and are
+            // identical across rows in the group. GroupName comes from Submission and
+            // can differ per submission — join the distinct, ordered set so the value
+            // is deterministic regardless of DB row order.
             var grouped = rows
                 .GroupBy(r => r.PersonId)
                 .Select(g =>
                 {
                     var head = g.First();
+                    var groupNames = string.Join(
+                        " / ",
+                        g.Select(r => r.GroupName)
+                            .Where(n => !string.IsNullOrWhiteSpace(n))
+                            .Distinct(StringComparer.Ordinal)
+                            .OrderBy(n => n, StringComparer.Ordinal));
                     return new AdultNoteDto(
                         g.Key,
                         head.FirstName,
                         head.LastName,
                         head.BirthYear,
-                        head.GroupName,
+                        groupNames,
                         head.PersonNotes,
                         g.Select(r => r.RegistrationRegistrantNote)
                             .Where(n => !string.IsNullOrWhiteSpace(n))
