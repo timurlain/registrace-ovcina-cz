@@ -634,6 +634,9 @@ public sealed class SubmissionService(
             ?? throw new ValidationException("Účastník nebyl nalezen.");
 
         var personId = registration.PersonId;
+        var removedFirstName = registration.Person?.FirstName ?? "";
+        var removedLastName = registration.Person?.LastName ?? "";
+        var removedAttendeeType = registration.AttendeeType;
         db.Registrations.Remove(registration);
 
         var hasOtherRegistrations = await db.Registrations
@@ -652,8 +655,30 @@ public sealed class SubmissionService(
             registration.Person.UpdatedAtUtc = timeProvider.GetUtcNow().UtcDateTime;
         }
 
-        submission.LastEditedAtUtc = timeProvider.GetUtcNow().UtcDateTime;
+        var nowUtc = timeProvider.GetUtcNow().UtcDateTime;
+        submission.LastEditedAtUtc = nowUtc;
         RecalculateIfSubmitted(submission);
+
+        // OrganizerSubmissionService timeline reads "AttendeeRemoved" entries
+        // (OrganizerSubmissionService.cs:286), so emit one to match AttendeeAdded /
+        // AttendeeUpdated.
+        db.AuditLogs.Add(new AuditLog
+        {
+            EntityType = nameof(Registration),
+            EntityId = registrationId.ToString(),
+            Action = "AttendeeRemoved",
+            ActorUserId = userId,
+            CreatedAtUtc = nowUtc,
+            DetailsJson = JsonSerializer.Serialize(new
+            {
+                submissionId,
+                FirstName = removedFirstName,
+                LastName = removedLastName,
+                AttendeeType = removedAttendeeType,
+                PersonSoftDeleted = !hasOtherRegistrations
+            })
+        });
+
         await db.SaveChangesAsync(cancellationToken);
     }
 
