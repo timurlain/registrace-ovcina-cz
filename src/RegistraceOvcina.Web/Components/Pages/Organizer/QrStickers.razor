@@ -9,15 +9,29 @@
 <PageTitle>QR štítky pro hru</PageTitle>
 
 <style>
-    /* 7×7 cm physical sticker. Fixed box on screen + print so the preview matches the
-       cut size. Text hierarchy per issue #195: character name dominates, player name
-       second (with #ID inline), QR code below. */
+    /* Fixed 2 col × 4 row A4 portrait grid. Each cell = 105mm × 74.25mm so the
+       grid totals exactly 210mm × 297mm = one A4 page. The 70×70mm sticker is
+       centered in each cell. No page margins → 8 stickers per A4 sheet. */
+    @@page {
+        size: A4 portrait;
+        margin: 0;
+    }
+
     .sticker-grid {
         display: grid;
-        grid-template-columns: repeat(auto-fill, 70mm);
-        gap: 4mm;
+        grid-template-columns: 105mm 105mm;
+        grid-auto-rows: 74.25mm;
+        gap: 0;
+        margin: 0 auto;
+        padding: 0;
+        width: 210mm;
+    }
+
+    .sticker-cell {
+        display: flex;
+        align-items: center;
         justify-content: center;
-        padding: 4mm 0;
+        break-inside: avoid;
     }
 
     .sticker {
@@ -25,7 +39,7 @@
         width: 70mm;
         height: 70mm;
         border: 1px dashed #ccc;
-        padding: 4mm;
+        padding: 3mm;
         text-align: center;
         display: flex;
         flex-direction: column;
@@ -35,10 +49,10 @@
     }
 
     .sticker-character {
-        font-weight: 700;
-        font-size: 5mm;
-        line-height: 1.15;
-        color: #1a1a1a;
+        font-weight: 800;
+        font-size: 6mm;
+        line-height: 1.1;
+        color: #000;
         word-break: break-word;
     }
 
@@ -49,15 +63,15 @@
     }
 
     .sticker-name .person-id {
-        font-size: 2.6mm;
-        color: #888;
+        font-size: 2.8mm;
+        color: #777;
         font-variant-numeric: tabular-nums;
         margin-left: 1mm;
     }
 
     .sticker-qr img {
-        width: 38mm;
-        height: 38mm;
+        width: 36mm;
+        height: 36mm;
         display: block;
     }
 
@@ -70,18 +84,10 @@
 
     @@media print {
         .no-print { display: none !important; }
-        /* MainLayout wraps content in app-shell + sticky app-header/footer + a
-           padded main.container. Suppress all of that so the printed page is
-           just the sticker grid edge-to-edge. */
-        body { margin: 0; padding: 0; }
+        html, body { margin: 0 !important; padding: 0 !important; }
         .app-header, .app-footer { display: none !important; }
-        main { padding: 0 !important; }
-        main.container, .container { max-width: none !important; padding: 0 !important; margin: 0 !important; }
-        .sticker-grid { padding: 0; gap: 0; }
-        .sticker {
-            border: 1px dashed #999;
-            break-inside: avoid;
-        }
+        main, .container { padding: 0 !important; margin: 0 !important; max-width: none !important; }
+        .sticker { border-color: #999; }
     }
 </style>
 
@@ -91,9 +97,6 @@
 }
 else
 {
-    @* Visually-hidden heading for screen readers — the page intentionally has no
-       visible heading so the printed sheet is just stickers, but assistive tech
-       still needs an anchor describing the page. *@
     <h1 class="visually-hidden">QR štítky &mdash; @game.Name</h1>
 
     <button onclick="window.print()" class="btn btn-primary btn-sm no-print print-fab" title="Vytisknout">Vytisknout</button>
@@ -101,10 +104,12 @@ else
     <div class="sticker-grid">
         @foreach (var reg in registrations)
         {
-            <div class="sticker">
-                <div class="sticker-character">@(string.IsNullOrWhiteSpace(reg.CharacterName) ? $"{reg.FirstName} {reg.LastName}" : reg.CharacterName)</div>
-                <div class="sticker-name">@reg.FirstName @reg.LastName <span class="person-id">#@reg.PersonId</span></div>
-                <div class="sticker-qr"><img src="@GenerateQrDataUri(reg.PersonId)" alt="@($"QR kód pro {reg.FirstName} {reg.LastName} (osoba #{reg.PersonId})")" /></div>
+            <div class="sticker-cell">
+                <div class="sticker">
+                    <div class="sticker-character">@(string.IsNullOrWhiteSpace(reg.CharacterName) ? $"{reg.FirstName} {reg.LastName}" : reg.CharacterName)</div>
+                    <div class="sticker-name">@reg.FirstName @reg.LastName <span class="person-id">#@reg.PersonId</span></div>
+                    <div class="sticker-qr"><img src="@GenerateQrDataUri(reg.PersonId)" alt="@($"QR kód pro {reg.FirstName} {reg.LastName} (osoba #{reg.PersonId})")" /></div>
+                </div>
             </div>
         }
     </div>
