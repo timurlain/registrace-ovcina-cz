@@ -70,7 +70,13 @@
 
     @@media print {
         .no-print { display: none !important; }
+        /* MainLayout wraps content in app-shell + sticky app-header/footer + a
+           padded main.container. Suppress all of that so the printed page is
+           just the sticker grid edge-to-edge. */
         body { margin: 0; padding: 0; }
+        .app-header, .app-footer { display: none !important; }
+        main { padding: 0 !important; }
+        main.container, .container { max-width: none !important; padding: 0 !important; margin: 0 !important; }
         .sticker-grid { padding: 0; gap: 0; }
         .sticker {
             border: 1px dashed #999;
@@ -85,6 +91,11 @@
 }
 else
 {
+    @* Visually-hidden heading for screen readers — the page intentionally has no
+       visible heading so the printed sheet is just stickers, but assistive tech
+       still needs an anchor describing the page. *@
+    <h1 class="visually-hidden">QR štítky &mdash; @game.Name</h1>
+
     <button onclick="window.print()" class="btn btn-primary btn-sm no-print print-fab" title="Vytisknout">Vytisknout</button>
 
     <div class="sticker-grid">
@@ -93,7 +104,7 @@ else
             <div class="sticker">
                 <div class="sticker-character">@(string.IsNullOrWhiteSpace(reg.CharacterName) ? $"{reg.FirstName} {reg.LastName}" : reg.CharacterName)</div>
                 <div class="sticker-name">@reg.FirstName @reg.LastName <span class="person-id">#@reg.PersonId</span></div>
-                <div class="sticker-qr"><img src="@GenerateQrDataUri(reg.PersonId)" alt="QR" /></div>
+                <div class="sticker-qr"><img src="@GenerateQrDataUri(reg.PersonId)" alt="@($"QR kód pro {reg.FirstName} {reg.LastName} (osoba #{reg.PersonId})")" /></div>
             </div>
         }
     </div>
