@@ -234,6 +234,93 @@ public static class IntegrationApiEndpoints
             return Results.Ok(adults);
         });
 
+        // GET /api/v1/games/{id}/adult-notes — every active adult on this game, with all
+        // free-text note fields rolled up: Person.Notes (personal), Registration.RegistrantNote
+        // (per-attendee note from the registrant), Submission.RegistrantNote (household-wide
+        // note), and Person.OrganizerNotes (internal staff notes). Used for pre-game review
+        // of preferences, accommodations, and special asks.
+        group.MapGet("/games/{id:int}/adult-notes", async (
+            int id,
+            IDbContextFactory<ApplicationDbContext> dbFactory,
+            CancellationToken ct) =>
+        {
+            await using var db = await dbFactory.CreateDbContextAsync(ct);
+
+            var gameExists = await db.Games.AsNoTracking().AnyAsync(g => g.Id == id, ct);
+            if (!gameExists)
+                return Results.NotFound();
+
+            var rows = await db.Registrations
+                .AsNoTracking()
+                .Where(r =>
+                    r.Submission.GameId == id &&
+                    r.Submission.Status == SubmissionStatus.Submitted &&
+                    r.Status == RegistrationStatus.Active &&
+                    !r.Submission.IsDeleted &&
+                    !r.Person.IsDeleted &&
+                    r.AttendeeType == AttendeeType.Adult)
+                .Select(r => new
+                {
+                    r.PersonId,
+                    r.Person.FirstName,
+                    r.Person.LastName,
+                    r.Person.BirthYear,
+                    r.Submission.GroupName,
+                    PersonNotes = r.Person.Notes,
+                    RegistrationRegistrantNote = r.RegistrantNote,
+                    SubmissionRegistrantNote = r.Submission.RegistrantNote,
+                    OrganizerNotes = r.Person.OrganizerNotes
+                        .Where(n => !string.IsNullOrWhiteSpace(n.Note))
+                        .Select(n => n.Note)
+                        .ToList()
+                })
+                .ToListAsync(ct);
+
+            // Same adult can sit on multiple submissions; group by PersonId and union notes.
+            // FirstName / LastName / BirthYear / PersonNotes come from Person and are
+            // identical across rows in the group. GroupName comes from Submission and
+            // can differ per submission — join the distinct, ordered set so the value
+            // is deterministic regardless of DB row order.
+            var grouped = rows
+                .GroupBy(r => r.PersonId)
+                .Select(g =>
+                {
+                    var head = g.First();
+                    var groupNames = string.Join(
+                        " / ",
+                        g.Select(r => r.GroupName)
+                            .Where(n => !string.IsNullOrWhiteSpace(n))
+                            .Distinct(StringComparer.Ordinal)
+                            .OrderBy(n => n, StringComparer.Ordinal));
+                    return new AdultNoteDto(
+                        g.Key,
+                        head.FirstName,
+                        head.LastName,
+                        head.BirthYear,
+                        groupNames,
+                        head.PersonNotes,
+                        g.Select(r => r.RegistrationRegistrantNote)
+                            .Where(n => !string.IsNullOrWhiteSpace(n))
+                            .Select(n => n!.Trim())
+                            .Distinct(StringComparer.Ordinal)
+                            .ToList(),
+                        g.Select(r => r.SubmissionRegistrantNote)
+                            .Where(n => !string.IsNullOrWhiteSpace(n))
+                            .Select(n => n!.Trim())
+                            .Distinct(StringComparer.Ordinal)
+                            .ToList(),
+                        g.SelectMany(r => r.OrganizerNotes)
+                            .Select(n => n.Trim())
+                            .Distinct(StringComparer.Ordinal)
+                            .ToList());
+                })
+                .OrderBy(a => a.LastName, StringComparer.Ordinal)
+                .ThenBy(a => a.FirstName, StringComparer.Ordinal)
+                .ToList();
+
+            return Results.Ok(grouped);
+        });
+
         // GET /api/v1/users/by-email?email=... — user existence check for OvčinaHra auth
         group.MapGet("/users/by-email", async (
             string email,
