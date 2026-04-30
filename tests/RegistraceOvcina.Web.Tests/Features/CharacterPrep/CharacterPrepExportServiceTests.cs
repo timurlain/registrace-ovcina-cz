@@ -42,7 +42,7 @@ public sealed class CharacterPrepExportServiceTests
     }
 
     [Fact]
-    public async Task BuildAsync_header_row_has_7_columns_in_correct_order()
+    public async Task BuildAsync_header_row_has_8_columns_in_correct_order()
     {
         var options = CreateOptions();
         await SeedAsync(options);
@@ -58,11 +58,12 @@ public sealed class CharacterPrepExportServiceTests
         Assert.Equal("Hráč", sheet.Cell(1, 1).GetString());
         Assert.Equal("Rok narození", sheet.Cell(1, 2).GetString());
         Assert.Equal("Jméno postavy", sheet.Cell(1, 3).GetString());
-        Assert.Equal("Startovní výbava", sheet.Cell(1, 4).GetString());
-        Assert.Equal("Poznámka", sheet.Cell(1, 5).GetString());
-        Assert.Equal("Domácnost", sheet.Cell(1, 6).GetString());
-        Assert.Equal("Email domácnosti", sheet.Cell(1, 7).GetString());
-        Assert.Equal("", sheet.Cell(1, 8).GetString());
+        Assert.Equal("Království", sheet.Cell(1, 4).GetString());
+        Assert.Equal("Startovní výbava", sheet.Cell(1, 5).GetString());
+        Assert.Equal("Poznámka", sheet.Cell(1, 6).GetString());
+        Assert.Equal("Domácnost", sheet.Cell(1, 7).GetString());
+        Assert.Equal("Email domácnosti", sheet.Cell(1, 8).GetString());
+        Assert.Equal("", sheet.Cell(1, 9).GetString());
         Assert.True(sheet.Cell(1, 1).Style.Font.Bold);
     }
 
@@ -122,11 +123,13 @@ public sealed class CharacterPrepExportServiceTests
         using var workbook = new XLWorkbook(stream);
         var sheet = workbook.Worksheet("Příprava postav");
 
-        // Anna Adamová (row 2) has no character name, equipment, or note.
+        // Anna Adamová (row 2) has no character name, kingdom assignment,
+        // equipment, or note.
         Assert.Equal("Anna Adamová", sheet.Cell(2, 1).GetString());
         Assert.Equal("", sheet.Cell(2, 3).GetString()); // Jméno postavy
-        Assert.Equal("", sheet.Cell(2, 4).GetString()); // Startovní výbava
-        Assert.Equal("", sheet.Cell(2, 5).GetString()); // Poznámka
+        Assert.Equal("", sheet.Cell(2, 4).GetString()); // Království
+        Assert.Equal("", sheet.Cell(2, 5).GetString()); // Startovní výbava
+        Assert.Equal("", sheet.Cell(2, 6).GetString()); // Poznámka
     }
 
     [Fact]
