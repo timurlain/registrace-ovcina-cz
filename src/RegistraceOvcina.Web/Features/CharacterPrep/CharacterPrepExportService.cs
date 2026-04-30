@@ -28,6 +28,19 @@ public sealed class CharacterPrepExportService(
                 x.Person.FirstName + " " + x.Person.LastName,
                 x.Person.BirthYear,
                 x.CharacterName,
+                // Kingdom = the per-game assignment from CharacterAppearance for THIS
+                // game. There can be multiple appearances for one registration in
+                // theory; pick deterministically (lowest CharacterId, then lowest
+                // appearance Id) the same way GameRolesViewService does, and only
+                // surface the assigned kingdom — preferred is not the final answer.
+                db.CharacterAppearances
+                    .Where(ca => ca.RegistrationId == x.Id
+                        && ca.GameId == gameId
+                        && !ca.Character.IsDeleted)
+                    .OrderBy(ca => ca.CharacterId)
+                    .ThenBy(ca => ca.Id)
+                    .Select(ca => ca.AssignedKingdom != null ? ca.AssignedKingdom.DisplayName : null)
+                    .FirstOrDefault(),
                 x.StartingEquipmentOption != null ? x.StartingEquipmentOption.DisplayName : null,
                 x.CharacterPrepNote,
                 x.Submission.PrimaryContactName,
@@ -42,6 +55,7 @@ public sealed class CharacterPrepExportService(
             "Hráč",
             "Rok narození",
             "Jméno postavy",
+            "Království",
             "Startovní výbava",
             "Poznámka",
             "Domácnost",
@@ -68,18 +82,23 @@ public sealed class CharacterPrepExportService(
                 sheet.Cell(xlRow, 3).Value = row.CharacterName;
             }
 
+            if (!string.IsNullOrEmpty(row.KingdomDisplayName))
+            {
+                sheet.Cell(xlRow, 4).Value = row.KingdomDisplayName;
+            }
+
             if (!string.IsNullOrEmpty(row.EquipmentDisplayName))
             {
-                sheet.Cell(xlRow, 4).Value = row.EquipmentDisplayName;
+                sheet.Cell(xlRow, 5).Value = row.EquipmentDisplayName;
             }
 
             if (!string.IsNullOrEmpty(row.CharacterPrepNote))
             {
-                sheet.Cell(xlRow, 5).Value = row.CharacterPrepNote;
+                sheet.Cell(xlRow, 6).Value = row.CharacterPrepNote;
             }
 
-            sheet.Cell(xlRow, 6).Value = row.PrimaryContactName;
-            sheet.Cell(xlRow, 7).Value = row.PrimaryEmail;
+            sheet.Cell(xlRow, 7).Value = row.PrimaryContactName;
+            sheet.Cell(xlRow, 8).Value = row.PrimaryEmail;
         }
 
         // Formatting: frozen header, autofilter on header, auto-width capped at 40 chars.
@@ -96,6 +115,7 @@ public sealed class CharacterPrepExportService(
         string PersonFullName,
         int BirthYear,
         string? CharacterName,
+        string? KingdomDisplayName,
         string? EquipmentDisplayName,
         string? CharacterPrepNote,
         string PrimaryContactName,
