@@ -97,6 +97,18 @@ public sealed record AdultDto(
     string? Email,
     List<string> Roles);
 
+/// <summary>All free-text notes attached to one adult on a game — for pre-game review.</summary>
+public sealed record AdultNoteDto(
+    int PersonId,
+    string FirstName,
+    string LastName,
+    int BirthYear,
+    string GroupName,
+    string? PersonNotes,
+    List<string> RegistrationRegistrantNotes,
+    List<string> SubmissionRegistrantNotes,
+    List<string> OrganizerNotes);
+
 /// <summary>Character seed data for hra import.</summary>
 public sealed record CharacterSeedDto(
     int? CharacterId,

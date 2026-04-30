@@ -9,27 +9,50 @@
 <PageTitle>QR štítky pro hru</PageTitle>
 
 <style>
+    /* 7×7 cm physical sticker. Fixed box on screen + print so the preview matches the
+       cut size. Text hierarchy per issue #195: character name dominates, player name
+       second, person ID third (smallest). */
     .sticker {
+        box-sizing: border-box;
+        width: 70mm;
+        height: 70mm;
         border: 1px dashed #ccc;
-        padding: 8px;
+        padding: 4mm;
         text-align: center;
-        margin-bottom: 8px;
-    }
-
-    .sticker-qr img {
-        width: 80px;
-        height: 80px;
-    }
-
-    .sticker-name {
-        font-weight: bold;
-        font-size: 12px;
+        margin: 0 auto 8mm auto;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        align-items: center;
     }
 
     .sticker-character {
-        font-size: 11px;
-        color: #666;
-        margin-bottom: 4px;
+        font-weight: 700;
+        font-size: 5mm;
+        line-height: 1.15;
+        color: #1a1a1a;
+        margin-bottom: 1mm;
+        word-break: break-word;
+    }
+
+    .sticker-name {
+        font-weight: 500;
+        font-size: 3.5mm;
+        line-height: 1.1;
+        color: #444;
+        margin-bottom: 1mm;
+    }
+
+    .sticker-person-id {
+        font-size: 2.6mm;
+        color: #888;
+        font-variant-numeric: tabular-nums;
+    }
+
+    .sticker-qr img {
+        width: 38mm;
+        height: 38mm;
+        display: block;
     }
 
     @@media print {
@@ -37,14 +60,8 @@
         body { margin: 0; padding: 0; }
         .sticker {
             border: 1px dashed #999;
-            padding: 8px;
-            text-align: center;
             break-inside: avoid;
-            height: 120px;
         }
-        .sticker-qr svg { width: 80px; height: 80px; }
-        .sticker-name { font-weight: bold; font-size: 11px; }
-        .sticker-character { font-size: 10px; color: #666; margin-bottom: 4px; }
     }
 </style>
 
@@ -69,10 +86,13 @@ else
     <div class="row">
         @foreach (var reg in registrations)
         {
-            <div class="col-4">
+            <div class="col-auto">
                 <div class="sticker">
-                    <div class="sticker-name">@reg.FirstName @reg.LastName</div>
-                    <div class="sticker-character">@reg.CharacterName</div>
+                    <div>
+                        <div class="sticker-character">@(string.IsNullOrWhiteSpace(reg.CharacterName) ? $"{reg.FirstName} {reg.LastName}" : reg.CharacterName)</div>
+                        <div class="sticker-name">@reg.FirstName @reg.LastName</div>
+                        <div class="sticker-person-id">#@reg.PersonId</div>
+                    </div>
                     <div class="sticker-qr"><img src="@GenerateQrDataUri(reg.PersonId)" alt="QR" /></div>
                 </div>
             </div>
