@@ -29,5 +29,9 @@ public sealed class Registration
     public StartingEquipmentOption? StartingEquipmentOption { get; set; }
     public string? CharacterPrepNote { get; set; }
     public DateTimeOffset? CharacterPrepUpdatedAtUtc { get; set; }
+    public Guid? FeedbackToken { get; set; }
+    public DateTimeOffset? FeedbackInvitedAtUtc { get; set; }
+    public DateTimeOffset? FeedbackReminderLastSentAtUtc { get; set; }
+    public FeedbackResponse? FeedbackResponse { get; set; }
     public List<FoodOrder> FoodOrders { get; set; } = [];
 }

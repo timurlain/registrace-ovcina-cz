@@ -93,3 +93,10 @@ public enum VariableSymbolStrategy
     SequentialPerGame = 1,
     ManualOverride = 2
 }
+
+public enum FeedbackEditedBy
+{
+    Self = 0,
+    HouseholdContact = 1,
+    Organizer = 2,
+}
