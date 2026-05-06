@@ -76,6 +76,7 @@ public sealed class FeedbackService(
             SubmissionId: registration.SubmissionId,
             GameId: game.Id,
             GameName: game.Name,
+            PersonId: registration.PersonId,
             AttendeeFullName: $"{registration.Person.FirstName} {registration.Person.LastName}",
             AttendeeType: registration.AttendeeType,
             Questions: questions,

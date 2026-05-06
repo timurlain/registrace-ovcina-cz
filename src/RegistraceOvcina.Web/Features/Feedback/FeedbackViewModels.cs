@@ -12,6 +12,7 @@ public sealed record FeedbackView(
     int SubmissionId,
     int GameId,
     string GameName,
+    int PersonId,
     string AttendeeFullName,
     AttendeeType AttendeeType,
     FeedbackQuestionSet Questions,
