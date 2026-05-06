@@ -256,6 +256,7 @@ public class Program
         builder.Services.AddScoped<FeedbackOptionsService>();
         builder.Services.AddScoped<FeedbackTokenService>();
         builder.Services.AddScoped<FeedbackService>();
+        builder.Services.AddScoped<FeedbackExportService>();
         builder.Services.AddOptions<FeedbackOptions>()
             .Bind(builder.Configuration.GetSection(FeedbackOptions.SectionName))
             .ValidateDataAnnotations()
@@ -1450,6 +1451,59 @@ public class Program
                         $"priprava-postav-{slug}-{stamp}.xlsx");
 
                     static string Slugify(string value)
+                    {
+                        var normalized = value.Normalize(System.Text.NormalizationForm.FormD);
+                        var sb = new System.Text.StringBuilder(normalized.Length);
+                        foreach (var ch in normalized)
+                        {
+                            var cat = System.Globalization.CharUnicodeInfo.GetUnicodeCategory(ch);
+                            if (cat == System.Globalization.UnicodeCategory.NonSpacingMark)
+                            {
+                                continue;
+                            }
+                            if (char.IsLetterOrDigit(ch))
+                            {
+                                sb.Append(char.ToLowerInvariant(ch));
+                            }
+                            else if (char.IsWhiteSpace(ch) || ch == '-' || ch == '_')
+                            {
+                                sb.Append('-');
+                            }
+                        }
+                        var slug = sb.ToString();
+                        while (slug.Contains("--", StringComparison.Ordinal))
+                        {
+                            slug = slug.Replace("--", "-", StringComparison.Ordinal);
+                        }
+                        return slug.Trim('-');
+                    }
+                })
+            .RequireAuthorization(AuthorizationPolicies.StaffOnly);
+        app.MapGet(
+                "/organizace/hry/{gameId:int}/zpetna-vazba/export.xlsx",
+                async (int gameId, IDbContextFactory<ApplicationDbContext> dbFactory,
+                    FeedbackExportService exportService, CancellationToken ct) =>
+                {
+                    await using var db = await dbFactory.CreateDbContextAsync(ct);
+                    var gameName = await db.Games
+                        .AsNoTracking()
+                        .Where(x => x.Id == gameId)
+                        .Select(x => x.Name)
+                        .FirstOrDefaultAsync(ct);
+
+                    if (gameName is null)
+                    {
+                        return Results.NotFound();
+                    }
+
+                    var xlsx = await exportService.ExportAsync(gameId, ct);
+                    var slug = SlugifyForExport(gameName);
+                    var stamp = DateTime.UtcNow.ToString("yyyyMMdd");
+                    return Results.File(xlsx,
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        $"zpetna-vazba-{slug}-{stamp}.xlsx");
+
+                    static string SlugifyForExport(string value)
                     {
                         var normalized = value.Normalize(System.Text.NormalizationForm.FormD);
                         var sb = new System.Text.StringBuilder(normalized.Length);

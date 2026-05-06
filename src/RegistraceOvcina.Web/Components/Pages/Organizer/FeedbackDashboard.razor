@@ -72,6 +72,11 @@ else
                 @onclick="ExtendFeedbackAsync">
             Prodloužit o 30 dní
         </button>
+
+        <a class="btn btn-outline-secondary"
+           href="@($"/organizace/hry/{GameId}/zpetna-vazba/export.xlsx")">
+            Export do Excelu
+        </a>
     </div>
 
     @if (!string.IsNullOrWhiteSpace(statusMessage))
