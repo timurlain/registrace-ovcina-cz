@@ -2,6 +2,7 @@ using System.Text.Encodings.Web;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using RegistraceOvcina.Web.Data;
+using RegistraceOvcina.Web.Features.CharacterPrep; // PagedResult<T> reused
 
 namespace RegistraceOvcina.Web.Features.Feedback;
 
@@ -284,6 +285,251 @@ public sealed class FeedbackService(
         }
 
         return (false, null);
+    }
+
+    // -------------------------------------------------------------------------
+    // Organizer dashboard
+    // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// Aggregate counts for the dashboard tile row, scoped to one game.
+    /// Soft-deleted submissions are excluded by the global query filter on
+    /// <see cref="RegistrationSubmission"/>.
+    /// </summary>
+    public async Task<FeedbackStats> GetDashboardStatsAsync(int gameId, CancellationToken cancellationToken)
+    {
+        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+
+        // One server round-trip; aggregates are computed in-memory on a tiny
+        // boolean projection (a few hundred rows max for a LARP).
+        var aggregates = await db.Registrations
+            .AsNoTracking()
+            .Where(r => r.Submission.GameId == gameId)
+            .Select(r => new
+            {
+                Invited = r.FeedbackInvitedAtUtc != null,
+                Submitted = r.FeedbackResponse != null && r.FeedbackResponse.SubmittedAtUtc != null,
+            })
+            .ToListAsync(cancellationToken);
+
+        var total = aggregates.Count;
+        var invited = aggregates.Count(a => a.Invited);
+        var done = aggregates.Count(a => a.Submitted);
+        // Waiting = invited but not yet submitted. (Not-invited rows are not
+        // "waiting" — organizers haven't asked them yet.)
+        var waiting = invited - done;
+
+        return new FeedbackStats(total, invited, done, waiting);
+    }
+
+    /// <summary>
+    /// Paginated, filterable, one-row-per-Registration projection for the
+    /// organizer dashboard. Soft-deleted submissions are excluded by the
+    /// global query filter on <see cref="RegistrationSubmission"/>.
+    /// </summary>
+    /// <remarks>
+    /// Sort: <see cref="FeedbackStatus"/> ascending (NotInvited first), then
+    /// HouseholdName, then PersonFullName — mirrors the CharacterPrep
+    /// dashboard so organizers see actionable rows at the top. Status is a
+    /// derived three-way enum so we project to memory and sort there; the
+    /// dataset is small (≤ a few hundred attendees per game).
+    /// </remarks>
+    public async Task<PagedResult<FeedbackDashboardRow>> GetDashboardRowsAsync(
+        int gameId,
+        FeedbackDashboardFilter filter,
+        int page,
+        int pageSize,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(filter);
+        if (page < 1) page = 1;
+        if (pageSize < 1) pageSize = 20;
+
+        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+
+        var raw = await db.Registrations
+            .AsNoTracking()
+            .Where(r => r.Submission.GameId == gameId)
+            .Select(r => new
+            {
+                r.Id,
+                r.SubmissionId,
+                HouseholdName = r.Submission.PrimaryContactName,
+                PersonFirst = r.Person.FirstName,
+                PersonLast = r.Person.LastName,
+                r.AttendeeType,
+                InvitedAtUtc = r.FeedbackInvitedAtUtc,
+                ResponseSubmittedAtUtc = r.FeedbackResponse != null
+                    ? r.FeedbackResponse.SubmittedAtUtc
+                    : null,
+                LastEditedBy = r.FeedbackResponse != null
+                    ? r.FeedbackResponse.LastEditedBy
+                    : (FeedbackEditedBy?)null,
+                ResponseUpdatedAtUtc = r.FeedbackResponse != null
+                    ? r.FeedbackResponse.UpdatedAtUtc
+                    : (DateTimeOffset?)null,
+                r.FeedbackToken,
+            })
+            .ToListAsync(cancellationToken);
+
+        var rows = raw
+            .Select(r => new FeedbackDashboardRow(
+                RegistrationId: r.Id,
+                SubmissionId: r.SubmissionId,
+                HouseholdName: r.HouseholdName,
+                PersonFullName: (r.PersonFirst + " " + r.PersonLast).Trim(),
+                AttendeeType: r.AttendeeType,
+                Status: DeriveDashboardStatus(r.InvitedAtUtc, r.ResponseSubmittedAtUtc),
+                LastEditedBy: r.LastEditedBy,
+                UpdatedAtUtc: r.ResponseUpdatedAtUtc,
+                SubmittedAtUtc: r.ResponseSubmittedAtUtc,
+                FeedbackToken: r.FeedbackToken))
+            .ToList();
+
+        if (filter.Status is FeedbackStatus wantedStatus)
+        {
+            rows = rows.Where(r => r.Status == wantedStatus).ToList();
+        }
+
+        if (filter.AttendeeType is AttendeeType wantedType)
+        {
+            rows = rows.Where(r => r.AttendeeType == wantedType).ToList();
+        }
+
+        if (!string.IsNullOrWhiteSpace(filter.Search))
+        {
+            var needle = filter.Search.Trim();
+            rows = rows
+                .Where(r =>
+                    (!string.IsNullOrEmpty(r.PersonFullName)
+                        && r.PersonFullName.Contains(needle, StringComparison.OrdinalIgnoreCase))
+                    || (!string.IsNullOrEmpty(r.HouseholdName)
+                        && r.HouseholdName.Contains(needle, StringComparison.OrdinalIgnoreCase)))
+                .ToList();
+        }
+
+        var total = rows.Count;
+
+        var ordered = rows
+            .OrderBy(r => (int)r.Status)
+            .ThenBy(r => r.HouseholdName, StringComparer.CurrentCultureIgnoreCase)
+            .ThenBy(r => r.PersonFullName, StringComparer.CurrentCultureIgnoreCase)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToList();
+
+        return new PagedResult<FeedbackDashboardRow>(ordered, total, page, pageSize);
+    }
+
+    /// <summary>
+    /// Registrations targeted by the bulk "Poslat pozvánky" button: those
+    /// that have not yet been invited. Soft-deleted submissions are excluded
+    /// by the global query filter.
+    /// </summary>
+    public async Task<IReadOnlyList<Registration>> ListInvitationTargetsAsync(
+        int gameId,
+        CancellationToken cancellationToken)
+    {
+        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+
+        // AsNoTracking — the caller hands ids off to MarkInvitedAsync which
+        // re-fetches with tracking, so we don't need change tracking here.
+        return await db.Registrations
+            .AsNoTracking()
+            .Where(r => r.Submission.GameId == gameId
+                && r.FeedbackInvitedAtUtc == null)
+            .ToListAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Registrations targeted by the bulk "Poslat připomínku" button:
+    /// already invited, not yet submitted, and either never reminded or last
+    /// reminded more than 24 hours ago. The 24h threshold prevents
+    /// double-tapping the bulk button from sending two reminders in quick
+    /// succession.
+    /// </summary>
+    public async Task<IReadOnlyList<Registration>> ListReminderTargetsAsync(
+        int gameId,
+        DateTimeOffset nowUtc,
+        CancellationToken cancellationToken)
+    {
+        var threshold = nowUtc.AddHours(-24);
+
+        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+
+        return await db.Registrations
+            .AsNoTracking()
+            .Where(r => r.Submission.GameId == gameId
+                && r.FeedbackInvitedAtUtc != null
+                && (r.FeedbackResponse == null || r.FeedbackResponse.SubmittedAtUtc == null)
+                && (r.FeedbackReminderLastSentAtUtc == null
+                    || r.FeedbackReminderLastSentAtUtc < threshold))
+            .ToListAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Stamps <see cref="Registration.FeedbackInvitedAtUtc"/> with
+    /// <paramref name="nowUtc"/>. Idempotent: once invited, re-invocation is
+    /// a no-op so the original invitation timestamp is preserved (the audit
+    /// trail says "first invited at X").
+    /// </summary>
+    public async Task MarkInvitedAsync(
+        int registrationId,
+        DateTimeOffset nowUtc,
+        CancellationToken cancellationToken)
+    {
+        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+
+        var registration = await db.Registrations
+            .FirstOrDefaultAsync(r => r.Id == registrationId, cancellationToken)
+            ?? throw new InvalidOperationException(
+                $"Registration {registrationId} not found.");
+
+        if (registration.FeedbackInvitedAtUtc is null)
+        {
+            registration.FeedbackInvitedAtUtc = nowUtc;
+            await db.SaveChangesAsync(cancellationToken);
+        }
+    }
+
+    /// <summary>
+    /// Stamps <see cref="Registration.FeedbackReminderLastSentAtUtc"/> with
+    /// <paramref name="nowUtc"/>. Always overwrites — the bulk button uses
+    /// <see cref="ListReminderTargetsAsync"/> to enforce the 24h window, but
+    /// direct callers may legitimately re-send sooner (e.g. organiser
+    /// resending after a bounce).
+    /// </summary>
+    public async Task MarkReminderSentAsync(
+        int registrationId,
+        DateTimeOffset nowUtc,
+        CancellationToken cancellationToken)
+    {
+        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+
+        var registration = await db.Registrations
+            .FirstOrDefaultAsync(r => r.Id == registrationId, cancellationToken)
+            ?? throw new InvalidOperationException(
+                $"Registration {registrationId} not found.");
+
+        registration.FeedbackReminderLastSentAtUtc = nowUtc;
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    private static FeedbackStatus DeriveDashboardStatus(
+        DateTimeOffset? invitedAtUtc,
+        DateTimeOffset? responseSubmittedAtUtc)
+    {
+        if (responseSubmittedAtUtc is not null)
+        {
+            return FeedbackStatus.Done;
+        }
+
+        if (invitedAtUtc is null)
+        {
+            return FeedbackStatus.NotInvited;
+        }
+
+        return FeedbackStatus.Waiting;
     }
 
     private static IReadOnlyDictionary<string, string> DeserializeAnswers(string? json)

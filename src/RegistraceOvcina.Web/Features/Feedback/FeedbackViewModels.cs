@@ -45,3 +45,50 @@ public enum FeedbackStatus
 /// <c>"NotOpen"</c>) the UI can localize.
 /// </summary>
 public sealed record FeedbackSaveResult(bool Persisted, string? RejectionReason);
+
+/// <summary>
+/// Aggregate counts for the organizer feedback dashboard tile row, scoped to one game.
+/// </summary>
+/// <remarks>
+/// <para><see cref="Total"/> = registration count (one row per attendee).</para>
+/// <para><see cref="Invited"/> = registrations with <c>FeedbackInvitedAtUtc</c> set.</para>
+/// <para><see cref="Done"/> = registrations whose <see cref="FeedbackResponse"/>
+/// has <c>SubmittedAtUtc</c> set.</para>
+/// <para><see cref="Waiting"/> = invited minus done. (Not-invited rows do not
+/// count as waiting because organizers haven't asked them yet.)</para>
+/// </remarks>
+public sealed record FeedbackStats(
+    int Total,
+    int Invited,
+    int Done,
+    int Waiting);
+
+/// <summary>
+/// One-row-per-Registration projection for the organizer feedback dashboard.
+/// </summary>
+/// <remarks>
+/// <see cref="LastEditedBy"/> is null when no <see cref="FeedbackResponse"/>
+/// row exists yet (i.e. the attendee has neither saved a draft nor been
+/// scribed for). <see cref="FeedbackToken"/> is null until the token service
+/// has minted one — used by the per-row "copy link" button on the dashboard.
+/// </remarks>
+public sealed record FeedbackDashboardRow(
+    int RegistrationId,
+    int SubmissionId,
+    string HouseholdName,
+    string PersonFullName,
+    AttendeeType AttendeeType,
+    FeedbackStatus Status,
+    FeedbackEditedBy? LastEditedBy,
+    DateTimeOffset? UpdatedAtUtc,
+    DateTimeOffset? SubmittedAtUtc,
+    Guid? FeedbackToken);
+
+/// <summary>
+/// Filter for <see cref="FeedbackService.GetDashboardRowsAsync"/>. All
+/// properties are optional; null means "no filter on this dimension".
+/// </summary>
+public sealed record FeedbackDashboardFilter(
+    FeedbackStatus? Status = null,
+    AttendeeType? AttendeeType = null,
+    string? Search = null);
