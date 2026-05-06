@@ -104,3 +104,45 @@ public sealed record SubmissionFeedbackAttendee(
     string PersonFullName,
     AttendeeType AttendeeType,
     FeedbackStatus Status);
+
+/// <summary>
+/// Lightweight game-meta projection for the organizer feedback dashboard
+/// header: name + the effective open/close window (with the EndsAtUtc fallback
+/// already resolved). Used to render the title, status pill, and date range.
+/// </summary>
+public sealed record FeedbackGameHeader(
+    int GameId,
+    string GameName,
+    DateTimeOffset EffectiveOpensAt,
+    DateTimeOffset EffectiveClosesAt);
+
+/// <summary>
+/// Read-only detail view of a single attendee's feedback response, used by the
+/// organizer per-response page. Carries the question schema for the role plus
+/// the existing answers so the page can render labelled cards even when an
+/// answer is missing.
+/// </summary>
+/// <remarks>
+/// <see cref="HasResponse"/> is <c>false</c> until the attendee (or a scribe)
+/// saves at least one draft. The detail page uses it to decide whether to
+/// expose the pin toggle / organizer note textarea — neither makes sense for
+/// an empty response.
+/// </remarks>
+public sealed record FeedbackResponseDetail(
+    int RegistrationId,
+    int GameId,
+    string GameName,
+    int SubmissionId,
+    string HouseholdName,
+    string PersonFullName,
+    AttendeeType AttendeeType,
+    FeedbackStatus Status,
+    FeedbackQuestionSet Questions,
+    IReadOnlyDictionary<string, string> Answers,
+    FeedbackEditedBy? LastEditedBy,
+    DateTimeOffset? UpdatedAtUtc,
+    DateTimeOffset? SubmittedAtUtc,
+    bool HasResponse,
+    bool PinToChronicle,
+    string? OrganizerNote,
+    Guid? FeedbackToken);

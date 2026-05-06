@@ -517,6 +517,215 @@ public sealed class FeedbackService(
     }
 
     // -------------------------------------------------------------------------
+    // Organizer window override (open / close / extend)
+    // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// Sets <see cref="Game.FeedbackOpensAtUtc"/> to <paramref name="nowUtc"/>.
+    /// If <see cref="Game.FeedbackClosesAtUtc"/> is null or in the past, also
+    /// bumps it to <paramref name="nowUtc"/> + 30 days; otherwise leaves the
+    /// close timestamp untouched. Throws when the game does not exist.
+    /// </summary>
+    public async Task OpenFeedbackAsync(
+        int gameId,
+        DateTimeOffset nowUtc,
+        CancellationToken cancellationToken)
+    {
+        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+
+        var game = await db.Games
+            .FirstOrDefaultAsync(x => x.Id == gameId, cancellationToken)
+            ?? throw new InvalidOperationException($"Game {gameId} not found.");
+
+        game.FeedbackOpensAtUtc = nowUtc;
+
+        if (game.FeedbackClosesAtUtc is null || game.FeedbackClosesAtUtc <= nowUtc)
+        {
+            game.FeedbackClosesAtUtc = nowUtc.AddDays(30);
+        }
+
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Sets <see cref="Game.FeedbackClosesAtUtc"/> to <paramref name="nowUtc"/>,
+    /// effectively shutting the form. Throws when the game does not exist.
+    /// </summary>
+    public async Task CloseFeedbackAsync(
+        int gameId,
+        DateTimeOffset nowUtc,
+        CancellationToken cancellationToken)
+    {
+        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+
+        var game = await db.Games
+            .FirstOrDefaultAsync(x => x.Id == gameId, cancellationToken)
+            ?? throw new InvalidOperationException($"Game {gameId} not found.");
+
+        game.FeedbackClosesAtUtc = nowUtc;
+
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Sets <see cref="Game.FeedbackClosesAtUtc"/> to
+    /// <c>max(nowUtc, current) + 30 days</c>. Throws when the game does not
+    /// exist.
+    /// </summary>
+    public async Task ExtendFeedbackAsync(
+        int gameId,
+        DateTimeOffset nowUtc,
+        CancellationToken cancellationToken)
+    {
+        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+
+        var game = await db.Games
+            .FirstOrDefaultAsync(x => x.Id == gameId, cancellationToken)
+            ?? throw new InvalidOperationException($"Game {gameId} not found.");
+
+        var anchor = game.FeedbackClosesAtUtc is { } existing && existing > nowUtc
+            ? existing
+            : nowUtc;
+
+        game.FeedbackClosesAtUtc = anchor.AddDays(30);
+
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    // -------------------------------------------------------------------------
+    // Organizer per-response actions (pin to chronicle, organizer note)
+    // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// Toggles <see cref="FeedbackResponse.PinToChronicle"/> on the response
+    /// belonging to <paramref name="registrationId"/>. Throws when no response
+    /// row exists yet (pinning an empty response is meaningless).
+    /// </summary>
+    public async Task SetPinToChronicleAsync(
+        int registrationId,
+        bool pin,
+        CancellationToken cancellationToken)
+    {
+        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+
+        var response = await db.FeedbackResponses
+            .FirstOrDefaultAsync(x => x.RegistrationId == registrationId, cancellationToken)
+            ?? throw new InvalidOperationException(
+                $"FeedbackResponse for registration {registrationId} not found. " +
+                "A response must exist before it can be pinned.");
+
+        response.PinToChronicle = pin;
+        response.UpdatedAtUtc = timeProvider.GetUtcNow();
+
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Persists <paramref name="note"/> to
+    /// <see cref="FeedbackResponse.OrganizerNote"/>. Blank input is normalized
+    /// to <c>null</c> (the column nulls out — no empty strings stored). Throws
+    /// when no response row exists yet.
+    /// </summary>
+    public async Task SaveOrganizerNoteAsync(
+        int registrationId,
+        string? note,
+        CancellationToken cancellationToken)
+    {
+        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+
+        var response = await db.FeedbackResponses
+            .FirstOrDefaultAsync(x => x.RegistrationId == registrationId, cancellationToken)
+            ?? throw new InvalidOperationException(
+                $"FeedbackResponse for registration {registrationId} not found. " +
+                "A response must exist before an organizer note can be saved.");
+
+        response.OrganizerNote = string.IsNullOrWhiteSpace(note) ? null : note.Trim();
+        response.UpdatedAtUtc = timeProvider.GetUtcNow();
+
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Loads a single feedback response with the answers, schema, organizer
+    /// note, and pin flag for the per-response detail page.
+    /// </summary>
+    public async Task<FeedbackResponseDetail?> GetResponseDetailAsync(
+        int registrationId,
+        CancellationToken cancellationToken)
+    {
+        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+
+        var registration = await db.Registrations
+            .AsNoTracking()
+            .Include(x => x.Person)
+            .Include(x => x.Submission)
+            .Include(x => x.FeedbackResponse)
+            .FirstOrDefaultAsync(x => x.Id == registrationId, cancellationToken);
+
+        if (registration is null)
+        {
+            return null;
+        }
+
+        var game = await db.Games
+            .AsNoTracking()
+            .FirstOrDefaultAsync(x => x.Id == registration.Submission.GameId, cancellationToken)
+            ?? throw new InvalidOperationException(
+                $"Game {registration.Submission.GameId} for registration {registrationId} not found.");
+
+        var questions = await optionsService.GetForRoleAsync(
+            game.Id, registration.AttendeeType, cancellationToken);
+
+        var answers = DeserializeAnswers(registration.FeedbackResponse?.AnswersJson);
+        var status = DeriveDashboardStatus(
+            registration.FeedbackInvitedAtUtc,
+            registration.FeedbackResponse?.SubmittedAtUtc);
+
+        return new FeedbackResponseDetail(
+            RegistrationId: registration.Id,
+            GameId: game.Id,
+            GameName: game.Name,
+            SubmissionId: registration.SubmissionId,
+            HouseholdName: registration.Submission.PrimaryContactName,
+            PersonFullName: ($"{registration.Person.FirstName} {registration.Person.LastName}").Trim(),
+            AttendeeType: registration.AttendeeType,
+            Status: status,
+            Questions: questions,
+            Answers: answers,
+            LastEditedBy: registration.FeedbackResponse?.LastEditedBy,
+            UpdatedAtUtc: registration.FeedbackResponse?.UpdatedAtUtc,
+            SubmittedAtUtc: registration.FeedbackResponse?.SubmittedAtUtc,
+            HasResponse: registration.FeedbackResponse is not null,
+            PinToChronicle: registration.FeedbackResponse?.PinToChronicle ?? false,
+            OrganizerNote: registration.FeedbackResponse?.OrganizerNote,
+            FeedbackToken: registration.FeedbackToken);
+    }
+
+    /// <summary>
+    /// Loads minimal game header info for the organizer feedback dashboard:
+    /// name + the effective open / close window. Returns <c>null</c> when the
+    /// game does not exist.
+    /// </summary>
+    public async Task<FeedbackGameHeader?> GetGameHeaderAsync(
+        int gameId,
+        CancellationToken cancellationToken)
+    {
+        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+
+        var game = await db.Games
+            .AsNoTracking()
+            .FirstOrDefaultAsync(x => x.Id == gameId, cancellationToken);
+
+        if (game is null)
+        {
+            return null;
+        }
+
+        var (opensAt, closesAt) = ComputeWindow(game);
+        return new FeedbackGameHeader(game.Id, game.Name, opensAt, closesAt);
+    }
+
+    // -------------------------------------------------------------------------
     // Household-facing submission detail card
     // -------------------------------------------------------------------------
 
