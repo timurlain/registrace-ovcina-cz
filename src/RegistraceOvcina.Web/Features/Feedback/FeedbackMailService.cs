@@ -318,4 +318,134 @@ public sealed class FeedbackMailService(
 
         return $"{baseUrl}/zpetna-vazba/{token}";
     }
+
+    // -------------------------------------------------------------------------
+    // Test-send: organizer "send to me" preview from the template editor
+    // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// Renders + sends a sample bundle (household-contact) feedback email to
+    /// <paramref name="toEmail"/> using the same renderer + sender + per-game
+    /// template overrides as the real bulk send. The link targets in the body
+    /// are randomly generated GUIDs — they do NOT resolve to any real
+    /// Registration. Used by the organizer template editor's "send a test to
+    /// me" buttons so the organizer sees exactly what real recipients will get
+    /// before triggering the bulk send.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when <paramref name="toEmail"/> is null/blank, when the game
+    /// does not exist, or when <see cref="FeedbackOptions.PublicBaseUrl"/> is
+    /// unconfigured (mirrors the real-send safeguard).
+    /// </exception>
+    public async Task SendTestBundleAsync(
+        int gameId,
+        string toEmail,
+        bool isReminder,
+        CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(toEmail))
+        {
+            throw new InvalidOperationException("Cieľová e-mailová adresa je prázdná.");
+        }
+
+        var options = feedbackOptions.Value;
+        var baseUrl = (options.PublicBaseUrl ?? "").TrimEnd('/');
+        if (string.IsNullOrWhiteSpace(baseUrl))
+        {
+            throw new InvalidOperationException(
+                "Feedback:PublicBaseUrl is not configured; cannot build feedback URL.");
+        }
+
+        await using var db = await dbContextFactory.CreateDbContextAsync(ct);
+        var game = await db.Games
+            .AsNoTracking()
+            .FirstOrDefaultAsync(g => g.Id == gameId, ct)
+            ?? throw new InvalidOperationException($"Game {gameId} not found.");
+
+        // Mirror FeedbackService.ComputeWindow: closes-at falls back to
+        // EndsAtUtc + 30 days when not configured. Keeps the rendered deadline
+        // string consistent with whatever the organizer sees on the dashboard.
+        var endsAt = new DateTimeOffset(DateTime.SpecifyKind(game.EndsAtUtc, DateTimeKind.Utc));
+        var closesAt = game.FeedbackClosesAtUtc ?? endsAt.AddDays(30);
+
+        var sample = new FeedbackContactBundleEmail(
+            ToEmail: toEmail,
+            ContactName: "Testovací rodič",
+            GameName: game.Name,
+            FeedbackClosesAtLocal: closesAt,
+            Entries: new List<FeedbackBundleEntry>
+            {
+                new("Anička (test)", AttendeeType.Player,
+                    $"{baseUrl}/zpetna-vazba/{Guid.NewGuid()}"),
+                new("Kuba (test)", AttendeeType.Player,
+                    $"{baseUrl}/zpetna-vazba/{Guid.NewGuid()}"),
+            },
+            IsReminder: isReminder,
+            SubjectTemplate: game.FeedbackBundleSubjectTemplate,
+            HtmlTemplate: game.FeedbackBundleHtmlTemplate);
+
+        var rendered = emailRenderer.RenderContactBundle(sample);
+        await emailSender.SendAsync(toEmail, rendered.Subject, rendered.HtmlBody, ct);
+
+        logger.LogInformation(
+            "FeedbackMailService: test bundle email sent to {ToEmail} (game {GameId}, isReminder={IsReminder}).",
+            toEmail, gameId, isReminder);
+    }
+
+    /// <summary>
+    /// Renders + sends a sample adult-individual feedback email to
+    /// <paramref name="toEmail"/> using the same renderer + sender + per-game
+    /// template overrides as the real bulk send. The link target is a random
+    /// GUID — it does NOT resolve to any real Registration.
+    /// </summary>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when <paramref name="toEmail"/> is null/blank, when the game
+    /// does not exist, or when <see cref="FeedbackOptions.PublicBaseUrl"/> is
+    /// unconfigured.
+    /// </exception>
+    public async Task SendTestAdultIndividualAsync(
+        int gameId,
+        string toEmail,
+        bool isReminder,
+        CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(toEmail))
+        {
+            throw new InvalidOperationException("Cieľová e-mailová adresa je prázdná.");
+        }
+
+        var options = feedbackOptions.Value;
+        var baseUrl = (options.PublicBaseUrl ?? "").TrimEnd('/');
+        if (string.IsNullOrWhiteSpace(baseUrl))
+        {
+            throw new InvalidOperationException(
+                "Feedback:PublicBaseUrl is not configured; cannot build feedback URL.");
+        }
+
+        await using var db = await dbContextFactory.CreateDbContextAsync(ct);
+        var game = await db.Games
+            .AsNoTracking()
+            .FirstOrDefaultAsync(g => g.Id == gameId, ct)
+            ?? throw new InvalidOperationException($"Game {gameId} not found.");
+
+        var endsAt = new DateTimeOffset(DateTime.SpecifyKind(game.EndsAtUtc, DateTimeKind.Utc));
+        var closesAt = game.FeedbackClosesAtUtc ?? endsAt.AddDays(30);
+
+        var sample = new FeedbackAdultIndividualEmail(
+            ToEmail: toEmail,
+            AttendeeName: "Testovací dospělý",
+            GameName: game.Name,
+            FeedbackClosesAtLocal: closesAt,
+            TokenLink: $"{baseUrl}/zpetna-vazba/{Guid.NewGuid()}",
+            IsReminder: isReminder,
+            SubjectTemplate: game.FeedbackAdultIndividualSubjectTemplate,
+            HtmlTemplate: game.FeedbackAdultIndividualHtmlTemplate);
+
+        var rendered = emailRenderer.RenderAdultIndividual(sample);
+        await emailSender.SendAsync(toEmail, rendered.Subject, rendered.HtmlBody, ct);
+
+        logger.LogInformation(
+            "FeedbackMailService: test adult-individual email sent to {ToEmail} (game {GameId}, isReminder={IsReminder}).",
+            toEmail, gameId, isReminder);
+    }
 }

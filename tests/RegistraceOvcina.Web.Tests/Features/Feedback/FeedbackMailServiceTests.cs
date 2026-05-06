@@ -238,6 +238,117 @@ public sealed class FeedbackMailServiceTests
         Assert.Equal(3, distinct);
     }
 
+    // -------------------------------------------------- SendTest* methods
+
+    [Fact]
+    public async Task SendTestBundleAsync_renders_through_existing_renderer_and_calls_sender()
+    {
+        var options = CreateOptions();
+        await SeedGameAsync(options);
+        // Per-game template override that the renderer should pick up. Subject
+        // template includes the {GameName} token to prove the renderer ran.
+        await using (var db = new ApplicationDbContext(options))
+        {
+            var game = await db.Games.SingleAsync();
+            game.FeedbackBundleSubjectTemplate = "TEST-{GameName}";
+            game.FeedbackBundleHtmlTemplate = "<p>Hello {ContactName}!</p>{Entries}";
+            await db.SaveChangesAsync();
+        }
+        var (service, sender) = CreateService(options);
+
+        await service.SendTestBundleAsync(GameId, "tom@example.cz", isReminder: false, CancellationToken.None);
+
+        var captured = Assert.Single(sender.Captured);
+        Assert.Equal("tom@example.cz", captured.To);
+        // Game name token substituted by FeedbackTemplateRenderer.
+        Assert.Equal("TEST-Ovčina 2026", captured.Subject);
+        // Entries token expanded into a <ul> with the two dummy player rows.
+        Assert.Contains("Anička (test)", captured.HtmlBody);
+        Assert.Contains("Kuba (test)", captured.HtmlBody);
+        Assert.Contains("Testovací rodič", captured.HtmlBody);
+    }
+
+    [Fact]
+    public async Task SendTestAdultIndividualAsync_renders_and_calls_sender()
+    {
+        var options = CreateOptions();
+        await SeedGameAsync(options);
+        await using (var db = new ApplicationDbContext(options))
+        {
+            var game = await db.Games.SingleAsync();
+            game.FeedbackAdultIndividualSubjectTemplate = "ADULT-{GameName}";
+            game.FeedbackAdultIndividualHtmlTemplate = "<p>Ahoj {AttendeeName}, link: {TokenLink}</p>";
+            await db.SaveChangesAsync();
+        }
+        var (service, sender) = CreateService(options);
+
+        await service.SendTestAdultIndividualAsync(GameId, "tom@example.cz", isReminder: false, CancellationToken.None);
+
+        var captured = Assert.Single(sender.Captured);
+        Assert.Equal("tom@example.cz", captured.To);
+        Assert.Equal("ADULT-Ovčina 2026", captured.Subject);
+        Assert.Contains("Testovací dospělý", captured.HtmlBody);
+        // Token link must use the configured PublicBaseUrl prefix.
+        Assert.Contains("https://registrace.ovcina.cz/zpetna-vazba/", captured.HtmlBody);
+    }
+
+    [Fact]
+    public async Task SendTestBundleAsync_throws_when_toEmail_is_blank()
+    {
+        var options = CreateOptions();
+        await SeedGameAsync(options);
+        var (service, sender) = CreateService(options);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            service.SendTestBundleAsync(GameId, "", isReminder: false, CancellationToken.None));
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            service.SendTestBundleAsync(GameId, "   ", isReminder: false, CancellationToken.None));
+
+        Assert.Empty(sender.Captured);
+    }
+
+    [Fact]
+    public async Task SendTestBundleAsync_throws_when_game_does_not_exist()
+    {
+        var options = CreateOptions();
+        // No game seeded.
+        var (service, sender) = CreateService(options);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            service.SendTestBundleAsync(GameId, "tom@example.cz", isReminder: false, CancellationToken.None));
+
+        Assert.Empty(sender.Captured);
+    }
+
+    [Fact]
+    public async Task SendTestBundleAsync_uses_isReminder_flag()
+    {
+        var options = CreateOptions();
+        await SeedGameAsync(options);
+        var (service, sender) = CreateService(options);
+
+        await service.SendTestBundleAsync(GameId, "tom@example.cz", isReminder: true, CancellationToken.None);
+
+        var captured = Assert.Single(sender.Captured);
+        // Default reminder subject (no template override) starts with "Připomínka:".
+        Assert.StartsWith("Připomínka:", captured.Subject);
+        // Default reminder body includes the gentle reminder phrasing.
+        Assert.Contains("tichou připomínku", captured.HtmlBody);
+    }
+
+    [Fact]
+    public async Task SendTestAdultIndividualAsync_throws_when_toEmail_is_blank()
+    {
+        var options = CreateOptions();
+        await SeedGameAsync(options);
+        var (service, sender) = CreateService(options);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            service.SendTestAdultIndividualAsync(GameId, "", isReminder: false, CancellationToken.None));
+
+        Assert.Empty(sender.Captured);
+    }
+
     // ------------------------------------------------------------------ helpers
 
     private static DbContextOptions<ApplicationDbContext> CreateOptions() =>
