@@ -1,0 +1,33 @@
+@using RegistraceOvcina.Web.Features.Feedback
+
+@*
+    Tiny Bootstrap badge that visualises a per-Registration feedback state.
+    Used by:
+      • The household submission detail card (one badge per attendee row).
+      • The organizer feedback dashboard (planned in Task 10).
+    Colour conventions mirror CharacterPrep's status pill:
+      NotInvited → secondary, Waiting → warning, Done → success.
+*@
+
+<span class="badge @CssClass" data-testid="@($"feedback-status-{Status}")">@Label</span>
+
+@code {
+    [Parameter, EditorRequired]
+    public FeedbackStatus Status { get; set; }
+
+    private string CssClass => Status switch
+    {
+        FeedbackStatus.NotInvited => "text-bg-secondary",
+        FeedbackStatus.Waiting => "text-bg-warning",
+        FeedbackStatus.Done => "text-bg-success",
+        _ => "text-bg-light"
+    };
+
+    private string Label => Status switch
+    {
+        FeedbackStatus.NotInvited => "Čeká na pozvánku",
+        FeedbackStatus.Waiting => "Rozepsáno",
+        FeedbackStatus.Done => "Hotovo",
+        _ => Status.ToString()
+    };
+}

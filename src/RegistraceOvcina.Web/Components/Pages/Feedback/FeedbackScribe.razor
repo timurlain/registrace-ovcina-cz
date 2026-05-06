@@ -1,0 +1,114 @@
+@page "/prihlasky/{SubmissionId:int}/zpetna-vazba/{RegistrationId:int}"
+@attribute [Authorize]
+@rendermode InteractiveServer
+@layout PrepLayout
+
+@using RegistraceOvcina.Web.Features.Feedback
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject UserManager<ApplicationUser> UserManager
+@inject SubmissionService SubmissionService
+@inject FeedbackService FeedbackService
+@inject NavigationManager Navigation
+
+<PageTitle>Zpětná vazba — Ovčina</PageTitle>
+
+@if (_loading)
+{
+    <p class="text-secondary">Načítám…</p>
+}
+else if (_forbidden)
+{
+    <section class="empty-state" data-testid="feedback-scribe-forbidden">
+        <h1 class="h3 mb-3">Nemáte přístup</h1>
+        <p class="mb-0">Tato přihláška nepatří vašemu účtu, takže k ní nemůžete vyplňovat zpětnou vazbu.</p>
+        <a class="btn btn-outline-secondary mt-3" href="/moje-prihlasky">Zpět na moje přihlášky</a>
+    </section>
+}
+else if (_view is null)
+{
+    <section class="empty-state" data-testid="feedback-scribe-not-found">
+        <h1 class="h3 mb-3">Zpětná vazba nenalezena</h1>
+        <p class="mb-0">Odkaz již neplatí nebo účastník k této přihlášce nepatří.</p>
+        <a class="btn btn-outline-secondary mt-3" href="@($"/prihlasky/{SubmissionId}")">Zpět na přihlášku</a>
+    </section>
+}
+else
+{
+    <div class="mb-3">
+        <a class="btn btn-link p-0" href="@($"/prihlasky/{SubmissionId}")" data-testid="feedback-scribe-back">
+            ← Zpět na přihlášku
+        </a>
+    </div>
+
+    <FeedbackFormCard View="_view"
+                      EditedBy="FeedbackEditedBy.HouseholdContact"
+                      EditedByPersonId="_currentUserPersonId"
+                      OnAfterSave="LoadAsync" />
+}
+
+@code {
+    [Parameter]
+    public int SubmissionId { get; set; }
+
+    [Parameter]
+    public int RegistrationId { get; set; }
+
+    private bool _loading = true;
+    private bool _forbidden;
+    private FeedbackView? _view;
+    private int? _currentUserPersonId;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+        _loading = false;
+    }
+
+    /// <summary>
+    /// Resolves the current user, verifies they own the requested submission
+    /// (mirroring <see cref="SubmissionService.GetSubmissionAsync"/>'s
+    /// <c>RegistrantUserId</c> check, with the same <c>isStaff</c> override
+    /// granted to Admin/Organizer), confirms the registration belongs to the
+    /// requested submission, and loads the feedback view.
+    /// </summary>
+    private async Task LoadAsync()
+    {
+        _forbidden = false;
+        _view = null;
+
+        var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        var user = await UserManager.GetUserAsync(authState.User);
+        if (user is null)
+        {
+            _forbidden = true;
+            return;
+        }
+
+        _currentUserPersonId = user.PersonId;
+        var isStaff = authState.User.IsInRole(RoleNames.Admin)
+            || authState.User.IsInRole(RoleNames.Organizer);
+
+        // Ownership check piggy-backs on SubmissionService — same predicate
+        // (RegistrantUserId match OR staff role) used by SubmissionEditor.
+        // Returns null when the submission doesn't exist OR the user has no
+        // claim on it; we collapse both to a 403-style "no access" page.
+        var submission = await SubmissionService.GetSubmissionAsync(SubmissionId, user.Id, isStaff);
+        if (submission is null)
+        {
+            _forbidden = true;
+            return;
+        }
+
+        // Belt-and-suspenders: the route registrationId must belong to this
+        // submission. A 404-style empty state here keeps a tampered URL from
+        // letting a household scribe a different family's feedback even if
+        // the submission ownership check passes.
+        if (!submission.Attendees.Any(a => a.RegistrationId == RegistrationId))
+        {
+            _view = null;
+            return;
+        }
+
+        _view = await FeedbackService.GetViewAsync(RegistrationId, CancellationToken.None);
+    }
+}

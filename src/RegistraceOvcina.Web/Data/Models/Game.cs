@@ -28,6 +28,10 @@ public sealed class Game
     /// schedule outline, organizer contact). Parsed by API endpoints into structured response.
     /// </summary>
     public string? OrganizationInfo { get; set; }
+    public string? FeedbackKidQuestionsJson { get; set; }
+    public string? FeedbackAdultQuestionsJson { get; set; }
+    public DateTimeOffset? FeedbackOpensAtUtc { get; set; }
+    public DateTimeOffset? FeedbackClosesAtUtc { get; set; }
     public DateTime CreatedAtUtc { get; set; }
     public DateTime UpdatedAtUtc { get; set; }
     public List<GameKingdomTarget> KingdomTargets { get; set; } = [];

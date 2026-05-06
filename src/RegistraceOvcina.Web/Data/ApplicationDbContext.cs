@@ -32,6 +32,7 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
     public DbSet<Room> Rooms => Set<Room>();
     public DbSet<RegistrationSubmission> RegistrationSubmissions => Set<RegistrationSubmission>();
     public DbSet<StartingEquipmentOption> StartingEquipmentOptions => Set<StartingEquipmentOption>();
+    public DbSet<FeedbackResponse> FeedbackResponses => Set<FeedbackResponse>();
     public DbSet<Announcement> Announcements => Set<Announcement>();
     public DbSet<AnnouncementDismissal> AnnouncementDismissals => Set<AnnouncementDismissal>();
     public DbSet<ExternalContact> ExternalContacts => Set<ExternalContact>();
@@ -92,6 +93,8 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
                 .WithOne(x => x.Game)
                 .HasForeignKey(x => x.GameId)
                 .OnDelete(DeleteBehavior.Cascade);
+            entity.Property(x => x.FeedbackKidQuestionsJson).HasColumnType("text");
+            entity.Property(x => x.FeedbackAdultQuestionsJson).HasColumnType("text");
         });
 
         builder.Entity<Kingdom>(entity =>
@@ -184,6 +187,9 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
                 .WithMany()
                 .HasForeignKey(x => x.StartingEquipmentOptionId)
                 .OnDelete(DeleteBehavior.Restrict);
+            entity.HasIndex(x => x.FeedbackToken)
+                .IsUnique()
+                .HasFilter("\"FeedbackToken\" IS NOT NULL");
         });
 
         builder.Entity<Character>(entity =>
@@ -462,6 +468,23 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
                 .WithMany()
                 .HasForeignKey(x => x.GameId)
                 .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        builder.Entity<FeedbackResponse>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.HasIndex(x => x.RegistrationId).IsUnique();
+            entity.HasOne(x => x.Registration)
+                .WithOne(r => r.FeedbackResponse)
+                .HasForeignKey<FeedbackResponse>(x => x.RegistrationId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(x => x.LastEditedByPerson)
+                .WithMany()
+                .HasForeignKey(x => x.LastEditedByPersonId)
+                .OnDelete(DeleteBehavior.SetNull);
+            entity.Property(x => x.AnswersJson).HasColumnType("text");
+            entity.Property(x => x.OrganizerNote).HasMaxLength(4000);
+            entity.Property(x => x.LastEditedBy).HasConversion<string>().HasMaxLength(32);
         });
     }
 }

@@ -1,0 +1,492 @@
+@page "/organizace/hry/{GameId:int}/zpetna-vazba"
+@attribute [Authorize(Policy = AuthorizationPolicies.StaffOnly)]
+@rendermode InteractiveServer
+
+@using Microsoft.JSInterop
+@using Microsoft.Extensions.Options
+@using RegistraceOvcina.Web.Data
+@using RegistraceOvcina.Web.Features.Feedback
+@using RegistraceOvcina.Web.Features.CharacterPrep
+@using RegistraceOvcina.Web.Components.Pages.Feedback
+@using RegistraceOvcina.Web.Security
+
+@inject FeedbackService FeedbackService
+@inject FeedbackMailService FeedbackMailService
+@inject IOptions<FeedbackOptions> FeedbackOpts
+@inject IJSRuntime JS
+
+<PageTitle>Zpětná vazba — @(header?.GameName ?? "Načítání…")</PageTitle>
+
+@if (header is null || stats is null)
+{
+    <div class="text-center py-5">
+        <div class="spinner-border text-primary" role="status">
+            <span class="visually-hidden">Načítání…</span>
+        </div>
+    </div>
+}
+else
+{
+    var (windowState, pillClass, pillLabel) = ResolveWindowPill(header, DateTimeOffset.UtcNow);
+
+    <h2 class="mb-1">
+        Zpětná vazba — @header.GameName
+        <span class="badge ms-2 @pillClass">@pillLabel</span>
+    </h2>
+    <p class="text-secondary mb-4">
+        Otevřeno @FormatLocal(header.EffectiveOpensAt) → @FormatLocal(header.EffectiveClosesAt)
+    </p>
+
+    @* ────────── Action bar ────────── *@
+    <div class="d-flex flex-wrap gap-2 align-items-center mb-3">
+        <button type="button" class="btn btn-primary"
+                disabled="@isBusy"
+                @onclick="SendInvitationsAsync">
+            Poslat pozvánky
+        </button>
+        <button type="button" class="btn btn-outline-primary"
+                disabled="@isBusy"
+                @onclick="SendRemindersAsync">
+            Poslat připomínky
+        </button>
+
+        <div class="vr"></div>
+
+        @if (windowState == FeedbackWindowState.NotYetOpen || windowState == FeedbackWindowState.Closed)
+        {
+            <button type="button" class="btn btn-outline-success"
+                    disabled="@isBusy"
+                    @onclick="OpenFeedbackAsync">
+                Otevřít zpětnou vazbu
+            </button>
+        }
+        @if (windowState == FeedbackWindowState.Open)
+        {
+            <button type="button" class="btn btn-outline-danger"
+                    disabled="@isBusy"
+                    @onclick="CloseFeedbackAsync">
+                Uzavřít zpětnou vazbu
+            </button>
+        }
+        <button type="button" class="btn btn-outline-secondary"
+                disabled="@isBusy"
+                @onclick="ExtendFeedbackAsync">
+            Prodloužit o 30 dní
+        </button>
+
+        <a class="btn btn-outline-secondary"
+           href="@($"/organizace/hry/{GameId}/zpetna-vazba/export.xlsx")">
+            Export do Excelu
+        </a>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(statusMessage))
+    {
+        <div class="alert alert-success py-2 small" role="status">@statusMessage</div>
+    }
+    @if (!string.IsNullOrWhiteSpace(errorMessage))
+    {
+        <div class="alert alert-danger py-2 small" role="alert">@errorMessage</div>
+    }
+
+    @* ────────── Stat tiles ────────── *@
+    <div class="row g-3 mb-4">
+        <div class="col-md-3">
+            <div class="card shadow-sm border-start border-4 border-primary">
+                <div class="card-body">
+                    <h2 class="mb-0" data-testid="feedback-stat-total">@stats.Total</h2>
+                    <span class="text-secondary">Celkem</span>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card shadow-sm border-start border-4 border-info">
+                <div class="card-body">
+                    <h2 class="mb-0" data-testid="feedback-stat-invited">@stats.Invited</h2>
+                    <span class="text-secondary">Pozváno</span>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            @{
+                var doneBorder = stats.Invited > 0 && stats.Done == stats.Invited
+                    ? "border-success"
+                    : "border-warning";
+            }
+            <div class="card shadow-sm border-start border-4 @doneBorder">
+                <div class="card-body">
+                    <h2 class="mb-0" data-testid="feedback-stat-done">@stats.Done</h2>
+                    <span class="text-secondary">Hotovo</span>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            @{
+                var waitingBorder = stats.Waiting == 0 ? "border-success" : "border-warning";
+            }
+            <div class="card shadow-sm border-start border-4 @waitingBorder">
+                <div class="card-body">
+                    <h2 class="mb-0" data-testid="feedback-stat-waiting">@stats.Waiting</h2>
+                    <span class="text-secondary">Čeká</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    @* ────────── Filter chips ────────── *@
+    <div class="d-flex flex-wrap gap-2 align-items-center mb-3">
+        <label class="small text-muted me-1">Stav</label>
+        <select class="form-select form-select-sm" style="min-width: 160px;"
+                @bind="selectedStatus" @bind:after="OnFilterChangedAsync">
+            <option value="">Všichni</option>
+            <option value="NotInvited">Nezváno</option>
+            <option value="Waiting">Čeká</option>
+            <option value="Done">Hotovo</option>
+        </select>
+
+        <label class="small text-muted ms-3 me-1">Role</label>
+        <select class="form-select form-select-sm" style="min-width: 140px;"
+                @bind="selectedAttendeeType" @bind:after="OnFilterChangedAsync">
+            <option value="">Všichni</option>
+            <option value="Player">Hrdina</option>
+            <option value="Adult">Dospělý</option>
+        </select>
+
+        <div class="ms-auto d-flex gap-2 align-items-center">
+            <input type="text" class="form-control form-control-sm" style="min-width: 220px;"
+                   placeholder="Hledat..."
+                   @bind="searchText" @bind:event="oninput" @bind:after="OnSearchTextChangedAsync"
+                   @onkeyup="OnSearchKeyUp" />
+            <button type="button" class="btn btn-sm btn-outline-secondary" @onclick="OnSearchClickedAsync">
+                Hledat
+            </button>
+        </div>
+    </div>
+
+    @* ────────── Rows table ────────── *@
+    @if (rowsPage is null)
+    {
+        <p class="text-secondary">Načítám řádky…</p>
+    }
+    else if (rowsPage.Total == 0)
+    {
+        <div class="empty-state">Žádný hrdina ani dospělý filtru neodpovídá.</div>
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table class="table align-middle">
+                <thead>
+                    <tr>
+                        <th>Hrdina / Dospělý</th>
+                        <th>Domácnost</th>
+                        <th>Role</th>
+                        <th>Stav</th>
+                        <th>Editováno</th>
+                        <th>Naposledy upraveno</th>
+                        <th class="text-end">Akce</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var row in rowsPage.Rows)
+                    {
+                        <tr data-testid="@($"feedback-row-{row.RegistrationId}")">
+                            <td>@row.PersonFullName</td>
+                            <td>
+                                <a class="text-decoration-none"
+                                   href="/organizace/prihlasky/@row.SubmissionId">
+                                    @row.HouseholdName
+                                </a>
+                            </td>
+                            <td>@RoleLabel(row.AttendeeType)</td>
+                            <td><FeedbackStatusBadge Status="row.Status" /></td>
+                            <td class="small text-muted">@EditedByLabel(row.LastEditedBy)</td>
+                            <td class="small text-muted">
+                                @(row.UpdatedAtUtc.HasValue
+                                    ? row.UpdatedAtUtc.Value.LocalDateTime.ToString("dd.MM.yyyy HH:mm")
+                                    : "—")
+                            </td>
+                            <td class="text-end">
+                                <a class="btn btn-sm btn-outline-secondary me-1"
+                                   href="/organizace/hry/@GameId/zpetna-vazba/@row.RegistrationId">
+                                    Otevřít
+                                </a>
+                                @if (row.FeedbackToken.HasValue)
+                                {
+                                    <button type="button" class="btn btn-sm btn-outline-secondary"
+                                            disabled="@isBusy"
+                                            @onclick="() => CopyTokenLinkAsync(row.FeedbackToken!.Value)">
+                                        Kopírovat odkaz
+                                    </button>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+
+        var pageCount = (int)Math.Ceiling((double)rowsPage.Total / rowsPage.PageSize);
+        if (pageCount > 1)
+        {
+            <nav aria-label="Stránkování">
+                <ul class="pagination pagination-sm">
+                    <li class="page-item @(currentPage <= 1 ? "disabled" : "")">
+                        <button type="button" class="page-link"
+                                disabled="@(currentPage <= 1 || isBusy)"
+                                @onclick="() => GoToPageAsync(currentPage - 1)">
+                            ← Předchozí
+                        </button>
+                    </li>
+                    <li class="page-item disabled">
+                        <span class="page-link">Strana @currentPage z @pageCount</span>
+                    </li>
+                    <li class="page-item @(currentPage >= pageCount ? "disabled" : "")">
+                        <button type="button" class="page-link"
+                                disabled="@(currentPage >= pageCount || isBusy)"
+                                @onclick="() => GoToPageAsync(currentPage + 1)">
+                            Další →
+                        </button>
+                    </li>
+                </ul>
+            </nav>
+        }
+    }
+}
+
+@code {
+    [Parameter] public int GameId { get; set; }
+
+    private const int PageSize = 20;
+
+    private FeedbackGameHeader? header;
+    private FeedbackStats? stats;
+    private PagedResult<FeedbackDashboardRow>? rowsPage;
+    private int currentPage = 1;
+    private string searchText = "";
+    private string selectedStatus = "";
+    private string selectedAttendeeType = "";
+
+    private bool isBusy;
+    private string? statusMessage;
+    private string? errorMessage;
+
+    private enum FeedbackWindowState
+    {
+        NotYetOpen,
+        Open,
+        Closed,
+    }
+
+    // Use OnParametersSetAsync (not OnInitializedAsync) so that navigating
+    // between two dashboard routes that bind to the same component instance
+    // — e.g. /organizace/hry/X/zpetna-vazba → /organizace/hry/Y/zpetna-vazba —
+    // refreshes the data. OnInitializedAsync only fires for the first instance.
+    protected override async Task OnParametersSetAsync()
+    {
+        await ReloadAllAsync();
+    }
+
+    private async Task ReloadAllAsync()
+    {
+        header = await FeedbackService.GetGameHeaderAsync(GameId, CancellationToken.None);
+        stats = await FeedbackService.GetDashboardStatsAsync(GameId, CancellationToken.None);
+        await ReloadRowsAsync();
+    }
+
+    private async Task ReloadRowsAsync()
+    {
+        var filter = new FeedbackDashboardFilter(
+            ParseStatus(selectedStatus),
+            ParseAttendeeType(selectedAttendeeType),
+            searchText);
+        rowsPage = await FeedbackService.GetDashboardRowsAsync(
+            GameId, filter, currentPage, PageSize, CancellationToken.None);
+    }
+
+    private async Task GoToPageAsync(int page)
+    {
+        currentPage = Math.Max(1, page);
+        await ReloadRowsAsync();
+    }
+
+    private async Task OnFilterChangedAsync()
+    {
+        currentPage = 1;
+        await ReloadRowsAsync();
+    }
+
+    private async Task OnSearchClickedAsync()
+    {
+        currentPage = 1;
+        await ReloadRowsAsync();
+    }
+
+    private async Task OnSearchKeyUp(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter")
+        {
+            currentPage = 1;
+            await ReloadRowsAsync();
+        }
+    }
+
+    private async Task OnSearchTextChangedAsync()
+    {
+        // Mirror CharacterPrepDashboard: live-update only on clear so we don't
+        // hammer the DB on every keystroke.
+        if (string.IsNullOrWhiteSpace(searchText))
+        {
+            currentPage = 1;
+            await ReloadRowsAsync();
+        }
+    }
+
+    private async Task SendInvitationsAsync()
+    {
+        if (isBusy) return;
+        isBusy = true;
+        ClearMessages();
+        try
+        {
+            var result = await FeedbackMailService.SendInvitationsAsync(GameId, CancellationToken.None);
+            var sent = result.BundleEmailsSent + result.IndividualEmailsSent;
+            statusMessage = $"Odesláno {sent} e-mailů, {result.ErrorsLogged} chyb.";
+            await ReloadAllAsync();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = "Odesílání pozvánek selhalo: " + ex.Message;
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    private async Task SendRemindersAsync()
+    {
+        if (isBusy) return;
+        isBusy = true;
+        ClearMessages();
+        try
+        {
+            var result = await FeedbackMailService.SendRemindersAsync(GameId, CancellationToken.None);
+            var sent = result.BundleEmailsSent + result.IndividualEmailsSent;
+            statusMessage = $"Odesláno {sent} e-mailů, {result.ErrorsLogged} chyb.";
+            await ReloadAllAsync();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = "Odesílání připomínek selhalo: " + ex.Message;
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    private async Task OpenFeedbackAsync()
+    {
+        await RunWindowActionAsync(
+            sut => sut.OpenFeedbackAsync(GameId, DateTimeOffset.UtcNow, CancellationToken.None),
+            "Zpětná vazba byla otevřena.");
+    }
+
+    private async Task CloseFeedbackAsync()
+    {
+        await RunWindowActionAsync(
+            sut => sut.CloseFeedbackAsync(GameId, DateTimeOffset.UtcNow, CancellationToken.None),
+            "Zpětná vazba byla uzavřena.");
+    }
+
+    private async Task ExtendFeedbackAsync()
+    {
+        await RunWindowActionAsync(
+            sut => sut.ExtendFeedbackAsync(GameId, DateTimeOffset.UtcNow, CancellationToken.None),
+            "Zpětná vazba byla prodloužena o 30 dní.");
+    }
+
+    private async Task RunWindowActionAsync(Func<FeedbackService, Task> action, string okMessage)
+    {
+        if (isBusy) return;
+        isBusy = true;
+        ClearMessages();
+        try
+        {
+            await action(FeedbackService);
+            statusMessage = okMessage;
+            await ReloadAllAsync();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = "Akce selhala: " + ex.Message;
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    private async Task CopyTokenLinkAsync(Guid token)
+    {
+        try
+        {
+            var baseUrl = (FeedbackOpts.Value.PublicBaseUrl ?? "").TrimEnd('/');
+            var url = $"{baseUrl}/zpetna-vazba/{token}";
+            await JS.InvokeVoidAsync("navigator.clipboard.writeText", url);
+            statusMessage = "Odkaz zkopírován";
+            errorMessage = null;
+        }
+        catch (Exception ex)
+        {
+            errorMessage = "Kopírování se nezdařilo: " + ex.Message;
+            statusMessage = null;
+        }
+    }
+
+    private static (FeedbackWindowState State, string Pill, string Label) ResolveWindowPill(
+        FeedbackGameHeader h, DateTimeOffset now)
+    {
+        if (now < h.EffectiveOpensAt)
+        {
+            return (FeedbackWindowState.NotYetOpen, "text-bg-secondary",
+                $"Otevře se {h.EffectiveOpensAt.LocalDateTime:dd.MM.yyyy}");
+        }
+        if (now > h.EffectiveClosesAt)
+        {
+            return (FeedbackWindowState.Closed, "text-bg-dark", "Uzavřeno");
+        }
+        return (FeedbackWindowState.Open, "text-bg-success", "Otevřeno");
+    }
+
+    private static string FormatLocal(DateTimeOffset dto) =>
+        dto.LocalDateTime.ToString("dd.MM.yyyy HH:mm");
+
+    private static FeedbackStatus? ParseStatus(string value) =>
+        Enum.TryParse<FeedbackStatus>(value, out var parsed) ? parsed : null;
+
+    private static AttendeeType? ParseAttendeeType(string value) =>
+        Enum.TryParse<AttendeeType>(value, out var parsed) ? parsed : null;
+
+    private static string RoleLabel(AttendeeType type) => type switch
+    {
+        AttendeeType.Player => "Hrdina",
+        AttendeeType.Adult => "Dospělý",
+        _ => "—"
+    };
+
+    private static string EditedByLabel(FeedbackEditedBy? editedBy) => editedBy switch
+    {
+        FeedbackEditedBy.Self => "Sám",
+        FeedbackEditedBy.HouseholdContact => "Rodič",
+        FeedbackEditedBy.Organizer => "Organizátor",
+        _ => "—"
+    };
+
+    private void ClearMessages()
+    {
+        statusMessage = null;
+        errorMessage = null;
+    }
+}

@@ -1,0 +1,57 @@
+@page "/zpetna-vazba/{Token:guid}"
+@attribute [AllowAnonymous]
+@rendermode InteractiveServer
+@layout PrepLayout
+
+@using RegistraceOvcina.Web.Features.Feedback
+@inject FeedbackTokenService TokenService
+@inject FeedbackService FeedbackService
+
+<PageTitle>Zpětná vazba — Ovčina</PageTitle>
+
+@if (_loading)
+{
+    <p class="text-secondary">Načítám…</p>
+}
+else if (_view is null)
+{
+    <section class="empty-state" data-testid="feedback-not-found">
+        <h1 class="h3 mb-3">Odkaz nenalezen</h1>
+        <p class="mb-0">Odkaz již neplatí nebo je neznámý, kontaktujte organizátory.</p>
+    </section>
+}
+else
+{
+    <FeedbackFormCard View="_view"
+                      EditedBy="FeedbackEditedBy.Self"
+                      EditedByPersonId="_view.PersonId"
+                      OnAfterSave="LoadAsync" />
+}
+
+@code {
+    [Parameter]
+    public Guid Token { get; set; }
+
+    private bool _loading = true;
+    private FeedbackView? _view;
+    private int _registrationId;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+        _loading = false;
+    }
+
+    private async Task LoadAsync()
+    {
+        var registrationId = await TokenService.ResolveAsync(Token, CancellationToken.None);
+        if (registrationId is null)
+        {
+            _view = null;
+            return;
+        }
+
+        _registrationId = registrationId.Value;
+        _view = await FeedbackService.GetViewAsync(_registrationId, CancellationToken.None);
+    }
+}
