@@ -725,6 +725,87 @@ public sealed class FeedbackService(
         return new FeedbackGameHeader(game.Id, game.Name, opensAt, closesAt);
     }
 
+    /// <summary>
+    /// Lists all games whose feedback feature is configured (either kid or
+    /// adult question JSON is set), ordered most-recently-ended first. Powers
+    /// the organizer "choose a game" landing page at
+    /// <c>/organizace/zpetna-vazba</c>.
+    /// </summary>
+    public async Task<IReadOnlyList<FeedbackGameChooserRow>> ListChooserGamesAsync(
+        CancellationToken cancellationToken)
+    {
+        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+
+        var games = await db.Games
+            .AsNoTracking()
+            .Where(g => g.FeedbackKidQuestionsJson != null || g.FeedbackAdultQuestionsJson != null)
+            .OrderByDescending(g => g.EndsAtUtc)
+            .ToListAsync(cancellationToken);
+
+        return games
+            .Select(g =>
+            {
+                var (opensAt, closesAt) = ComputeWindow(g);
+                var endsAt = new DateTimeOffset(DateTime.SpecifyKind(g.EndsAtUtc, DateTimeKind.Utc));
+                return new FeedbackGameChooserRow(g.Id, g.Name, endsAt, opensAt, closesAt);
+            })
+            .ToList();
+    }
+
+    /// <summary>
+    /// Loads the four organizer-editable email template fields for one game.
+    /// Returns <c>null</c> when the game does not exist. NULL/blank fields are
+    /// the renderer's signal to fall back to the canonical default copy.
+    /// </summary>
+    public async Task<FeedbackEmailTemplates?> GetEmailTemplatesAsync(
+        int gameId,
+        CancellationToken cancellationToken)
+    {
+        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+
+        var row = await db.Games
+            .AsNoTracking()
+            .Where(g => g.Id == gameId)
+            .Select(g => new FeedbackEmailTemplates(
+                g.FeedbackBundleSubjectTemplate,
+                g.FeedbackBundleHtmlTemplate,
+                g.FeedbackAdultIndividualSubjectTemplate,
+                g.FeedbackAdultIndividualHtmlTemplate))
+            .FirstOrDefaultAsync(cancellationToken);
+
+        return row;
+    }
+
+    /// <summary>
+    /// Persists organizer-supplied email template overrides for one game.
+    /// Blank input on any slot is normalised to <c>null</c> so the renderer
+    /// falls back to the canonical default — no empty strings are stored.
+    /// Throws <see cref="InvalidOperationException"/> when the game does not exist.
+    /// </summary>
+    public async Task SaveEmailTemplatesAsync(
+        int gameId,
+        FeedbackEmailTemplates templates,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(templates);
+
+        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+
+        var game = await db.Games
+            .FirstOrDefaultAsync(g => g.Id == gameId, cancellationToken)
+            ?? throw new InvalidOperationException($"Game {gameId} not found.");
+
+        game.FeedbackBundleSubjectTemplate = NormalizeBlank(templates.BundleSubjectTemplate);
+        game.FeedbackBundleHtmlTemplate = NormalizeBlank(templates.BundleHtmlTemplate);
+        game.FeedbackAdultIndividualSubjectTemplate = NormalizeBlank(templates.AdultIndividualSubjectTemplate);
+        game.FeedbackAdultIndividualHtmlTemplate = NormalizeBlank(templates.AdultIndividualHtmlTemplate);
+
+        await db.SaveChangesAsync(cancellationToken);
+    }
+
+    private static string? NormalizeBlank(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value;
+
     // -------------------------------------------------------------------------
     // Household-facing submission detail card
     // -------------------------------------------------------------------------

@@ -40,13 +40,37 @@ public sealed class FeedbackEmailRenderer : IFeedbackEmailRenderer
     {
         ArgumentNullException.ThrowIfNull(model);
 
-        var subject = model.IsReminder
-            ? $"Připomínka: zpětná vazba k {model.GameName}"
-            : $"Zpětná vazba k {model.GameName} — pár otázek na závěr";
-
         var deadline = FormatDeadline(model.FeedbackClosesAtLocal);
 
-        var html = BuildBundleHtml(model, deadline);
+        // Subject: organizer template wins when present, else default copy.
+        string subject;
+        if (!string.IsNullOrWhiteSpace(model.SubjectTemplate))
+        {
+            subject = FeedbackTemplateRenderer.RenderSubject(
+                model.SubjectTemplate,
+                BuildBundleSubjectTokens(model, deadline));
+        }
+        else
+        {
+            subject = model.IsReminder
+                ? $"Připomínka: zpětná vazba k {model.GameName}"
+                : $"Zpětná vazba k {model.GameName} — pár otázek na závěr";
+        }
+
+        // HTML body: organizer template wins when present, else hardcoded default.
+        string html;
+        if (!string.IsNullOrWhiteSpace(model.HtmlTemplate))
+        {
+            html = FeedbackTemplateRenderer.RenderHtml(
+                model.HtmlTemplate,
+                BuildBundleHtmlTokens(model, deadline),
+                FeedbackTemplateRenderer.RawHtmlTokens);
+        }
+        else
+        {
+            html = BuildBundleHtml(model, deadline);
+        }
+
         var plain = BuildBundlePlain(model, deadline);
 
         return new RenderedFeedbackEmail(subject, html, plain);
@@ -56,16 +80,120 @@ public sealed class FeedbackEmailRenderer : IFeedbackEmailRenderer
     {
         ArgumentNullException.ThrowIfNull(model);
 
-        var subject = model.IsReminder
-            ? $"Připomínka: zpětná vazba k {model.GameName}"
-            : $"Zpětná vazba k {model.GameName} — pár otázek na závěr";
-
         var deadline = FormatDeadline(model.FeedbackClosesAtLocal);
 
-        var html = BuildAdultIndividualHtml(model, deadline);
+        string subject;
+        if (!string.IsNullOrWhiteSpace(model.SubjectTemplate))
+        {
+            subject = FeedbackTemplateRenderer.RenderSubject(
+                model.SubjectTemplate,
+                BuildAdultSubjectTokens(model, deadline));
+        }
+        else
+        {
+            subject = model.IsReminder
+                ? $"Připomínka: zpětná vazba k {model.GameName}"
+                : $"Zpětná vazba k {model.GameName} — pár otázek na závěr";
+        }
+
+        string html;
+        if (!string.IsNullOrWhiteSpace(model.HtmlTemplate))
+        {
+            html = FeedbackTemplateRenderer.RenderHtml(
+                model.HtmlTemplate,
+                BuildAdultHtmlTokens(model, deadline),
+                FeedbackTemplateRenderer.RawHtmlTokens);
+        }
+        else
+        {
+            html = BuildAdultIndividualHtml(model, deadline);
+        }
+
         var plain = BuildAdultIndividualPlain(model, deadline);
 
         return new RenderedFeedbackEmail(subject, html, plain);
+    }
+
+    // ----------------------------------------------------- token bag builders
+
+    private static Dictionary<string, string> BuildBundleSubjectTokens(
+        FeedbackContactBundleEmail model, string deadline) =>
+        new(StringComparer.Ordinal)
+        {
+            [FeedbackTemplateRenderer.TokenContactName] = model.ContactName ?? string.Empty,
+            [FeedbackTemplateRenderer.TokenGameName] = model.GameName ?? string.Empty,
+            [FeedbackTemplateRenderer.TokenDeadline] = deadline,
+            [FeedbackTemplateRenderer.TokenReminderPrefix] = model.IsReminder ? "(připomínka) " : string.Empty,
+        };
+
+    private static Dictionary<string, string> BuildBundleHtmlTokens(
+        FeedbackContactBundleEmail model, string deadline) =>
+        new(StringComparer.Ordinal)
+        {
+            [FeedbackTemplateRenderer.TokenContactName] = model.ContactName ?? string.Empty,
+            [FeedbackTemplateRenderer.TokenGameName] = model.GameName ?? string.Empty,
+            [FeedbackTemplateRenderer.TokenDeadline] = deadline,
+            [FeedbackTemplateRenderer.TokenReminderPrefix] = model.IsReminder ? "(připomínka) " : string.Empty,
+            [FeedbackTemplateRenderer.TokenReminderIntro] = model.IsReminder
+                ? "<p>Posíláme jen tichou připomínku.</p>"
+                : string.Empty,
+            [FeedbackTemplateRenderer.TokenEntries] = BuildEntriesHtml(model.Entries),
+        };
+
+    private static Dictionary<string, string> BuildAdultSubjectTokens(
+        FeedbackAdultIndividualEmail model, string deadline) =>
+        new(StringComparer.Ordinal)
+        {
+            [FeedbackTemplateRenderer.TokenAttendeeName] = model.AttendeeName ?? string.Empty,
+            [FeedbackTemplateRenderer.TokenGameName] = model.GameName ?? string.Empty,
+            [FeedbackTemplateRenderer.TokenDeadline] = deadline,
+            [FeedbackTemplateRenderer.TokenReminderPrefix] = model.IsReminder ? "(připomínka) " : string.Empty,
+        };
+
+    private static Dictionary<string, string> BuildAdultHtmlTokens(
+        FeedbackAdultIndividualEmail model, string deadline) =>
+        new(StringComparer.Ordinal)
+        {
+            [FeedbackTemplateRenderer.TokenAttendeeName] = model.AttendeeName ?? string.Empty,
+            [FeedbackTemplateRenderer.TokenGameName] = model.GameName ?? string.Empty,
+            [FeedbackTemplateRenderer.TokenDeadline] = deadline,
+            [FeedbackTemplateRenderer.TokenReminderPrefix] = model.IsReminder ? "(připomínka) " : string.Empty,
+            [FeedbackTemplateRenderer.TokenReminderIntro] = model.IsReminder
+                ? "<p>Posíláme jen tichou připomínku.</p>"
+                : string.Empty,
+            [FeedbackTemplateRenderer.TokenTokenLink] = model.TokenLink ?? string.Empty,
+            [FeedbackTemplateRenderer.TokenButtonHtml] = BuildButtonHtml(model.TokenLink),
+        };
+
+    private static string BuildEntriesHtml(IReadOnlyList<FeedbackBundleEntry> entries)
+    {
+        var sb = new StringBuilder(256);
+        sb.Append("<ul>");
+        foreach (var entry in entries)
+        {
+            var encodedName = UnicodeHtmlEncoder.Encode(entry.AttendeeName ?? string.Empty);
+            var encodedLink = UnicodeHtmlEncoder.Encode(entry.TokenLink ?? string.Empty);
+            var roleLabel = entry.AttendeeType == AttendeeType.Player ? "hrdina" : "dospělý";
+
+            sb.Append("<li><a href=\"").Append(encodedLink).Append("\">")
+              .Append(encodedName)
+              .Append("</a> <span style=\"color:#666;\">(")
+              .Append(roleLabel)
+              .Append(")</span></li>");
+        }
+        sb.Append("</ul>");
+        return sb.ToString();
+    }
+
+    private static string BuildButtonHtml(string? tokenLink)
+    {
+        var encoded = UnicodeHtmlEncoder.Encode(tokenLink ?? string.Empty);
+        var sb = new StringBuilder(256);
+        sb.Append("<p style=\"margin:20px 0;\">")
+          .Append("<a href=\"").Append(encoded).Append("\" ")
+          .Append("style=\"background:#2b6cb0;color:#fff;padding:10px 18px;text-decoration:none;border-radius:4px;display:inline-block;\">")
+          .Append("Otevřít zpětnou vazbu</a></p>");
+        return sb.ToString();
     }
 
     // --------------------------------------------------------- bundle (household contact)

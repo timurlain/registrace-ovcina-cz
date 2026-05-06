@@ -644,6 +644,61 @@ public sealed class FeedbackServiceTests
     }
 
     // -------------------------------------------------------------------------
+    // SaveEmailTemplatesAsync
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public async Task SaveEmailTemplatesAsync_persists_all_four_fields()
+    {
+        var options = CreateOptions();
+        await SeedRegistrationAsync(options, AttendeeType.Player);
+        var sut = CreateSut(options, NowDuringWindow());
+
+        var dto = new FeedbackEmailTemplates(
+            BundleSubjectTemplate: "Custom bundle subject {GameName}",
+            BundleHtmlTemplate: "<p>Bundle body {ContactName}</p>",
+            AdultIndividualSubjectTemplate: "Custom adult subject {GameName}",
+            AdultIndividualHtmlTemplate: "<p>Adult body {AttendeeName}</p>");
+
+        await sut.SaveEmailTemplatesAsync(1, dto, CancellationToken.None);
+
+        await using var db = new ApplicationDbContext(options);
+        var game = await db.Games.SingleAsync(g => g.Id == 1);
+        Assert.Equal("Custom bundle subject {GameName}", game.FeedbackBundleSubjectTemplate);
+        Assert.Equal("<p>Bundle body {ContactName}</p>", game.FeedbackBundleHtmlTemplate);
+        Assert.Equal("Custom adult subject {GameName}", game.FeedbackAdultIndividualSubjectTemplate);
+        Assert.Equal("<p>Adult body {AttendeeName}</p>", game.FeedbackAdultIndividualHtmlTemplate);
+    }
+
+    [Fact]
+    public async Task SaveEmailTemplatesAsync_clears_when_blank()
+    {
+        var options = CreateOptions();
+        await SeedRegistrationAsync(options, AttendeeType.Player);
+        var sut = CreateSut(options, NowDuringWindow());
+
+        // Pre-populate with non-null values.
+        await sut.SaveEmailTemplatesAsync(
+            1,
+            new FeedbackEmailTemplates("Subject", "Body", "AdultSubject", "AdultBody"),
+            CancellationToken.None);
+
+        // Now save with all-blank — should null every column out so the
+        // renderer falls back to the canonical default copy.
+        await sut.SaveEmailTemplatesAsync(
+            1,
+            new FeedbackEmailTemplates("", "   ", null, "\t\n"),
+            CancellationToken.None);
+
+        await using var db = new ApplicationDbContext(options);
+        var game = await db.Games.SingleAsync(g => g.Id == 1);
+        Assert.Null(game.FeedbackBundleSubjectTemplate);
+        Assert.Null(game.FeedbackBundleHtmlTemplate);
+        Assert.Null(game.FeedbackAdultIndividualSubjectTemplate);
+        Assert.Null(game.FeedbackAdultIndividualHtmlTemplate);
+    }
+
+    // -------------------------------------------------------------------------
     // helpers
     // -------------------------------------------------------------------------
 
