@@ -14,11 +14,18 @@
 
 @if (header is null || templates is null)
 {
-    <div class="text-center py-5">
-        <div class="spinner-border text-primary" role="status">
-            <span class="visually-hidden">Načítání…</span>
+    @if (!string.IsNullOrWhiteSpace(errorMessage))
+    {
+        <div class="alert alert-danger" role="alert">@errorMessage</div>
+    }
+    else
+    {
+        <div class="text-center py-5">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Načítání…</span>
+            </div>
         </div>
-    </div>
+    }
 }
 else
 {
@@ -169,6 +176,7 @@ else
     private bool busy;
     private string? statusMessage;
     private string? errorMessage;
+    private bool _needsEditorSync;
 
     protected override async Task OnParametersSetAsync()
     {
@@ -185,20 +193,43 @@ else
         bundleHtml = templates.BundleHtmlTemplate ?? "";
         adultSubject = templates.AdultIndividualSubjectTemplate ?? "";
         adultHtml = templates.AdultIndividualHtmlTemplate ?? "";
+        _needsEditorSync = true;
     }
 
-    private void ResetBundle()
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_needsEditorSync)
+        {
+            _needsEditorSync = false;
+            if (bundleHtmlEditor is not null)
+            {
+                await bundleHtmlEditor.SetHtmlAsync(bundleHtml);
+            }
+            if (adultHtmlEditor is not null)
+            {
+                await adultHtmlEditor.SetHtmlAsync(adultHtml);
+            }
+        }
+    }
+
+    private async Task ResetBundle()
     {
         bundleSubject = "";
         bundleHtml = "";
-        bundleHtmlEditor?.SetHtmlAsync("");
+        if (bundleHtmlEditor is not null)
+        {
+            await bundleHtmlEditor.SetHtmlAsync("");
+        }
     }
 
-    private void ResetAdult()
+    private async Task ResetAdult()
     {
         adultSubject = "";
         adultHtml = "";
-        adultHtmlEditor?.SetHtmlAsync("");
+        if (adultHtmlEditor is not null)
+        {
+            await adultHtmlEditor.SetHtmlAsync("");
+        }
     }
 
     private async Task RefreshPreviewAsync()
