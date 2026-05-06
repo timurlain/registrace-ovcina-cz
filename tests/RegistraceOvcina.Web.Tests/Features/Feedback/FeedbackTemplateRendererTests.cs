@@ -145,4 +145,201 @@ public sealed class FeedbackTemplateRendererTests
         Assert.Contains("<p>Posíláme jen tichou připomínku.</p>", rendered);
         Assert.DoesNotContain("&lt;p&gt;Posíláme", rendered);
     }
+
+    // -------------------------------------------------------------------------
+    // Quill brace-encoding survival tests.
+    //
+    // When an organizer pastes a template into the rich-text editor, Quill
+    // round-trips the HTML through its Delta model. Some `{Token}` braces
+    // survive verbatim, others surface as HTML numeric entities (decimal or
+    // hex, mixed-case) or URL-encoded `%7B`/`%7D` (especially inside `href`
+    // attributes — that's how `{TokenLink}` gets mangled). The renderer must
+    // accept all forms; otherwise users receive emails with literal
+    // `{AttendeeName}` text in them. See bug report 2026-05-06.
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void RenderHtml_substitutes_decimal_entity_encoded_braces()
+    {
+        var template = "<p>Ahoj &#123;ContactName&#125;.</p>";
+        var tokens = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["ContactName"] = "Eva",
+        };
+
+        var rendered = FeedbackTemplateRenderer.RenderHtml(
+            template, tokens, FeedbackTemplateRenderer.RawHtmlTokens);
+
+        Assert.Contains("Ahoj Eva.", rendered);
+        Assert.DoesNotContain("&#123;", rendered);
+        Assert.DoesNotContain("&#125;", rendered);
+    }
+
+    [Fact]
+    public void RenderHtml_substitutes_hex_entity_encoded_braces()
+    {
+        var template = "<p>Ahoj &#x7B;ContactName&#x7D;.</p>";
+        var tokens = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["ContactName"] = "Eva",
+        };
+
+        var rendered = FeedbackTemplateRenderer.RenderHtml(
+            template, tokens, FeedbackTemplateRenderer.RawHtmlTokens);
+
+        Assert.Contains("Ahoj Eva.", rendered);
+        Assert.DoesNotContain("&#x7B;", rendered);
+        Assert.DoesNotContain("&#x7D;", rendered);
+    }
+
+    [Fact]
+    public void RenderHtml_substitutes_lowercase_hex_entity_encoded_braces()
+    {
+        var template = "<p>Ahoj &#x7b;ContactName&#x7d;.</p>";
+        var tokens = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["ContactName"] = "Eva",
+        };
+
+        var rendered = FeedbackTemplateRenderer.RenderHtml(
+            template, tokens, FeedbackTemplateRenderer.RawHtmlTokens);
+
+        Assert.Contains("Ahoj Eva.", rendered);
+        Assert.DoesNotContain("&#x7b;", rendered);
+        Assert.DoesNotContain("&#x7d;", rendered);
+    }
+
+    [Fact]
+    public void RenderHtml_substitutes_url_encoded_braces_in_href()
+    {
+        // Real-world Quill mangling: href values pass through the browser's
+        // URL sanitizer which percent-encodes the curly braces.
+        var template = "<a href=\"%7BTokenLink%7D\">Otevřít</a>";
+        var tokens = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            [FeedbackTemplateRenderer.TokenTokenLink] = "https://example.test/feedback/abc",
+        };
+        var rawHtmlTokens = new HashSet<string>(StringComparer.Ordinal)
+        {
+            FeedbackTemplateRenderer.TokenTokenLink,
+        };
+
+        var rendered = FeedbackTemplateRenderer.RenderHtml(template, tokens, rawHtmlTokens);
+
+        Assert.Contains("<a href=\"https://example.test/feedback/abc\">Otevřít</a>", rendered);
+        Assert.DoesNotContain("%7B", rendered);
+        Assert.DoesNotContain("%7D", rendered);
+    }
+
+    [Fact]
+    public void RenderHtml_substitutes_mixed_encoding_in_one_template()
+    {
+        // The reported prod bug: Deadline survived as literal braces, the
+        // others were mangled differently. Reproduce the scenario.
+        var template = """
+            <p>Ahoj &#123;AttendeeName&#125;,</p>
+            <p>posíláme zpětnou vazbu k {GameName}, deadline {Deadline}.</p>
+            <p><a href="%7BTokenLink%7D">&#x7B;ButtonHtml&#x7D;</a></p>
+            """;
+        var tokens = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["AttendeeName"] = "Eva",
+            ["GameName"] = "Ovčina 30",
+            ["Deadline"] = "1. 6. 2026",
+            ["TokenLink"] = "https://example.test/abc",
+            ["ButtonHtml"] = "<button>Vyplnit</button>",
+        };
+        var rawHtmlTokens = new HashSet<string>(StringComparer.Ordinal)
+        {
+            "TokenLink",
+            "ButtonHtml",
+        };
+
+        var rendered = FeedbackTemplateRenderer.RenderHtml(template, tokens, rawHtmlTokens);
+
+        Assert.Contains("Ahoj Eva,", rendered);
+        Assert.Contains("Ovčina 30", rendered);
+        Assert.Contains("1. 6. 2026", rendered);
+        Assert.Contains("href=\"https://example.test/abc\"", rendered);
+        Assert.Contains("<button>Vyplnit</button>", rendered);
+        Assert.DoesNotContain("AttendeeName", rendered);
+        Assert.DoesNotContain("TokenLink", rendered);
+        Assert.DoesNotContain("ButtonHtml", rendered);
+    }
+
+    [Fact]
+    public void RenderHtml_does_not_decode_legitimate_entities()
+    {
+        // The fix targets only the brace entities. Legitimate HTML entities
+        // (ampersands, non-breaking spaces, em-dashes, accented letters) and
+        // legitimate URL-encoded characters (path segments containing %20)
+        // must pass through verbatim — otherwise the email body breaks in
+        // unrelated ways.
+        var template =
+            "<p>R&amp;D&nbsp;&mdash; spr&aacute;va.</p>" +
+            "<a href=\"https://example.test/path%20with%20space\">link</a>";
+        var tokens = new Dictionary<string, string>(StringComparer.Ordinal);
+
+        var rendered = FeedbackTemplateRenderer.RenderHtml(
+            template, tokens, FeedbackTemplateRenderer.RawHtmlTokens);
+
+        Assert.Contains("&amp;", rendered);
+        Assert.Contains("&nbsp;", rendered);
+        Assert.Contains("&mdash;", rendered);
+        Assert.Contains("&aacute;", rendered);
+        Assert.Contains("%20", rendered);
+    }
+
+    [Fact]
+    public void RenderSubject_substitutes_decimal_entity_encoded_braces()
+    {
+        var template = "Pozvánka pro &#123;ContactName&#125;";
+        var tokens = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["ContactName"] = "Eva",
+        };
+
+        var rendered = FeedbackTemplateRenderer.RenderSubject(template, tokens);
+
+        Assert.Equal("Pozvánka pro Eva", rendered);
+    }
+
+    [Fact]
+    public void RenderSubject_substitutes_hex_entity_encoded_braces()
+    {
+        var template = "Pozvánka pro &#x7B;ContactName&#x7D;";
+        var tokens = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["ContactName"] = "Eva",
+        };
+
+        var rendered = FeedbackTemplateRenderer.RenderSubject(template, tokens);
+
+        Assert.Equal("Pozvánka pro Eva", rendered);
+    }
+
+    [Fact]
+    public void RenderSubject_substitutes_lowercase_hex_entity_encoded_braces()
+    {
+        var template = "Pozvánka pro &#x7b;ContactName&#x7d;";
+        var tokens = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            ["ContactName"] = "Eva",
+        };
+
+        var rendered = FeedbackTemplateRenderer.RenderSubject(template, tokens);
+
+        Assert.Equal("Pozvánka pro Eva", rendered);
+    }
+
+    [Fact]
+    public void RenderSubject_does_not_decode_legitimate_entities()
+    {
+        var template = "R&amp;D&nbsp;&mdash; sprava";
+        var tokens = new Dictionary<string, string>(StringComparer.Ordinal);
+
+        var rendered = FeedbackTemplateRenderer.RenderSubject(template, tokens);
+
+        Assert.Equal("R&amp;D&nbsp;&mdash; sprava", rendered);
+    }
 }

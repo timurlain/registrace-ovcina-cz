@@ -1,4 +1,5 @@
 using System.Text.Encodings.Web;
+using System.Text.RegularExpressions;
 using System.Text.Unicode;
 
 namespace RegistraceOvcina.Web.Features.Feedback;
@@ -52,7 +53,7 @@ public static class FeedbackTemplateRenderer
         ArgumentNullException.ThrowIfNull(tokens);
         ArgumentNullException.ThrowIfNull(rawHtmlTokenKeys);
 
-        var result = template;
+        var result = NormaliseEncodedBraces(template);
         foreach (var (rawKey, value) in tokens)
         {
             // Tokens are written by organizers as `{Foo}` in their template.
@@ -84,13 +85,54 @@ public static class FeedbackTemplateRenderer
 
         ArgumentNullException.ThrowIfNull(tokens);
 
-        var result = template;
+        var result = NormaliseEncodedBraces(template);
         foreach (var (rawKey, value) in tokens)
         {
             result = result.Replace($"{{{rawKey}}}", value ?? string.Empty);
         }
 
         return result;
+    }
+
+    // Quill normalises pasted HTML through a Delta -> innerHTML round-trip.
+    // Some `{Token}` placeholders survive as literal braces, but others get
+    // re-encoded:
+    //   * curly braces in attribute values (e.g. <a href="{TokenLink}">) tend
+    //     to be URL-encoded to %7B / %7D by the browser's link sanitizer
+    //   * curly braces in text nodes can also surface as HTML numeric
+    //     entities &#123; / &#125; (decimal) or &#x7B; / &#x7D; (hex,
+    //     either case) depending on the source clipboard payload
+    // The plain string.Replace below only matches literal `{Token}`, so any
+    // mangled form silently leaks into the rendered email. Pre-pass and
+    // restore literal braces ONLY — never decode the rest of the body, or
+    // legitimate `&amp;`/`&nbsp;` entities would also collapse.
+    private static readonly Regex EncodedBracePattern = new(
+        @"&#0*123;|&#0*125;|&#[xX]0*7[bBdD];|%7[bBdD]",
+        RegexOptions.Compiled | RegexOptions.CultureInvariant);
+
+    internal static string NormaliseEncodedBraces(string template)
+    {
+        if (string.IsNullOrEmpty(template))
+        {
+            return template;
+        }
+
+        // Quick reject: no `&` and no `%` means nothing to decode.
+        if (template.IndexOf('&') < 0 && template.IndexOf('%') < 0)
+        {
+            return template;
+        }
+
+        return EncodedBracePattern.Replace(template, static match =>
+        {
+            var token = match.Value;
+            // Decimal entities encode 123 = '{', 125 = '}'.
+            // Hex / URL-encoded forms use 7B = '{', 7D = '}' (case-insensitive).
+            // Discriminator is the final hex digit before any trailing `;`
+            // (entities) or end-of-token (URL-encoded).
+            var discriminator = token.EndsWith(';') ? token[^2] : token[^1];
+            return discriminator is '3' or 'B' or 'b' ? "{" : "}";
+        });
     }
 
     // ------------------------------------------------------------ token keys
