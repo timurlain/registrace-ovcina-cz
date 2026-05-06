@@ -256,6 +256,11 @@ public class Program
         builder.Services.AddScoped<FeedbackOptionsService>();
         builder.Services.AddScoped<FeedbackTokenService>();
         builder.Services.AddScoped<FeedbackService>();
+        builder.Services.AddOptions<FeedbackOptions>()
+            .Bind(builder.Configuration.GetSection(FeedbackOptions.SectionName))
+            .ValidateDataAnnotations()
+            .ValidateOnStart();
+        builder.Services.AddScoped<IFeedbackEmailRenderer, FeedbackEmailRenderer>();
         builder.Services.AddOptions<CharacterPrepOptions>()
             .Bind(builder.Configuration.GetSection(CharacterPrepOptions.SectionName))
             .ValidateDataAnnotations()
@@ -289,12 +294,14 @@ public class Program
             builder.Services.AddScoped<InvitationService>();
             builder.Services.AddScoped<ExternalContactService>();
             builder.Services.AddScoped<ICharacterPrepEmailSender, GraphCharacterPrepEmailSender>();
+            builder.Services.AddScoped<IFeedbackEmailSender, GraphFeedbackEmailSender>();
         }
         else
         {
             // Dev / unconfigured environments: fail fast with a clear message rather than
             // silently dropping mail. A no-op would hide integration issues during testing.
             builder.Services.AddScoped<ICharacterPrepEmailSender, UnconfiguredCharacterPrepEmailSender>();
+            builder.Services.AddScoped<IFeedbackEmailSender, UnconfiguredFeedbackEmailSender>();
         }
 
         builder.Services.AddCors(options =>
