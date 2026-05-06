@@ -29,6 +29,7 @@ using RegistraceOvcina.Web.Features.Announcements;
 using RegistraceOvcina.Web.Features.Auth;
 using RegistraceOvcina.Web.Features.AccountLinking;
 using RegistraceOvcina.Web.Features.ExternalContacts;
+using RegistraceOvcina.Web.Features.Feedback;
 using RegistraceOvcina.Web.Features.Stats;
 using RegistraceOvcina.Web.Features.Users;
 using RegistraceOvcina.Web.Endpoints;
@@ -252,6 +253,7 @@ public class Program
         builder.Services.AddScoped<CharacterPrepService>();
         builder.Services.AddScoped<CharacterPrepOptionsService>();
         builder.Services.AddScoped<CharacterPrepExportService>();
+        builder.Services.AddScoped<FeedbackOptionsService>();
         builder.Services.AddOptions<CharacterPrepOptions>()
             .Bind(builder.Configuration.GetSection(CharacterPrepOptions.SectionName))
             .ValidateDataAnnotations()
