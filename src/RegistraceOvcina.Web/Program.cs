@@ -255,6 +255,7 @@ public class Program
         builder.Services.AddScoped<CharacterPrepExportService>();
         builder.Services.AddScoped<FeedbackOptionsService>();
         builder.Services.AddScoped<FeedbackTokenService>();
+        builder.Services.AddScoped<FeedbackService>();
         builder.Services.AddOptions<CharacterPrepOptions>()
             .Bind(builder.Configuration.GetSection(CharacterPrepOptions.SectionName))
             .ValidateDataAnnotations()
