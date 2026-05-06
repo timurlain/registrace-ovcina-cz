@@ -2,12 +2,17 @@
 @attribute [Authorize(Policy = AuthorizationPolicies.StaffOnly)]
 @rendermode InteractiveServer
 
+@using Microsoft.AspNetCore.Identity
+@using RegistraceOvcina.Web.Data
 @using RegistraceOvcina.Web.Features.Feedback
 @using RegistraceOvcina.Web.Security
 @using RegistraceOvcina.Web.Components.Shared
 
 @inject FeedbackService FeedbackService
+@inject FeedbackMailService FeedbackMailService
 @inject IFeedbackEmailRenderer EmailRenderer
+@inject AuthenticationStateProvider AuthenticationStateProvider
+@inject UserManager<ApplicationUser> UserManager
 @inject NavigationManager Nav
 
 <PageTitle>Šablony e-mailů — @(header?.GameName ?? "Načítání…")</PageTitle>
@@ -115,6 +120,45 @@ else
 
     <section class="card mb-4">
         <div class="card-body">
+            <h3 class="h5 mb-3">Zkušební e-mail (sobě)</h3>
+            <p class="small text-secondary mb-2">
+                Test e-mail půjde na tvou aktuálně přihlášenou adresu
+                @if (!string.IsNullOrWhiteSpace(currentUserEmail))
+                {
+                    <strong>(@currentUserEmail)</strong>
+                }
+                . Odkazy v něm jsou jen ukázkové.
+            </p>
+            <div class="form-check mb-3">
+                <input class="form-check-input" type="checkbox" id="testAsReminder"
+                       @bind="testAsReminder" disabled="@busy" />
+                <label class="form-check-label" for="testAsReminder">
+                    Poslat jako připomínku
+                </label>
+            </div>
+            <div class="d-flex flex-wrap gap-2">
+                <button type="button" class="btn btn-outline-secondary btn-sm"
+                        @onclick="SendTestBundleAsync"
+                        disabled="@(busy || string.IsNullOrWhiteSpace(currentUserEmail))">
+                    Poslat zkušebně mně — rodinná verze
+                </button>
+                <button type="button" class="btn btn-outline-secondary btn-sm"
+                        @onclick="SendTestAdultAsync"
+                        disabled="@(busy || string.IsNullOrWhiteSpace(currentUserEmail))">
+                    Poslat zkušebně mně — verze pro dospělé
+                </button>
+            </div>
+            @if (string.IsNullOrWhiteSpace(currentUserEmail))
+            {
+                <p class="small text-danger mt-2 mb-0">
+                    U tvého účtu chybí e-mailová adresa — zkušební e-mail nelze odeslat.
+                </p>
+            }
+        </div>
+    </section>
+
+    <section class="card mb-4">
+        <div class="card-body">
             <h3 class="h5 mb-3">Náhled (s ukázkovými hodnotami)</h3>
             <p class="small text-secondary mb-3">
                 Náhled se obnoví po stisku „Aktualizovat náhled". Ukazuje
@@ -177,6 +221,9 @@ else
     private string? statusMessage;
     private string? errorMessage;
     private bool _needsEditorSync;
+    private string? currentUserId;
+    private string? currentUserEmail;
+    private bool testAsReminder;
 
     protected override async Task OnParametersSetAsync()
     {
@@ -194,6 +241,15 @@ else
         adultSubject = templates.AdultIndividualSubjectTemplate ?? "";
         adultHtml = templates.AdultIndividualHtmlTemplate ?? "";
         _needsEditorSync = true;
+
+        // Resolve the logged-in organizer's email so the "test-send" buttons
+        // know where to deliver the preview. Pulled from the Identity store
+        // (UserManager) rather than the email claim so a profile-edit picks
+        // up here without forcing a re-login.
+        var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
+        var user = await UserManager.GetUserAsync(authState.User);
+        currentUserId = user?.Id;
+        currentUserEmail = user?.Email;
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -293,6 +349,66 @@ else
         catch (Exception ex)
         {
             errorMessage = "Uložení selhalo: " + ex.Message;
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+
+    private Task SendTestBundleAsync() =>
+        SendTestAsync(isAdult: false);
+
+    private Task SendTestAdultAsync() =>
+        SendTestAsync(isAdult: true);
+
+    /// <summary>
+    /// Saves the current edits + dispatches a sample email of the requested
+    /// shape to the logged-in organizer's address. Saving first means the test
+    /// email reflects exactly what real recipients will see — same renderer,
+    /// same per-game template overrides, same sender pipeline.
+    /// </summary>
+    private async Task SendTestAsync(bool isAdult)
+    {
+        if (busy) return;
+        if (string.IsNullOrWhiteSpace(currentUserEmail) || string.IsNullOrWhiteSpace(currentUserId))
+        {
+            errorMessage = "U tvého účtu chybí e-mailová adresa — zkušební e-mail nelze odeslat.";
+            return;
+        }
+
+        busy = true;
+        statusMessage = null;
+        errorMessage = null;
+        try
+        {
+            // Persist current edits so the test send picks them up — the
+            // service reads templates from the Game row, not from this form's
+            // in-memory state.
+            await SyncFromEditorsAsync();
+            var dto = new FeedbackEmailTemplates(
+                NullIfBlank(bundleSubject),
+                NullIfBlank(bundleHtml),
+                NullIfBlank(adultSubject),
+                NullIfBlank(adultHtml));
+            await FeedbackService.SaveEmailTemplatesAsync(GameId, dto, CancellationToken.None);
+
+            if (isAdult)
+            {
+                await FeedbackMailService.SendTestAdultIndividualAsync(
+                    GameId, currentUserId!, currentUserEmail!, testAsReminder, CancellationToken.None);
+            }
+            else
+            {
+                await FeedbackMailService.SendTestBundleAsync(
+                    GameId, currentUserId!, currentUserEmail!, testAsReminder, CancellationToken.None);
+            }
+
+            statusMessage = $"Odesláno na {currentUserEmail}.";
+        }
+        catch (Exception ex)
+        {
+            errorMessage = "Chyba: " + ex.Message;
         }
         finally
         {

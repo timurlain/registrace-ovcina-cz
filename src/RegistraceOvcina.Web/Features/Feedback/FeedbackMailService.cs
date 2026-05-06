@@ -318,4 +318,212 @@ public sealed class FeedbackMailService(
 
         return $"{baseUrl}/zpetna-vazba/{token}";
     }
+
+    // -------------------------------------------------------------------------
+    // Test-send: organizer "send to me" preview from the template editor
+    // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// Renders + sends a real bundle (household-contact) feedback email to
+    /// <paramref name="toEmail"/> using the same renderer + sender + per-game
+    /// template overrides as the real bulk send. Resolves the logged-in
+    /// organizer's own <see cref="RegistrationSubmission"/> for this game and
+    /// uses the actual Registrations + freshly issued FeedbackTokens, so the
+    /// links in the email lead to real, working feedback forms. This makes the
+    /// test a fully functional preview — the organizer can click through and
+    /// experience the form end-to-end before triggering the bulk send.
+    /// <para>Does NOT call <see cref="FeedbackService.MarkInvitedAsync"/>; a
+    /// test send must not pollute the dashboard's "Pozváno" count.</para>
+    /// </summary>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when <paramref name="toEmail"/> is null/blank, when the game
+    /// does not exist, when <see cref="FeedbackOptions.PublicBaseUrl"/> is
+    /// unconfigured (mirrors the real-send safeguard), or when the logged-in
+    /// user has no own submission in this game.
+    /// </exception>
+    public async Task SendTestBundleAsync(
+        int gameId,
+        string currentUserId,
+        string toEmail,
+        bool isReminder,
+        CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(toEmail))
+        {
+            throw new InvalidOperationException("Cílová e-mailová adresa je prázdná.");
+        }
+        if (string.IsNullOrWhiteSpace(currentUserId))
+        {
+            throw new InvalidOperationException("Přihlášený uživatel není rozpoznán.");
+        }
+
+        var options = feedbackOptions.Value;
+        var baseUrl = (options.PublicBaseUrl ?? "").TrimEnd('/');
+        if (string.IsNullOrWhiteSpace(baseUrl))
+        {
+            throw new InvalidOperationException(
+                "Feedback:PublicBaseUrl is not configured; cannot build feedback URL.");
+        }
+
+        await using var db = await dbContextFactory.CreateDbContextAsync(ct);
+        var game = await db.Games
+            .AsNoTracking()
+            .FirstOrDefaultAsync(g => g.Id == gameId, ct)
+            ?? throw new InvalidOperationException($"Game {gameId} not found.");
+
+        // Resolve the logged-in user's own submission for this game. This is
+        // the same predicate FeedbackScribe uses for ownership checks: the
+        // submission's RegistrantUserId === current user, GameId matches, and
+        // the soft-deleted flag is off. Tracked load (no AsNoTracking) so the
+        // FeedbackTokenService writes below participate in change tracking
+        // through its own DbContext — but we still re-include navigations
+        // here to render names without a second round-trip.
+        var submission = await db.RegistrationSubmissions
+            .AsNoTracking()
+            .Include(s => s.Registrations)
+                .ThenInclude(r => r.Person)
+            .FirstOrDefaultAsync(
+                s => s.GameId == gameId
+                    && s.RegistrantUserId == currentUserId
+                    && !s.IsDeleted,
+                ct)
+            ?? throw new InvalidOperationException(
+                "Test bundle e-mail vyžaduje vaši vlastní přihlášku do této hry.");
+
+        // Lazily mint tokens for any registration that doesn't have one yet.
+        // EnsureTokenAsync is idempotent — never rotates an existing token —
+        // so it's safe to call from the test path. Real bulk-send will call
+        // it again later for the same registrations and get the same Guids.
+        var tokens = new Dictionary<int, Guid>(submission.Registrations.Count);
+        foreach (var reg in submission.Registrations)
+        {
+            ct.ThrowIfCancellationRequested();
+            tokens[reg.Id] = await tokenService.EnsureTokenAsync(reg.Id, ct);
+        }
+
+        // Mirror FeedbackService.ComputeWindow: closes-at falls back to
+        // EndsAtUtc + 30 days when not configured. Keeps the rendered deadline
+        // string consistent with whatever the organizer sees on the dashboard.
+        var endsAt = new DateTimeOffset(DateTime.SpecifyKind(game.EndsAtUtc, DateTimeKind.Utc));
+        var closesAt = game.FeedbackClosesAtUtc ?? endsAt.AddDays(30);
+
+        var entries = submission.Registrations
+            .OrderBy(r => r.Id)
+            .Select(r => new FeedbackBundleEntry(
+                AttendeeName: $"{r.Person.FirstName} {r.Person.LastName}".Trim(),
+                AttendeeType: r.AttendeeType,
+                TokenLink: $"{baseUrl}/zpetna-vazba/{tokens[r.Id]}"))
+            .ToList();
+
+        var sample = new FeedbackContactBundleEmail(
+            ToEmail: toEmail,
+            ContactName: string.IsNullOrWhiteSpace(submission.PrimaryContactName)
+                ? toEmail
+                : submission.PrimaryContactName,
+            GameName: game.Name,
+            FeedbackClosesAtLocal: closesAt,
+            Entries: entries,
+            IsReminder: isReminder,
+            SubjectTemplate: game.FeedbackBundleSubjectTemplate,
+            HtmlTemplate: game.FeedbackBundleHtmlTemplate);
+
+        var rendered = emailRenderer.RenderContactBundle(sample);
+        await emailSender.SendAsync(toEmail, rendered.Subject, rendered.HtmlBody, ct);
+
+        logger.LogInformation(
+            "FeedbackMailService: test bundle email sent to {ToEmail} (game {GameId}, submission {SubmissionId}, isReminder={IsReminder}).",
+            toEmail, gameId, submission.Id, isReminder);
+    }
+
+    /// <summary>
+    /// Renders + sends a real adult-individual feedback email to
+    /// <paramref name="toEmail"/> using the same renderer + sender + per-game
+    /// template overrides as the real bulk send. Resolves the logged-in
+    /// user's own adult Registration in this game (matched by Person.Email
+    /// case-insensitively against <paramref name="toEmail"/>) and uses its
+    /// real FeedbackToken so the link in the email leads to a working form.
+    /// <para>Does NOT call <see cref="FeedbackService.MarkInvitedAsync"/>; a
+    /// test send must not pollute the dashboard's "Pozváno" count.</para>
+    /// </summary>
+    /// <exception cref="InvalidOperationException">
+    /// Thrown when <paramref name="toEmail"/> is null/blank, when the game
+    /// does not exist, when <see cref="FeedbackOptions.PublicBaseUrl"/> is
+    /// unconfigured, or when the logged-in user has no adult registration in
+    /// this game (matched by email).
+    /// </exception>
+    public async Task SendTestAdultIndividualAsync(
+        int gameId,
+        string currentUserId,
+        string toEmail,
+        bool isReminder,
+        CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(toEmail))
+        {
+            throw new InvalidOperationException("Cílová e-mailová adresa je prázdná.");
+        }
+        if (string.IsNullOrWhiteSpace(currentUserId))
+        {
+            throw new InvalidOperationException("Přihlášený uživatel není rozpoznán.");
+        }
+
+        var options = feedbackOptions.Value;
+        var baseUrl = (options.PublicBaseUrl ?? "").TrimEnd('/');
+        if (string.IsNullOrWhiteSpace(baseUrl))
+        {
+            throw new InvalidOperationException(
+                "Feedback:PublicBaseUrl is not configured; cannot build feedback URL.");
+        }
+
+        await using var db = await dbContextFactory.CreateDbContextAsync(ct);
+        var game = await db.Games
+            .AsNoTracking()
+            .FirstOrDefaultAsync(g => g.Id == gameId, ct)
+            ?? throw new InvalidOperationException($"Game {gameId} not found.");
+
+        // Mirror the real bulk-send classifier: an "adult-individual" recipient
+        // is a Registration where AttendeeType != Player AND Person.Email is
+        // set. The simplest robust mapping from the logged-in user to such a
+        // Registration is by email: Person.Email == currentUser.Email
+        // case-insensitive, joined to a non-deleted submission in this game.
+        // EF Core in-memory provider doesn't honour StringComparison overloads
+        // on Where, so we lower both sides explicitly.
+        var emailLower = toEmail.Trim().ToLowerInvariant();
+        var registration = await db.Registrations
+            .AsNoTracking()
+            .Include(r => r.Person)
+            .Include(r => r.Submission)
+            .Where(r => r.Submission.GameId == gameId
+                && !r.Submission.IsDeleted
+                && r.AttendeeType != AttendeeType.Player
+                && r.Person.Email != null
+                && r.Person.Email.ToLower() == emailLower)
+            .OrderBy(r => r.Id)
+            .FirstOrDefaultAsync(ct)
+            ?? throw new InvalidOperationException(
+                "Test e-mail pro dospělé vyžaduje, abyste byli sami zaregistrováni jako dospělý účastník této hry.");
+
+        // Lazy token issue (idempotent — never rotates).
+        var token = await tokenService.EnsureTokenAsync(registration.Id, ct);
+
+        var endsAt = new DateTimeOffset(DateTime.SpecifyKind(game.EndsAtUtc, DateTimeKind.Utc));
+        var closesAt = game.FeedbackClosesAtUtc ?? endsAt.AddDays(30);
+
+        var sample = new FeedbackAdultIndividualEmail(
+            ToEmail: toEmail,
+            AttendeeName: $"{registration.Person.FirstName} {registration.Person.LastName}".Trim(),
+            GameName: game.Name,
+            FeedbackClosesAtLocal: closesAt,
+            TokenLink: $"{baseUrl}/zpetna-vazba/{token}",
+            IsReminder: isReminder,
+            SubjectTemplate: game.FeedbackAdultIndividualSubjectTemplate,
+            HtmlTemplate: game.FeedbackAdultIndividualHtmlTemplate);
+
+        var rendered = emailRenderer.RenderAdultIndividual(sample);
+        await emailSender.SendAsync(toEmail, rendered.Subject, rendered.HtmlBody, ct);
+
+        logger.LogInformation(
+            "FeedbackMailService: test adult-individual email sent to {ToEmail} (game {GameId}, registration {RegistrationId}, isReminder={IsReminder}).",
+            toEmail, gameId, registration.Id, isReminder);
+    }
 }
