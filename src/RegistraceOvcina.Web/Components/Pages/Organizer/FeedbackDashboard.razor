@@ -278,7 +278,11 @@ else
         Closed,
     }
 
-    protected override async Task OnInitializedAsync()
+    // Use OnParametersSetAsync (not OnInitializedAsync) so that navigating
+    // between two dashboard routes that bind to the same component instance
+    // — e.g. /organizace/hry/X/zpetna-vazba → /organizace/hry/Y/zpetna-vazba —
+    // refreshes the data. OnInitializedAsync only fires for the first instance.
+    protected override async Task OnParametersSetAsync()
     {
         await ReloadAllAsync();
     }

@@ -229,6 +229,34 @@ public sealed class FeedbackServiceTests
     }
 
     [Fact]
+    public async Task SaveAsync_with_HouseholdContact_and_null_personId_persists_null_personId()
+    {
+        // Regression: FeedbackFormCard previously fell back to View.PersonId
+        // for any null EditedByPersonId, which mis-stamped scribe / organizer
+        // edits as if the attendee had typed them. The card now passes null
+        // through for non-Self editors; the service must persist that null
+        // verbatim and keep LastEditedBy = HouseholdContact so the audit
+        // trail reflects reality.
+        var options = CreateOptions();
+        var registrationId = await SeedRegistrationAsync(options, AttendeeType.Player);
+        var sut = CreateSut(options, NowDuringWindow());
+
+        var result = await sut.SaveAsync(
+            registrationId,
+            new Dictionary<string, string> { ["co_libilo"] = "scribed by parent" },
+            FeedbackEditedBy.HouseholdContact,
+            editedByPersonId: null,
+            CancellationToken.None);
+
+        Assert.True(result.Persisted);
+
+        await using var verify = new ApplicationDbContext(options);
+        var response = await verify.FeedbackResponses.SingleAsync(x => x.RegistrationId == registrationId);
+        Assert.Equal(FeedbackEditedBy.HouseholdContact, response.LastEditedBy);
+        Assert.Null(response.LastEditedByPersonId);
+    }
+
+    [Fact]
     public async Task SaveAsync_returns_NotOpen_when_window_not_yet_open()
     {
         var options = CreateOptions();

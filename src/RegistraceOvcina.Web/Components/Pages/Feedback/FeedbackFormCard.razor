@@ -262,11 +262,20 @@ else
             // service) and let the service merge against the existing JSON.
             var payload = new Dictionary<string, string>(_answers, StringComparer.Ordinal);
 
+            // Audit attribution: only fall back to the attendee's PersonId when
+            // the attendee is editing themselves. For HouseholdContact (parent
+            // scribing) or Organizer the editor may have no linked Person at
+            // all — pass null through so the audit reflects reality instead of
+            // mis-stamping the edit as Self.
+            var personIdForAudit = EditedBy == FeedbackEditedBy.Self
+                ? (EditedByPersonId ?? View.PersonId)
+                : EditedByPersonId;
+
             var result = await FeedbackService.SaveAsync(
                 registrationId,
                 payload,
                 EditedBy,
-                editedByPersonId: EditedByPersonId ?? View.PersonId,
+                editedByPersonId: personIdForAudit,
                 CancellationToken.None);
 
             if (!result.Persisted)

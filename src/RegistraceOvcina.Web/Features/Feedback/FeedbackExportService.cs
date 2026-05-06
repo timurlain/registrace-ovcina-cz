@@ -220,21 +220,29 @@ public sealed class FeedbackExportService(
     private static readonly IReadOnlyDictionary<string, string> EmptyAnswers =
         new Dictionary<string, string>(StringComparer.Ordinal);
 
-    private static DateTime ToCzechLocalDateTime(DateTimeOffset utc)
+    // Resolved once: try IANA "Europe/Prague" first (works on Linux + Windows
+    // .NET 8+), then the Windows-only "Central European Standard Time" pre-mapping,
+    // and finally fall back to UTC if neither is registered. Production runs on
+    // Linux where the Windows id throws and silently sent UTC out the door.
+    private static readonly TimeZoneInfo PragueTimeZone = ResolvePragueTimeZone();
+
+    private static TimeZoneInfo ResolvePragueTimeZone()
     {
-        // Project memory: "OvčinaHra times — UTC wire, local Czech display +
-        // exports". Use the Windows TZ id; on non-Windows runtimes the
-        // hosted environment uses the IANA fallback so this is safe.
-        try
+        foreach (var id in new[] { "Europe/Prague", "Central European Standard Time" })
         {
-            var tz = TimeZoneInfo.FindSystemTimeZoneById("Central European Standard Time");
-            return TimeZoneInfo.ConvertTime(utc, tz).DateTime;
+            try
+            {
+                return TimeZoneInfo.FindSystemTimeZoneById(id);
+            }
+            catch (TimeZoneNotFoundException)
+            {
+            }
         }
-        catch (TimeZoneNotFoundException)
-        {
-            return utc.LocalDateTime;
-        }
+        return TimeZoneInfo.Utc;
     }
+
+    private static DateTime ToCzechLocalDateTime(DateTimeOffset utc)
+        => TimeZoneInfo.ConvertTime(utc, PragueTimeZone).DateTime;
 
     private static string StatusLabel(
         DateTimeOffset? invitedAtUtc,
