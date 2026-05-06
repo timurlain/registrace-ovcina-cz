@@ -1,0 +1,229 @@
+@page "/organizace/hry/{GameId:int}/zpetna-vazba/{RegistrationId:int}"
+@attribute [Authorize(Policy = AuthorizationPolicies.StaffOnly)]
+@rendermode InteractiveServer
+
+@using RegistraceOvcina.Web.Data
+@using RegistraceOvcina.Web.Features.Feedback
+@using RegistraceOvcina.Web.Security
+
+@inject FeedbackService FeedbackService
+
+<PageTitle>@(detail?.PersonFullName ?? "Načítání…") — Zpětná vazba</PageTitle>
+
+@if (detail is null)
+{
+    <div class="text-center py-5">
+        <div class="spinner-border text-primary" role="status">
+            <span class="visually-hidden">Načítání…</span>
+        </div>
+    </div>
+}
+else
+{
+    <div class="d-flex align-items-center mb-2 gap-2">
+        <a class="btn btn-sm btn-outline-secondary"
+           href="/organizace/hry/@GameId/zpetna-vazba">
+            ← Zpět na přehled
+        </a>
+    </div>
+
+    <h2 class="mb-1">
+        @detail.PersonFullName — Zpětná vazba @detail.GameName
+        <span class="ms-2"><FeedbackStatusBadge Status="detail.Status" /></span>
+    </h2>
+
+    @* ────────── Metadata row ────────── *@
+    <div class="row g-2 small text-secondary mb-4">
+        <div class="col-md-3"><strong>Domácnost:</strong>
+            <a class="text-decoration-none" href="/organizace/prihlasky/@detail.SubmissionId">@detail.HouseholdName</a>
+        </div>
+        <div class="col-md-2"><strong>Role:</strong> @RoleLabel(detail.AttendeeType)</div>
+        <div class="col-md-2"><strong>Editováno:</strong> @EditedByLabel(detail.LastEditedBy)</div>
+        <div class="col-md-2"><strong>Upraveno:</strong>
+            @(detail.UpdatedAtUtc.HasValue ? detail.UpdatedAtUtc.Value.LocalDateTime.ToString("dd.MM.yyyy HH:mm") : "—")
+        </div>
+        <div class="col-md-3"><strong>Odesláno:</strong>
+            @(detail.SubmittedAtUtc.HasValue ? detail.SubmittedAtUtc.Value.LocalDateTime.ToString("dd.MM.yyyy HH:mm") : "—")
+        </div>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(statusMessage))
+    {
+        <div class="alert alert-success py-2 small" role="status">@statusMessage</div>
+    }
+    @if (!string.IsNullOrWhiteSpace(errorMessage))
+    {
+        <div class="alert alert-danger py-2 small" role="alert">@errorMessage</div>
+    }
+
+    @* ────────── Answers stack ────────── *@
+    <h4 class="mt-3 mb-2">Odpovědi</h4>
+    @if (detail.Questions.Questions.Count == 0)
+    {
+        <p class="text-secondary">Pro tuto roli nejsou nakonfigurovány žádné otázky.</p>
+    }
+    else
+    {
+        <div class="d-flex flex-column gap-3 mb-4">
+            @foreach (var question in detail.Questions.Questions)
+            {
+                detail.Answers.TryGetValue(question.Key, out var answerValue);
+                var hasAnswer = !string.IsNullOrWhiteSpace(answerValue);
+                <div class="card shadow-sm">
+                    <div class="card-body">
+                        <h6 class="card-title mb-2">@question.Label</h6>
+                        @if (hasAnswer)
+                        {
+                            <div class="card-text" style="white-space: pre-wrap;">@answerValue</div>
+                        }
+                        else
+                        {
+                            <div class="card-text fst-italic text-muted">Bez odpovědi</div>
+                        }
+                    </div>
+                </div>
+            }
+        </div>
+    }
+
+    @* ────────── Organizer actions ────────── *@
+    <h4 class="mt-4 mb-2">Organizační akce</h4>
+    @if (!detail.HasResponse)
+    {
+        <p class="text-secondary fst-italic">
+            Hrdina dosud nezačal odpovídat — pinování ani poznámka organizátora zatím nedávají smysl.
+        </p>
+    }
+    else
+    {
+        <div class="card shadow-sm mb-4">
+            <div class="card-body">
+                <div class="form-check form-switch mb-3">
+                    <input class="form-check-input" type="checkbox" id="pinToggle"
+                           checked="@pinToChronicle"
+                           disabled="@isBusy"
+                           @onchange="OnPinChangedAsync" />
+                    <label class="form-check-label" for="pinToggle">Pin do kroniky</label>
+                </div>
+
+                <div>
+                    <label for="organizerNote" class="form-label">Poznámka organizátora</label>
+                    <textarea id="organizerNote" class="form-control" rows="3"
+                              disabled="@isBusy"
+                              @bind="organizerNote"
+                              @bind:event="oninput"
+                              @onblur="OnOrganizerNoteBlurAsync"></textarea>
+                    <div class="form-text">Uloží se automaticky po opuštění pole.</div>
+                </div>
+            </div>
+        </div>
+    }
+}
+
+@code {
+    [Parameter] public int GameId { get; set; }
+    [Parameter] public int RegistrationId { get; set; }
+
+    private RegistraceOvcina.Web.Features.Feedback.FeedbackResponseDetail? detail;
+    private bool pinToChronicle;
+    private string organizerNote = "";
+    private string? lastSavedNote;
+
+    private bool isBusy;
+    private string? statusMessage;
+    private string? errorMessage;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await ReloadAsync();
+    }
+
+    private async Task ReloadAsync()
+    {
+        detail = await FeedbackService.GetResponseDetailAsync(RegistrationId, CancellationToken.None);
+        if (detail is not null)
+        {
+            pinToChronicle = detail.PinToChronicle;
+            organizerNote = detail.OrganizerNote ?? "";
+            lastSavedNote = organizerNote;
+        }
+    }
+
+    private async Task OnPinChangedAsync(ChangeEventArgs e)
+    {
+        if (isBusy || detail is null || !detail.HasResponse) return;
+        var next = e.Value is bool b && b;
+        isBusy = true;
+        ClearMessages();
+        try
+        {
+            await FeedbackService.SetPinToChronicleAsync(RegistrationId, next, CancellationToken.None);
+            pinToChronicle = next;
+            statusMessage = next ? "Připnuto do kroniky." : "Odepnuto z kroniky.";
+            await ReloadAsync();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = "Uložení selhalo: " + ex.Message;
+            // Revert local state on failure so the toggle reflects DB truth.
+            if (detail is not null) pinToChronicle = detail.PinToChronicle;
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    private async Task OnOrganizerNoteBlurAsync()
+    {
+        if (isBusy || detail is null || !detail.HasResponse) return;
+
+        // Skip the round-trip if nothing changed — avoids spurious UpdatedAtUtc
+        // bumps when the organizer just tabs through the field.
+        var trimmed = organizerNote?.Trim() ?? "";
+        var lastTrimmed = lastSavedNote?.Trim() ?? "";
+        if (string.Equals(trimmed, lastTrimmed, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        isBusy = true;
+        ClearMessages();
+        try
+        {
+            await FeedbackService.SaveOrganizerNoteAsync(RegistrationId, organizerNote, CancellationToken.None);
+            lastSavedNote = organizerNote;
+            statusMessage = "Poznámka uložena.";
+            await ReloadAsync();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = "Uložení poznámky selhalo: " + ex.Message;
+        }
+        finally
+        {
+            isBusy = false;
+        }
+    }
+
+    private static string RoleLabel(AttendeeType type) => type switch
+    {
+        AttendeeType.Player => "Hrdina",
+        AttendeeType.Adult => "Dospělý",
+        _ => "—"
+    };
+
+    private static string EditedByLabel(FeedbackEditedBy? editedBy) => editedBy switch
+    {
+        FeedbackEditedBy.Self => "Sám",
+        FeedbackEditedBy.HouseholdContact => "Rodič",
+        FeedbackEditedBy.Organizer => "Organizátor",
+        _ => "—"
+    };
+
+    private void ClearMessages()
+    {
+        statusMessage = null;
+        errorMessage = null;
+    }
+}
