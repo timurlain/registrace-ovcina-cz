@@ -261,6 +261,7 @@ public class Program
             .ValidateDataAnnotations()
             .ValidateOnStart();
         builder.Services.AddScoped<IFeedbackEmailRenderer, FeedbackEmailRenderer>();
+        builder.Services.AddScoped<FeedbackMailService>();
         builder.Services.AddOptions<CharacterPrepOptions>()
             .Bind(builder.Configuration.GetSection(CharacterPrepOptions.SectionName))
             .ValidateDataAnnotations()
