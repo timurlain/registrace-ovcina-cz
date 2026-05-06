@@ -79,7 +79,7 @@ else
                     }
                     <textarea id="@inputId"
                               class="form-control"
-                              rows="4"
+                              rows="@(question.Rows ?? 4)"
                               placeholder="@(_placeholders.TryGetValue(question.Key, out var ph) ? ph : null)"
                               disabled="@View.IsReadOnly"
                               data-testid="@($"feedback-input-{question.Key}")"

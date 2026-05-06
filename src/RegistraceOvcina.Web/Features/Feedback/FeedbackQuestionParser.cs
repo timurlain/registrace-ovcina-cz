@@ -38,7 +38,8 @@ public static class FeedbackQuestionParser
             r.Key ?? string.Empty,
             r.Label ?? string.Empty,
             r.HelpText,
-            r.Placeholders ?? Array.Empty<string>()));
+            r.Placeholders ?? Array.Empty<string>(),
+            r.Rows));
 
         return new FeedbackQuestionSet(questions);
     }
@@ -51,6 +52,7 @@ public static class FeedbackQuestionParser
             Label = q.Label,
             HelpText = q.HelpText,
             Placeholders = q.Placeholders?.ToArray(),
+            Rows = q.Rows,
         }).ToList();
 
         return JsonSerializer.Serialize(raw, Options);
@@ -62,5 +64,6 @@ public static class FeedbackQuestionParser
         [JsonPropertyName("label")] public string? Label { get; set; }
         [JsonPropertyName("helpText")] public string? HelpText { get; set; }
         [JsonPropertyName("placeholders")] public string[]? Placeholders { get; set; }
+        [JsonPropertyName("rows")] public int? Rows { get; set; }
     }
 }

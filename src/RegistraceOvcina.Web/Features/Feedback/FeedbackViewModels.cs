@@ -117,6 +117,31 @@ public sealed record FeedbackGameHeader(
     DateTimeOffset EffectiveClosesAt);
 
 /// <summary>
+/// Editable per-game email template overrides. All four fields are optional —
+/// a blank or null entry tells the renderer to fall back to its hardcoded
+/// canonical default. Used by the organizer template editor to round-trip the
+/// four <c>Game.Feedback*Template</c> columns.
+/// </summary>
+public sealed record FeedbackEmailTemplates(
+    string? BundleSubjectTemplate,
+    string? BundleHtmlTemplate,
+    string? AdultIndividualSubjectTemplate,
+    string? AdultIndividualHtmlTemplate);
+
+/// <summary>
+/// Lightweight projection of one game on the organizer "choose a game" page
+/// (<c>/organizace/zpetna-vazba</c>): id, name, end timestamp, and a derived
+/// pill state (<c>NotYetOpen</c> / <c>Open</c> / <c>Closed</c>) computed
+/// against the effective window.
+/// </summary>
+public sealed record FeedbackGameChooserRow(
+    int GameId,
+    string GameName,
+    DateTimeOffset EndsAtUtc,
+    DateTimeOffset EffectiveOpensAt,
+    DateTimeOffset EffectiveClosesAt);
+
+/// <summary>
 /// Read-only detail view of a single attendee's feedback response, used by the
 /// organizer per-response page. Carries the question schema for the role plus
 /// the existing answers so the page can render labelled cards even when an
