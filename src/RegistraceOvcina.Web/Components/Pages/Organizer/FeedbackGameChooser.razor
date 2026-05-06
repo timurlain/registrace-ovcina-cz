@@ -1,0 +1,83 @@
+@page "/organizace/zpetna-vazba"
+@attribute [Authorize(Policy = AuthorizationPolicies.StaffOnly)]
+@rendermode InteractiveServer
+
+@using RegistraceOvcina.Web.Features.Feedback
+@using RegistraceOvcina.Web.Security
+
+@inject FeedbackService FeedbackService
+
+<PageTitle>Zpětná vazba — výběr hry</PageTitle>
+
+<h2 class="mb-3">Zpětná vazba</h2>
+<p class="text-secondary mb-4">
+    Vyber hru, jejíž zpětnou vazbu chceš spravovat. Zobrazují se jen hry, které mají
+    nastavené otázky pro dětskou nebo dospělou variantu.
+</p>
+
+@if (rows is null)
+{
+    <p class="text-secondary">Načítám…</p>
+}
+else if (rows.Count == 0)
+{
+    <div class="empty-state">Žádná hra nemá nastavenou zpětnou vazbu.</div>
+}
+else
+{
+    <div class="table-responsive">
+        <table class="table align-middle">
+            <thead>
+                <tr>
+                    <th>Hra</th>
+                    <th>Konec hry</th>
+                    <th>Stav okna</th>
+                    <th class="text-end">Akce</th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var row in rows)
+                {
+                    var (pillClass, pillLabel) = ResolvePill(row, DateTimeOffset.UtcNow);
+                    <tr data-testid="@($"feedback-chooser-row-{row.GameId}")">
+                        <td>@row.GameName</td>
+                        <td class="text-nowrap small">
+                            @row.EndsAtUtc.LocalDateTime.ToString("dd.MM.yyyy HH:mm")
+                        </td>
+                        <td><span class="badge @pillClass">@pillLabel</span></td>
+                        <td class="text-end">
+                            <a class="btn btn-sm btn-primary"
+                               href="/organizace/hry/@row.GameId/zpetna-vazba">
+                                Otevřít zpětnou vazbu
+                            </a>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+}
+
+@code {
+    private IReadOnlyList<FeedbackGameChooserRow>? rows;
+
+    protected override async Task OnInitializedAsync()
+    {
+        rows = await FeedbackService.ListChooserGamesAsync(CancellationToken.None);
+    }
+
+    private static (string PillClass, string PillLabel) ResolvePill(
+        FeedbackGameChooserRow row, DateTimeOffset now)
+    {
+        if (now < row.EffectiveOpensAt)
+        {
+            return ("text-bg-secondary",
+                $"Otevře se {row.EffectiveOpensAt.LocalDateTime:dd.MM.yyyy}");
+        }
+        if (now > row.EffectiveClosesAt)
+        {
+            return ("text-bg-dark", "Uzavřeno");
+        }
+        return ("text-bg-success", "Otevřeno");
+    }
+}
