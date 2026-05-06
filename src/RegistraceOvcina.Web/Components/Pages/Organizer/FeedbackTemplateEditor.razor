@@ -1,0 +1,323 @@
+@page "/organizace/hry/{GameId:int}/zpetna-vazba/sablony"
+@attribute [Authorize(Policy = AuthorizationPolicies.StaffOnly)]
+@rendermode InteractiveServer
+
+@using RegistraceOvcina.Web.Features.Feedback
+@using RegistraceOvcina.Web.Security
+@using RegistraceOvcina.Web.Components.Shared
+
+@inject FeedbackService FeedbackService
+@inject IFeedbackEmailRenderer EmailRenderer
+@inject NavigationManager Nav
+
+<PageTitle>Šablony e-mailů — @(header?.GameName ?? "Načítání…")</PageTitle>
+
+@if (header is null || templates is null)
+{
+    @if (!string.IsNullOrWhiteSpace(errorMessage))
+    {
+        <div class="alert alert-danger" role="alert">@errorMessage</div>
+    }
+    else
+    {
+        <div class="text-center py-5">
+            <div class="spinner-border text-primary" role="status">
+                <span class="visually-hidden">Načítání…</span>
+            </div>
+        </div>
+    }
+}
+else
+{
+    <h2 class="mb-1">Šablony e-mailů — @header.GameName</h2>
+    <p class="text-secondary mb-4">
+        Zde můžeš upravit text pozvánky a připomínky. Pokud necháš pole prázdné,
+        použije se výchozí znění.
+    </p>
+
+    @if (!string.IsNullOrWhiteSpace(statusMessage))
+    {
+        <div class="alert alert-success py-2 small" role="status">@statusMessage</div>
+    }
+    @if (!string.IsNullOrWhiteSpace(errorMessage))
+    {
+        <div class="alert alert-danger py-2 small" role="alert">@errorMessage</div>
+    }
+
+    <div class="card mb-3">
+        <div class="card-body">
+            <h3 class="h6 mb-2">Dostupné značky</h3>
+            <p class="small mb-2">
+                Značky se před odesláním nahradí skutečnými hodnotami. Velikost písmen
+                rozhoduje (např. <code>{GameName}</code> ano, <code>{gamename}</code> ne).
+            </p>
+            <ul class="small mb-0">
+                <li><code>{ContactName}</code> — jméno rodiče (pouze rodina/bundle)</li>
+                <li><code>{AttendeeName}</code> — jméno hrdiny (pouze dospělí)</li>
+                <li><code>{GameName}</code> — název hry</li>
+                <li><code>{Deadline}</code> — datum uzavření zpětné vazby</li>
+                <li><code>{ReminderPrefix}</code> — prázdné pro pozvánku, „(připomínka) " pro připomínku</li>
+                <li><code>{ReminderIntro}</code> — krátký HTML odstavec u připomínky</li>
+                <li><code>{Entries}</code> — seznam hrdinů v rodině jako <code>&lt;ul&gt;</code> (pouze rodina/bundle)</li>
+                <li><code>{TokenLink}</code> — URL na zpětnou vazbu (pouze dospělí)</li>
+                <li><code>{ButtonHtml}</code> — modré tlačítko „Otevřít zpětnou vazbu" (pouze dospělí)</li>
+            </ul>
+        </div>
+    </div>
+
+    <section class="card mb-4">
+        <div class="card-body">
+            <h3 class="h5 mb-3">Šablona pro rodinu (bundle)</h3>
+            <p class="small text-secondary mb-3">
+                Posíláno na e-mail rodiče, obsahuje seznam odkazů pro každého hrdinu.
+            </p>
+            <div class="mb-3">
+                <label class="form-label">Předmět</label>
+                <input class="form-control" @bind="bundleSubject" maxlength="400"
+                       placeholder="@BundleSubjectPlaceholder" />
+            </div>
+            <div class="mb-2">
+                <label class="form-label">Tělo (HTML)</label>
+                <RichTextEditor @ref="bundleHtmlEditor" Value="@bundleHtml" MinHeight="280" />
+            </div>
+            <div class="d-flex gap-2">
+                <button type="button" class="btn btn-outline-secondary btn-sm"
+                        @onclick="ResetBundle" disabled="@busy">
+                    Resetovat na výchozí
+                </button>
+            </div>
+        </div>
+    </section>
+
+    <section class="card mb-4">
+        <div class="card-body">
+            <h3 class="h5 mb-3">Šablona pro dospělé</h3>
+            <p class="small text-secondary mb-3">
+                Posíláno přímo dospělému hráči (pokud má nastavený vlastní e-mail).
+            </p>
+            <div class="mb-3">
+                <label class="form-label">Předmět</label>
+                <input class="form-control" @bind="adultSubject" maxlength="400"
+                       placeholder="@AdultSubjectPlaceholder" />
+            </div>
+            <div class="mb-2">
+                <label class="form-label">Tělo (HTML)</label>
+                <RichTextEditor @ref="adultHtmlEditor" Value="@adultHtml" MinHeight="280" />
+            </div>
+            <div class="d-flex gap-2">
+                <button type="button" class="btn btn-outline-secondary btn-sm"
+                        @onclick="ResetAdult" disabled="@busy">
+                    Resetovat na výchozí
+                </button>
+            </div>
+        </div>
+    </section>
+
+    <section class="card mb-4">
+        <div class="card-body">
+            <h3 class="h5 mb-3">Náhled (s ukázkovými hodnotami)</h3>
+            <p class="small text-secondary mb-3">
+                Náhled se obnoví po stisku „Aktualizovat náhled". Ukazuje
+                pozvánku ve stavu, v jakém by ji adresát uviděl.
+            </p>
+            <button type="button" class="btn btn-outline-secondary btn-sm mb-3"
+                    @onclick="RefreshPreviewAsync" disabled="@busy">
+                Aktualizovat náhled
+            </button>
+
+            @if (preview is not null)
+            {
+                <div class="border rounded p-3 mb-3">
+                    <div class="small text-muted mb-1">Předmět rodiny:</div>
+                    <div class="fw-bold mb-2">@preview.BundleSubject</div>
+                    <div class="small text-muted mb-1">Tělo rodiny:</div>
+                    <div>@((MarkupString)preview.BundleHtml)</div>
+                </div>
+                <div class="border rounded p-3">
+                    <div class="small text-muted mb-1">Předmět dospělých:</div>
+                    <div class="fw-bold mb-2">@preview.AdultSubject</div>
+                    <div class="small text-muted mb-1">Tělo dospělých:</div>
+                    <div>@((MarkupString)preview.AdultHtml)</div>
+                </div>
+            }
+        </div>
+    </section>
+
+    <div class="d-flex gap-2 mb-4">
+        <button type="button" class="btn btn-primary"
+                @onclick="SaveAsync" disabled="@busy">
+            Uložit
+        </button>
+        <a class="btn btn-outline-secondary"
+           href="/organizace/hry/@GameId/zpetna-vazba">
+            Zpět
+        </a>
+    </div>
+}
+
+@code {
+    [Parameter] public int GameId { get; set; }
+
+    private const string BundleSubjectPlaceholder = "{ReminderPrefix}Zpětná vazba k {GameName} — pár otázek na závěr";
+    private const string AdultSubjectPlaceholder = "{ReminderPrefix}Zpětná vazba k {GameName} — pár otázek na závěr";
+
+    private FeedbackGameHeader? header;
+    private FeedbackEmailTemplates? templates;
+
+    private string bundleSubject = "";
+    private string bundleHtml = "";
+    private string adultSubject = "";
+    private string adultHtml = "";
+
+    private RichTextEditor? bundleHtmlEditor;
+    private RichTextEditor? adultHtmlEditor;
+
+    private TemplatePreview? preview;
+    private bool busy;
+    private string? statusMessage;
+    private string? errorMessage;
+    private bool _needsEditorSync;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        header = await FeedbackService.GetGameHeaderAsync(GameId, CancellationToken.None);
+        templates = await FeedbackService.GetEmailTemplatesAsync(GameId, CancellationToken.None);
+
+        if (templates is null)
+        {
+            errorMessage = "Hra nebyla nalezena.";
+            return;
+        }
+
+        bundleSubject = templates.BundleSubjectTemplate ?? "";
+        bundleHtml = templates.BundleHtmlTemplate ?? "";
+        adultSubject = templates.AdultIndividualSubjectTemplate ?? "";
+        adultHtml = templates.AdultIndividualHtmlTemplate ?? "";
+        _needsEditorSync = true;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_needsEditorSync)
+        {
+            _needsEditorSync = false;
+            if (bundleHtmlEditor is not null)
+            {
+                await bundleHtmlEditor.SetHtmlAsync(bundleHtml);
+            }
+            if (adultHtmlEditor is not null)
+            {
+                await adultHtmlEditor.SetHtmlAsync(adultHtml);
+            }
+        }
+    }
+
+    private async Task ResetBundle()
+    {
+        bundleSubject = "";
+        bundleHtml = "";
+        if (bundleHtmlEditor is not null)
+        {
+            await bundleHtmlEditor.SetHtmlAsync("");
+        }
+    }
+
+    private async Task ResetAdult()
+    {
+        adultSubject = "";
+        adultHtml = "";
+        if (adultHtmlEditor is not null)
+        {
+            await adultHtmlEditor.SetHtmlAsync("");
+        }
+    }
+
+    private async Task RefreshPreviewAsync()
+    {
+        if (header is null) return;
+        await SyncFromEditorsAsync();
+
+        var sampleBundle = new FeedbackContactBundleEmail(
+            ToEmail: "rodic@example.com",
+            ContactName: "Eva Nováková",
+            GameName: header.GameName,
+            FeedbackClosesAtLocal: header.EffectiveClosesAt,
+            Entries: new[]
+            {
+                new FeedbackBundleEntry(
+                    "Jan Novák", Data.AttendeeType.Player,
+                    "https://example.com/zpetna-vazba/abc"),
+                new FeedbackBundleEntry(
+                    "Petr Novák", Data.AttendeeType.Adult,
+                    "https://example.com/zpetna-vazba/def"),
+            },
+            IsReminder: false,
+            SubjectTemplate: NullIfBlank(bundleSubject),
+            HtmlTemplate: NullIfBlank(bundleHtml));
+
+        var sampleAdult = new FeedbackAdultIndividualEmail(
+            ToEmail: "petr@example.com",
+            AttendeeName: "Petr Novák",
+            GameName: header.GameName,
+            FeedbackClosesAtLocal: header.EffectiveClosesAt,
+            TokenLink: "https://example.com/zpetna-vazba/xyz",
+            IsReminder: false,
+            SubjectTemplate: NullIfBlank(adultSubject),
+            HtmlTemplate: NullIfBlank(adultHtml));
+
+        var renderedBundle = EmailRenderer.RenderContactBundle(sampleBundle);
+        var renderedAdult = EmailRenderer.RenderAdultIndividual(sampleAdult);
+
+        preview = new TemplatePreview(
+            renderedBundle.Subject, renderedBundle.HtmlBody,
+            renderedAdult.Subject, renderedAdult.HtmlBody);
+    }
+
+    private async Task SaveAsync()
+    {
+        if (busy) return;
+        busy = true;
+        statusMessage = null;
+        errorMessage = null;
+        try
+        {
+            await SyncFromEditorsAsync();
+            var dto = new FeedbackEmailTemplates(
+                NullIfBlank(bundleSubject),
+                NullIfBlank(bundleHtml),
+                NullIfBlank(adultSubject),
+                NullIfBlank(adultHtml));
+            await FeedbackService.SaveEmailTemplatesAsync(GameId, dto, CancellationToken.None);
+            statusMessage = "Šablony byly uloženy.";
+        }
+        catch (Exception ex)
+        {
+            errorMessage = "Uložení selhalo: " + ex.Message;
+        }
+        finally
+        {
+            busy = false;
+        }
+    }
+
+    private async Task SyncFromEditorsAsync()
+    {
+        if (bundleHtmlEditor is not null)
+        {
+            bundleHtml = await bundleHtmlEditor.GetHtmlAsync();
+        }
+        if (adultHtmlEditor is not null)
+        {
+            adultHtml = await adultHtmlEditor.GetHtmlAsync();
+        }
+    }
+
+    private static string? NullIfBlank(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value;
+
+    private sealed record TemplatePreview(
+        string BundleSubject,
+        string BundleHtml,
+        string AdultSubject,
+        string AdultHtml);
+}

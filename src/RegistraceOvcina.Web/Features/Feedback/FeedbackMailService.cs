@@ -205,6 +205,33 @@ public sealed class FeedbackMailService(
             r => BuildTokenLink(tokens[r.Id]),
             isReminder);
 
+        // Step 3b: enrich with per-game template overrides where present. The
+        // renderer falls back to the canonical default body whenever a slot is
+        // null/blank, so an unset template is invisible.
+        if (bundle is not null
+            && (!string.IsNullOrWhiteSpace(game.FeedbackBundleSubjectTemplate)
+                || !string.IsNullOrWhiteSpace(game.FeedbackBundleHtmlTemplate)))
+        {
+            bundle = bundle with
+            {
+                SubjectTemplate = game.FeedbackBundleSubjectTemplate,
+                HtmlTemplate = game.FeedbackBundleHtmlTemplate,
+            };
+        }
+
+        if (individuals.Count > 0
+            && (!string.IsNullOrWhiteSpace(game.FeedbackAdultIndividualSubjectTemplate)
+                || !string.IsNullOrWhiteSpace(game.FeedbackAdultIndividualHtmlTemplate)))
+        {
+            individuals = individuals
+                .Select(m => m with
+                {
+                    SubjectTemplate = game.FeedbackAdultIndividualSubjectTemplate,
+                    HtmlTemplate = game.FeedbackAdultIndividualHtmlTemplate,
+                })
+                .ToList();
+        }
+
         var bundleSent = false;
         var individualSent = 0;
 

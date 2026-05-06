@@ -32,6 +32,36 @@ public sealed class Game
     public string? FeedbackAdultQuestionsJson { get; set; }
     public DateTimeOffset? FeedbackOpensAtUtc { get; set; }
     public DateTimeOffset? FeedbackClosesAtUtc { get; set; }
+
+    /// <summary>
+    /// Optional organizer override for the household-bundle email subject. Tokens
+    /// (e.g. <c>{ReminderPrefix}</c>, <c>{GameName}</c>) are substituted at send
+    /// time. NULL → fall back to the canonical default in
+    /// <see cref="Features.Feedback.FeedbackEmailRenderer"/>.
+    /// </summary>
+    public string? FeedbackBundleSubjectTemplate { get; set; }
+
+    /// <summary>
+    /// Optional organizer override for the household-bundle email HTML body.
+    /// Supports <c>{ContactName}</c>, <c>{GameName}</c>, <c>{Deadline}</c>,
+    /// <c>{ReminderPrefix}</c>, <c>{ReminderIntro}</c>, and <c>{Entries}</c>.
+    /// NULL → fall back to the hardcoded default body.
+    /// </summary>
+    public string? FeedbackBundleHtmlTemplate { get; set; }
+
+    /// <summary>
+    /// Optional organizer override for the adult-individual email subject.
+    /// Tokens are substituted at send time. NULL → fall back to default.
+    /// </summary>
+    public string? FeedbackAdultIndividualSubjectTemplate { get; set; }
+
+    /// <summary>
+    /// Optional organizer override for the adult-individual email HTML body.
+    /// Supports <c>{AttendeeName}</c>, <c>{GameName}</c>, <c>{Deadline}</c>,
+    /// <c>{ReminderPrefix}</c>, <c>{ReminderIntro}</c>, <c>{TokenLink}</c>,
+    /// and <c>{ButtonHtml}</c>. NULL → fall back to the hardcoded default.
+    /// </summary>
+    public string? FeedbackAdultIndividualHtmlTemplate { get; set; }
     public DateTime CreatedAtUtc { get; set; }
     public DateTime UpdatedAtUtc { get; set; }
     public List<GameKingdomTarget> KingdomTargets { get; set; } = [];

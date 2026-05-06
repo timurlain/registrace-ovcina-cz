@@ -95,6 +95,10 @@ public sealed class ApplicationDbContext(DbContextOptions<ApplicationDbContext> 
                 .OnDelete(DeleteBehavior.Cascade);
             entity.Property(x => x.FeedbackKidQuestionsJson).HasColumnType("text");
             entity.Property(x => x.FeedbackAdultQuestionsJson).HasColumnType("text");
+            entity.Property(x => x.FeedbackBundleSubjectTemplate).HasMaxLength(400);
+            entity.Property(x => x.FeedbackBundleHtmlTemplate).HasColumnType("text");
+            entity.Property(x => x.FeedbackAdultIndividualSubjectTemplate).HasMaxLength(400);
+            entity.Property(x => x.FeedbackAdultIndividualHtmlTemplate).HasColumnType("text");
         });
 
         builder.Entity<Kingdom>(entity =>

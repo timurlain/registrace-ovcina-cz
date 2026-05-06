@@ -139,13 +139,22 @@ public static class FeedbackEmailRouter
 /// Consolidated post-game feedback email sent to the household contact, listing one row
 /// per kid (and per adult-without-email) with their token link.
 /// </summary>
+/// <remarks>
+/// <see cref="SubjectTemplate"/> and <see cref="HtmlTemplate"/> are optional
+/// per-game overrides. When non-null/non-blank the renderer substitutes tokens
+/// (<c>{ContactName}</c>, <c>{GameName}</c>, <c>{Deadline}</c>,
+/// <c>{ReminderPrefix}</c>, <c>{ReminderIntro}</c>, <c>{Entries}</c>) and uses
+/// the result instead of the hardcoded default body.
+/// </remarks>
 public sealed record FeedbackContactBundleEmail(
     string ToEmail,
     string ContactName,
     string GameName,
     DateTimeOffset FeedbackClosesAtLocal,
     IReadOnlyList<FeedbackBundleEntry> Entries,
-    bool IsReminder);
+    bool IsReminder,
+    string? SubjectTemplate = null,
+    string? HtmlTemplate = null);
 
 /// <summary>
 /// One row in a <see cref="FeedbackContactBundleEmail"/> — a single attendee inside the
@@ -159,10 +168,16 @@ public sealed record FeedbackBundleEntry(
 /// <summary>
 /// Direct post-game feedback email sent to an adult attendee at their own address.
 /// </summary>
+/// <remarks>
+/// <see cref="SubjectTemplate"/> and <see cref="HtmlTemplate"/> are optional
+/// per-game overrides — see <see cref="FeedbackContactBundleEmail"/>.
+/// </remarks>
 public sealed record FeedbackAdultIndividualEmail(
     string ToEmail,
     string AttendeeName,
     string GameName,
     DateTimeOffset FeedbackClosesAtLocal,
     string TokenLink,
-    bool IsReminder);
+    bool IsReminder,
+    string? SubjectTemplate = null,
+    string? HtmlTemplate = null);

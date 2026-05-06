@@ -107,4 +107,86 @@ public sealed class FeedbackEmailRendererTests
         Assert.Contains("Děkujeme, že jsi byl", invitation.HtmlBody);
         Assert.Contains("Posíláme jen tichou připomínku", reminder.HtmlBody);
     }
+
+    // -------------------------------------------------------------------------
+    // Template overrides (organizer-supplied per-game subject + body)
+    // -------------------------------------------------------------------------
+
+    [Fact]
+    public void Bundle_uses_subject_template_when_provided()
+    {
+        var renderer = new FeedbackEmailRenderer();
+        var bundle = CreateBundle() with
+        {
+            SubjectTemplate = "{ReminderPrefix}Custom subject for {GameName}",
+        };
+
+        var rendered = renderer.RenderContactBundle(bundle);
+
+        Assert.Equal("Custom subject for Ovčina 2026", rendered.Subject);
+    }
+
+    [Fact]
+    public void Bundle_falls_back_to_default_subject_when_template_null()
+    {
+        var renderer = new FeedbackEmailRenderer();
+        // Default invitation copy includes "pár otázek na závěr".
+        var rendered = renderer.RenderContactBundle(CreateBundle());
+
+        Assert.Contains("pár otázek na závěr", rendered.Subject);
+    }
+
+    [Fact]
+    public void Bundle_html_template_substitutes_entries_and_contact_name()
+    {
+        var renderer = new FeedbackEmailRenderer();
+        var bundle = CreateBundle() with
+        {
+            HtmlTemplate = "<p>Ahoj {ContactName}!</p>{Entries}<p>Do {Deadline}.</p>",
+        };
+
+        var rendered = renderer.RenderContactBundle(bundle);
+
+        Assert.Contains("Ahoj Eva Nováková!", rendered.HtmlBody);
+        // The link list survives — Entries is a raw-HTML token.
+        Assert.Contains("https://registrace.ovcina.cz/zpetna-vazba/abc", rendered.HtmlBody);
+        Assert.Contains("<ul>", rendered.HtmlBody);
+        Assert.Contains("30. 6. 2026", rendered.HtmlBody);
+    }
+
+    [Fact]
+    public void Adult_template_substitutes_button_and_attendee_name()
+    {
+        var renderer = new FeedbackEmailRenderer();
+        var adult = CreateAdult() with
+        {
+            HtmlTemplate = "<p>Ahoj {AttendeeName}!</p>{ButtonHtml}<p>Otevřeno do {Deadline}.</p>",
+            SubjectTemplate = "{ReminderPrefix}Zpětná vazba pro {AttendeeName}",
+        };
+
+        var rendered = renderer.RenderAdultIndividual(adult);
+
+        Assert.Equal("Zpětná vazba pro Petr Dvořák", rendered.Subject);
+        Assert.Contains("Ahoj Petr Dvořák!", rendered.HtmlBody);
+        // Button HTML is a raw chunk — link survives.
+        Assert.Contains("https://registrace.ovcina.cz/zpetna-vazba/xyz", rendered.HtmlBody);
+        Assert.Contains("Otevřít zpětnou vazbu", rendered.HtmlBody);
+    }
+
+    [Fact]
+    public void Bundle_reminder_via_template_includes_reminder_prefix_and_intro()
+    {
+        var renderer = new FeedbackEmailRenderer();
+        var bundle = CreateBundle(isReminder: true) with
+        {
+            SubjectTemplate = "{ReminderPrefix}Zpětná vazba k {GameName}",
+            HtmlTemplate = "{ReminderIntro}<p>Body for {ContactName}.</p>{Entries}",
+        };
+
+        var rendered = renderer.RenderContactBundle(bundle);
+
+        Assert.Equal("(připomínka) Zpětná vazba k Ovčina 2026", rendered.Subject);
+        Assert.Contains("Posíláme jen tichou připomínku", rendered.HtmlBody);
+        Assert.Contains("Body for Eva Nováková.", rendered.HtmlBody);
+    }
 }
