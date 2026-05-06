@@ -1,0 +1,316 @@
+@using System.Globalization
+@using RegistraceOvcina.Web.Features.Feedback
+@inject FeedbackService FeedbackService
+@inject ILogger<FeedbackFormCard> Logger
+
+@*
+    Shared feedback form body, hosted by both:
+      • Feedback.razor      — public token-based path (EditedBy = Self)
+      • FeedbackScribe.razor — logged-in scribe path (EditedBy = HouseholdContact)
+    The hosting page resolves the FeedbackView (404s on miss, handles auth) and
+    passes it in. This component owns the answer buffer, save / submit buttons,
+    and the read-only / submitted banners.
+*@
+
+@if (View is null)
+{
+    <p class="text-secondary">Načítám…</p>
+}
+else
+{
+    <section class="mb-4">
+        <h1 class="h3 mb-1">Zpětná vazba — @View.GameName</h1>
+        <p class="text-secondary mb-0">@View.AttendeeFullName</p>
+        <p class="small text-secondary mb-0" data-testid="feedback-window">
+            @if (View.IsReadOnly && View.ReadOnlyReason == "NotOpen")
+            {
+                <span>Otevře se: @FormatLocal(View.EffectiveOpensAt)</span>
+            }
+            else
+            {
+                <span>Otevřeno do @FormatLocal(View.EffectiveClosesAt)</span>
+            }
+        </p>
+    </section>
+
+    @if (View.IsReadOnly)
+    {
+        <div class="alert alert-info" role="alert" data-testid="feedback-readonly-banner">
+            @if (View.ReadOnlyReason == "NotOpen")
+            {
+                <span>Zpětná vazba se otevře po skončení hry. Zatím počkej.</span>
+            }
+            else
+            {
+                <span>Zpětná vazba je již uzavřena. Existující odpovědi vidíš níže, ale nelze je upravit.</span>
+            }
+        </div>
+    }
+    else if (View.SubmittedAtUtc.HasValue)
+    {
+        <div class="alert alert-success" role="status" data-testid="feedback-submitted-banner">
+            Hotovo, odesláno: @FormatLocal(View.SubmittedAtUtc.Value).
+            Stále můžeš odpovědi upravit a uložit znovu, dokud je formulář otevřený.
+        </div>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(_statusMessage))
+    {
+        <div class="alert alert-success" role="status" data-testid="feedback-status">@_statusMessage</div>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(_errorMessage))
+    {
+        <div class="alert alert-danger" role="alert" data-testid="feedback-error">@_errorMessage</div>
+    }
+
+    <div class="d-flex flex-column gap-3">
+        @foreach (var question in View.Questions.Questions)
+        {
+            var inputId = $"q-{question.Key}";
+            <article class="card shadow-sm" data-testid="@($"feedback-card-{question.Key}")">
+                <div class="card-body p-4">
+                    <h2 class="h5 mb-2">
+                        <label class="form-label mb-0" for="@inputId">@question.Label</label>
+                    </h2>
+                    @if (!string.IsNullOrWhiteSpace(question.HelpText))
+                    {
+                        <p class="text-secondary small mb-3">@question.HelpText</p>
+                    }
+                    <textarea id="@inputId"
+                              class="form-control"
+                              rows="4"
+                              placeholder="@(_placeholders.TryGetValue(question.Key, out var ph) ? ph : null)"
+                              disabled="@View.IsReadOnly"
+                              data-testid="@($"feedback-input-{question.Key}")"
+                              value="@GetAnswer(question.Key)"
+                              @oninput="e => OnAnswerChanged(question.Key, e.Value as string)"></textarea>
+                </div>
+            </article>
+        }
+    </div>
+
+    @if (!View.IsReadOnly)
+    {
+        <div class="mt-4 d-flex flex-column flex-sm-row gap-2 align-items-sm-center">
+            <button type="button"
+                    class="btn btn-outline-primary"
+                    disabled="@_busy"
+                    data-testid="feedback-save"
+                    @onclick="OnSave">
+                @(_busy ? "Ukládám…" : "Uložit")
+            </button>
+            <button type="button"
+                    class="btn btn-primary"
+                    disabled="@_busy"
+                    data-testid="feedback-submit"
+                    @onclick="OnSubmit">
+                @(_busy ? "Odesílám…" : "Hotovo, odeslat")
+            </button>
+            @if (View.UpdatedAtUtc.HasValue)
+            {
+                <span class="small text-secondary ms-sm-3" data-testid="feedback-last-saved">
+                    @if (View.SubmittedAtUtc.HasValue)
+                    {
+                        <span>Odesláno: @FormatLocal(View.SubmittedAtUtc.Value)</span>
+                    }
+                    else
+                    {
+                        <span>Naposledy uloženo: @FormatLocal(View.UpdatedAtUtc.Value)</span>
+                    }
+                </span>
+            }
+        </div>
+    }
+    else if (View.UpdatedAtUtc.HasValue)
+    {
+        <div class="mt-4 small text-secondary" data-testid="feedback-last-saved">
+            @if (View.SubmittedAtUtc.HasValue)
+            {
+                <span>Odesláno: @FormatLocal(View.SubmittedAtUtc.Value)</span>
+            }
+            else
+            {
+                <span>Naposledy uloženo: @FormatLocal(View.UpdatedAtUtc.Value)</span>
+            }
+        </div>
+    }
+}
+
+@code {
+    private static readonly CultureInfo CzechCulture = new("cs-CZ");
+
+    /// <summary>The fully-loaded feedback view for one Registration.</summary>
+    [Parameter, EditorRequired]
+    public FeedbackView? View { get; set; }
+
+    /// <summary>
+    /// Who is doing the editing. Self for token-form path, HouseholdContact for
+    /// the logged-in scribe path, Organizer for the organizer dashboard editor.
+    /// </summary>
+    [Parameter, EditorRequired]
+    public FeedbackEditedBy EditedBy { get; set; }
+
+    /// <summary>
+    /// PersonId of the editor when known. For Self this is the attendee's own
+    /// Person; for HouseholdContact / Organizer it's the staff/scribe's linked
+    /// Person, which may be null for organizer accounts not tied to a Person.
+    /// </summary>
+    [Parameter]
+    public int? EditedByPersonId { get; set; }
+
+    /// <summary>
+    /// Fired after a successful save or submit, after the host has had a
+    /// chance to refresh state. Hosts use this for back-navigation hooks
+    /// (e.g. scrolling back to the submission card).
+    /// </summary>
+    [Parameter]
+    public EventCallback OnAfterSave { get; set; }
+
+    private bool _busy;
+    private string? _statusMessage;
+    private string? _errorMessage;
+
+    /// <summary>
+    /// Mutable per-key answer buffer. Re-seeded from <see cref="FeedbackView.Answers"/>
+    /// on each parameter set so a host-driven reload (post-save) shows the latest
+    /// merged answers from the server.
+    /// </summary>
+    private readonly Dictionary<string, string> _answers = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Per-question placeholder picked once on initial load and held for the
+    /// lifetime of the page so it doesn't churn on every keystroke. Falls back
+    /// to the question's HelpText when no placeholders are configured.
+    /// </summary>
+    private Dictionary<string, string?> _placeholders = new(StringComparer.Ordinal);
+
+    protected override void OnParametersSet()
+    {
+        if (View is null)
+        {
+            return;
+        }
+
+        // Re-seed the answer buffer from the freshly-supplied view. The host
+        // is responsible for re-fetching the view after a save; we just mirror
+        // its state.
+        _answers.Clear();
+        foreach (var (key, value) in View.Answers)
+        {
+            _answers[key] = value;
+        }
+
+        // Placeholders are picked exactly once per question on first load —
+        // they stay stable for the lifetime of the page so users don't see
+        // the hint hop on every keystroke.
+        if (_placeholders.Count == 0)
+        {
+            _placeholders = View.Questions.Questions.ToDictionary(
+                q => q.Key,
+                q => q.Placeholders.Count > 0
+                    ? q.Placeholders[Random.Shared.Next(q.Placeholders.Count)]
+                    : q.HelpText,
+                StringComparer.Ordinal);
+        }
+    }
+
+    private string GetAnswer(string key)
+        => _answers.TryGetValue(key, out var value) ? value : string.Empty;
+
+    private void OnAnswerChanged(string key, string? value)
+    {
+        _answers[key] = value ?? string.Empty;
+    }
+
+    private async Task OnSave()
+    {
+        if (View is null || View.IsReadOnly)
+        {
+            return;
+        }
+
+        await SaveCoreAsync(submitAfter: false);
+    }
+
+    private async Task OnSubmit()
+    {
+        if (View is null || View.IsReadOnly)
+        {
+            return;
+        }
+
+        await SaveCoreAsync(submitAfter: true);
+    }
+
+    private async Task SaveCoreAsync(bool submitAfter)
+    {
+        if (View is null)
+        {
+            return;
+        }
+
+        _busy = true;
+        _statusMessage = null;
+        _errorMessage = null;
+
+        try
+        {
+            var registrationId = View.RegistrationId;
+
+            // Snapshot the buffer (don't pass the live mutable dict to the
+            // service) and let the service merge against the existing JSON.
+            var payload = new Dictionary<string, string>(_answers, StringComparer.Ordinal);
+
+            var result = await FeedbackService.SaveAsync(
+                registrationId,
+                payload,
+                EditedBy,
+                editedByPersonId: EditedByPersonId ?? View.PersonId,
+                CancellationToken.None);
+
+            if (!result.Persisted)
+            {
+                // The window slammed shut between page load and save. Let the
+                // host re-fetch so the read-only banner takes over.
+                _errorMessage = result.RejectionReason == "Closed"
+                    ? "Zpětná vazba se mezitím uzavřela. Tvé poslední uložení nebylo přijato."
+                    : "Zpětná vazba ještě není otevřena.";
+                await NotifyHostAsync();
+                return;
+            }
+
+            if (submitAfter)
+            {
+                await FeedbackService.MarkSubmittedAsync(registrationId, CancellationToken.None);
+                _statusMessage = "Hotovo, odesláno. Děkujeme!";
+            }
+            else
+            {
+                _statusMessage = "Uloženo.";
+            }
+
+            await NotifyHostAsync();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Feedback save failed for registration {RegistrationId}.", View.RegistrationId);
+            _errorMessage = "Něco se pokazilo, zkus to znovu.";
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task NotifyHostAsync()
+    {
+        if (OnAfterSave.HasDelegate)
+        {
+            await OnAfterSave.InvokeAsync();
+        }
+    }
+
+    private static string FormatLocal(DateTimeOffset value)
+        => value.ToLocalTime().ToString("d. M. yyyy HH:mm", CzechCulture);
+}

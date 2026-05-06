@@ -1,0 +1,68 @@
+@using RegistraceOvcina.Web.Features.Feedback
+@inject FeedbackService FeedbackService
+@inject TimeProvider TimeProvider
+
+@*
+    Household-facing card on the submission detail page (SubmissionEditor.razor).
+    Renders one row per attendee with a per-Registration feedback status and a
+    "Vyplnit / Upravit" button that opens the logged-in scribe page.
+    Auto-hides when the feedback window is not currently active (Service returns
+    null for "not yet open" or "already closed").
+*@
+
+@if (_attendees is { Count: > 0 })
+{
+    <section class="card shadow-sm mb-4" data-testid="feedback-submission-card">
+        <div class="card-body p-4">
+            <h2 class="h4 mb-1">Zpětná vazba k Ovčině @GameName</h2>
+            <p class="text-secondary mb-3">
+                Posbíráme dojmy, dokud je vše čerstvé. Vyplňte odpovědi za sebe i za své blízké —
+                klidně to vyplňte za děti vy, nebo za sebe, pokud jste také hráli.
+            </p>
+
+            <ul class="list-unstyled mb-0">
+                @foreach (var a in _attendees)
+                {
+                    <li class="d-flex flex-wrap justify-content-between align-items-center gap-2 py-2 border-top"
+                        data-testid="@($"feedback-attendee-{a.RegistrationId}")">
+                        <span>
+                            @a.PersonFullName
+                            <small class="text-muted">(@(a.AttendeeType == AttendeeType.Player ? "hrdina" : "dospělý"))</small>
+                        </span>
+                        <span class="d-flex align-items-center gap-2">
+                            <FeedbackStatusBadge Status="a.Status" />
+                            <a class="btn btn-sm btn-outline-primary"
+                               href="@($"/prihlasky/{SubmissionId}/zpetna-vazba/{a.RegistrationId}")"
+                               data-testid="@($"feedback-attendee-link-{a.RegistrationId}")">
+                                @(a.Status == FeedbackStatus.Done ? "Upravit" : "Vyplnit")
+                            </a>
+                        </span>
+                    </li>
+                }
+            </ul>
+        </div>
+    </section>
+}
+
+@code {
+    /// <summary>The submission this card belongs to.</summary>
+    [Parameter, EditorRequired]
+    public int SubmissionId { get; set; }
+
+    /// <summary>
+    /// Game name shown in the card title. Already in scope on the host page,
+    /// so we accept it as a parameter rather than re-fetching the Game.
+    /// </summary>
+    [Parameter, EditorRequired]
+    public string GameName { get; set; } = "";
+
+    private IReadOnlyList<SubmissionFeedbackAttendee>? _attendees;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _attendees = await FeedbackService.GetSubmissionAttendeesAsync(
+            SubmissionId,
+            TimeProvider.GetUtcNow(),
+            CancellationToken.None);
+    }
+}

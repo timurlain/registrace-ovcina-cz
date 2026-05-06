@@ -516,6 +516,91 @@ public sealed class FeedbackService(
         await db.SaveChangesAsync(cancellationToken);
     }
 
+    // -------------------------------------------------------------------------
+    // Household-facing submission detail card
+    // -------------------------------------------------------------------------
+
+    /// <summary>
+    /// One-shot listing of all attendees in a submission with their per-attendee
+    /// feedback status. Powers the "Zpětná vazba k Ovčině {GameName}" card on
+    /// the household submission detail page.
+    /// </summary>
+    /// <returns>
+    /// <para>The list of attendees on the submission, ordered AttendeeType then
+    /// last name then first name, when the feedback window is currently active.</para>
+    /// <para><c>null</c> when:
+    /// <list type="bullet">
+    ///   <item>the submission doesn't exist (or is hidden by the soft-delete query filter), or</item>
+    ///   <item>the game's feedback window has not yet opened, or</item>
+    ///   <item>the game's feedback window has already closed.</item>
+    /// </list>
+    /// Callers use the null result as a "hide the card" signal.</para>
+    /// </returns>
+    public async Task<IReadOnlyList<SubmissionFeedbackAttendee>?> GetSubmissionAttendeesAsync(
+        int submissionId,
+        DateTimeOffset nowUtc,
+        CancellationToken cancellationToken)
+    {
+        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+
+        var submission = await db.RegistrationSubmissions
+            .AsNoTracking()
+            .FirstOrDefaultAsync(x => x.Id == submissionId, cancellationToken);
+
+        if (submission is null)
+        {
+            // Either no such submission, or hidden by the IsDeleted query
+            // filter on RegistrationSubmission. Treat both as "hide the card".
+            return null;
+        }
+
+        var game = await db.Games
+            .AsNoTracking()
+            .FirstOrDefaultAsync(x => x.Id == submission.GameId, cancellationToken);
+
+        if (game is null)
+        {
+            return null;
+        }
+
+        var (opensAt, closesAt) = ComputeWindow(game);
+        if (nowUtc < opensAt || nowUtc > closesAt)
+        {
+            // Window is not currently active — the household submission detail
+            // page hides the card entirely outside the open window.
+            return null;
+        }
+
+        var raw = await db.Registrations
+            .AsNoTracking()
+            .Where(r => r.SubmissionId == submissionId)
+            .Select(r => new
+            {
+                r.Id,
+                PersonFirst = r.Person.FirstName,
+                PersonLast = r.Person.LastName,
+                r.AttendeeType,
+                InvitedAtUtc = r.FeedbackInvitedAtUtc,
+                ResponseSubmittedAtUtc = r.FeedbackResponse != null
+                    ? r.FeedbackResponse.SubmittedAtUtc
+                    : null,
+            })
+            .ToListAsync(cancellationToken);
+
+        // Order: players first (children are the focus), then adults; then by
+        // last+first name. Cultural ordering keeps Czech diacritics stable.
+        return raw
+            .OrderBy(r => (int)r.AttendeeType)
+            .ThenBy(r => r.PersonLast, StringComparer.CurrentCultureIgnoreCase)
+            .ThenBy(r => r.PersonFirst, StringComparer.CurrentCultureIgnoreCase)
+            .Select(r => new SubmissionFeedbackAttendee(
+                RegistrationId: r.Id,
+                PersonFullName: (r.PersonFirst + " " + r.PersonLast).Trim(),
+                AttendeeType: r.AttendeeType,
+                Status: DeriveDashboardStatus(r.InvitedAtUtc, r.ResponseSubmittedAtUtc)))
+            .ToList();
+    }
+
     private static FeedbackStatus DeriveDashboardStatus(
         DateTimeOffset? invitedAtUtc,
         DateTimeOffset? responseSubmittedAtUtc)

@@ -1,6 +1,8 @@
 ﻿@page "/prihlasky/{SubmissionId:int}"
 @attribute [Authorize]
 
+@using RegistraceOvcina.Web.Components.Pages.Feedback
+
 @inject AuthenticationStateProvider AuthenticationStateProvider
 @inject SubmissionService SubmissionService
 @inject SubmissionPricingService SubmissionPricingService
@@ -40,6 +42,12 @@ else
             můžete měnit i po uzávěrce registrace.
         </div>
     }
+
+    @* Post-game feedback card. The card auto-hides itself when the feedback
+       window is not currently active (FeedbackService.GetSubmissionAttendeesAsync
+       returns null), so we render it unconditionally — visibility is fully
+       owned by the service + window logic. *@
+    <FeedbackSubmissionCard SubmissionId="submission.Id" GameName="@submission.GameName" />
 
     @if (!string.IsNullOrWhiteSpace(statusMessage))
     {

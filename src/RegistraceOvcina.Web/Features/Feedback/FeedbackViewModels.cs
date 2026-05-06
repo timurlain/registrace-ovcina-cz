@@ -93,3 +93,14 @@ public sealed record FeedbackDashboardFilter(
     FeedbackStatus? Status = null,
     AttendeeType? AttendeeType = null,
     string? Search = null);
+
+/// <summary>
+/// One row per attendee on the household-facing submission detail card.
+/// Drives the "Zpětná vazba k Ovčině {GameName}" tile that lets the registrant
+/// scribe answers for each member of the submission.
+/// </summary>
+public sealed record SubmissionFeedbackAttendee(
+    int RegistrationId,
+    string PersonFullName,
+    AttendeeType AttendeeType,
+    FeedbackStatus Status);
