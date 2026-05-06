@@ -239,14 +239,24 @@ public sealed class FeedbackMailServiceTests
     }
 
     // -------------------------------------------------- SendTest* methods
+    //
+    // Test-send now uses the logged-in user's REAL submission/registration
+    // data rather than dummy fixtures: bundle test resolves the user's own
+    // submission for this game, adult-individual resolves a Person.Email
+    // match. Tokens are issued lazily via FeedbackTokenService.EnsureTokenAsync
+    // and the test path must NOT mark anyone invited.
+
+    private const string TestUserId = "user-1";
+    private const string TestUserEmail = "tom@example.cz";
 
     [Fact]
-    public async Task SendTestBundleAsync_renders_through_existing_renderer_and_calls_sender()
+    public async Task SendTestBundleAsync_renders_through_existing_renderer_with_real_submission()
     {
         var options = CreateOptions();
         await SeedGameAsync(options);
-        // Per-game template override that the renderer should pick up. Subject
-        // template includes the {GameName} token to prove the renderer ran.
+        // Seed a submission owned by TestUserId with two players. Submission
+        // PrimaryContactName flows into the {ContactName} token.
+        await AddSubmissionAsync(options, submissionId: 1, players: 2, adultsWithEmail: 0, adultsWithoutEmail: 0);
         await using (var db = new ApplicationDbContext(options))
         {
             var game = await db.Games.SingleAsync();
@@ -256,25 +266,116 @@ public sealed class FeedbackMailServiceTests
         }
         var (service, sender) = CreateService(options);
 
-        await service.SendTestBundleAsync(GameId, "tom@example.cz", isReminder: false, CancellationToken.None);
+        await service.SendTestBundleAsync(
+            GameId, TestUserId, TestUserEmail, isReminder: false, CancellationToken.None);
 
         var captured = Assert.Single(sender.Captured);
-        Assert.Equal("tom@example.cz", captured.To);
-        // Game name token substituted by FeedbackTemplateRenderer.
+        Assert.Equal(TestUserEmail, captured.To);
         Assert.Equal("TEST-Ovčina 2026", captured.Subject);
-        // Entries token expanded into a <ul> with the two dummy player rows.
-        Assert.Contains("Anička (test)", captured.HtmlBody);
-        Assert.Contains("Kuba (test)", captured.HtmlBody);
-        Assert.Contains("Testovací rodič", captured.HtmlBody);
+        // Real Person names from the seed (see AddSubmissionAsync).
+        Assert.Contains("Kid0 S1", captured.HtmlBody);
+        Assert.Contains("Kid1 S1", captured.HtmlBody);
+        // Real PrimaryContactName from the seed.
+        Assert.Contains("Contact 1", captured.HtmlBody);
     }
 
     [Fact]
-    public async Task SendTestAdultIndividualAsync_renders_and_calls_sender()
+    public async Task SendTestBundleAsync_throws_when_user_has_no_submission_in_game()
     {
         var options = CreateOptions();
         await SeedGameAsync(options);
+        // No submission seeded for TestUserId — the resolver should refuse.
+        var (service, sender) = CreateService(options);
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            service.SendTestBundleAsync(
+                GameId, TestUserId, TestUserEmail, isReminder: false, CancellationToken.None));
+        Assert.Contains("vlastní přihlášku", ex.Message);
+        Assert.Empty(sender.Captured);
+    }
+
+    [Fact]
+    public async Task SendTestBundleAsync_does_not_mark_anyone_invited()
+    {
+        var options = CreateOptions();
+        await SeedGameAsync(options);
+        await AddSubmissionAsync(options, submissionId: 1, players: 2, adultsWithEmail: 0, adultsWithoutEmail: 0);
+        var (service, _) = CreateService(options);
+
+        await service.SendTestBundleAsync(
+            GameId, TestUserId, TestUserEmail, isReminder: false, CancellationToken.None);
+
+        await using var verify = new ApplicationDbContext(options);
+        var regs = await verify.Registrations.ToListAsync();
+        Assert.NotEmpty(regs);
+        // Test-send must NOT touch the dashboard's "Pozváno" / reminder counters.
+        Assert.All(regs, r => Assert.Null(r.FeedbackInvitedAtUtc));
+        Assert.All(regs, r => Assert.Null(r.FeedbackReminderLastSentAtUtc));
+    }
+
+    [Fact]
+    public async Task SendTestBundleAsync_issues_tokens_on_unminted_registrations()
+    {
+        var options = CreateOptions();
+        await SeedGameAsync(options);
+        await AddSubmissionAsync(options, submissionId: 1, players: 2, adultsWithEmail: 0, adultsWithoutEmail: 0);
+        // Sanity: tokens should start out null.
+        await using (var pre = new ApplicationDbContext(options))
+        {
+            Assert.All(await pre.Registrations.ToListAsync(), r => Assert.Null(r.FeedbackToken));
+        }
+        var (service, sender) = CreateService(options);
+
+        await service.SendTestBundleAsync(
+            GameId, TestUserId, TestUserEmail, isReminder: false, CancellationToken.None);
+
+        await using var verify = new ApplicationDbContext(options);
+        var regs = await verify.Registrations.ToListAsync();
+        Assert.All(regs, r =>
+        {
+            Assert.NotNull(r.FeedbackToken);
+            Assert.NotEqual(Guid.Empty, r.FeedbackToken!.Value);
+        });
+        // The captured HTML must reference each freshly issued token (proves the
+        // entries are wired off the real ids, not random Guids).
+        var captured = Assert.Single(sender.Captured);
+        foreach (var reg in regs)
+        {
+            Assert.Contains(reg.FeedbackToken!.Value.ToString(), captured.HtmlBody);
+        }
+    }
+
+    [Fact]
+    public async Task SendTestAdultIndividualAsync_renders_with_real_registration()
+    {
+        var options = CreateOptions();
+        await SeedGameAsync(options);
+        // Seed a submission for TestUserId then add one adult Person whose
+        // Email matches TestUserEmail — that's how the service maps the
+        // logged-in user to a Registration.
+        await AddSubmissionAsync(options, submissionId: 1, players: 0, adultsWithEmail: 0, adultsWithoutEmail: 0);
         await using (var db = new ApplicationDbContext(options))
         {
+            db.People.Add(new Person
+            {
+                Id = 9001,
+                FirstName = "Tomáš",
+                LastName = "Pajonk",
+                BirthYear = 1985,
+                Email = TestUserEmail,
+                CreatedAtUtc = FixedUtc,
+                UpdatedAtUtc = FixedUtc,
+            });
+            db.Registrations.Add(new Registration
+            {
+                Id = 9001,
+                SubmissionId = 1,
+                PersonId = 9001,
+                AttendeeType = AttendeeType.Adult,
+                Status = RegistrationStatus.Active,
+                CreatedAtUtc = FixedUtc,
+                UpdatedAtUtc = FixedUtc,
+            });
             var game = await db.Games.SingleAsync();
             game.FeedbackAdultIndividualSubjectTemplate = "ADULT-{GameName}";
             game.FeedbackAdultIndividualHtmlTemplate = "<p>Ahoj {AttendeeName}, link: {TokenLink}</p>";
@@ -282,14 +383,39 @@ public sealed class FeedbackMailServiceTests
         }
         var (service, sender) = CreateService(options);
 
-        await service.SendTestAdultIndividualAsync(GameId, "tom@example.cz", isReminder: false, CancellationToken.None);
+        await service.SendTestAdultIndividualAsync(
+            GameId, TestUserId, TestUserEmail, isReminder: false, CancellationToken.None);
 
         var captured = Assert.Single(sender.Captured);
-        Assert.Equal("tom@example.cz", captured.To);
+        Assert.Equal(TestUserEmail, captured.To);
         Assert.Equal("ADULT-Ovčina 2026", captured.Subject);
-        Assert.Contains("Testovací dospělý", captured.HtmlBody);
-        // Token link must use the configured PublicBaseUrl prefix.
+        // Real attendee name from the seeded Person.
+        Assert.Contains("Tomáš Pajonk", captured.HtmlBody);
         Assert.Contains("https://registrace.ovcina.cz/zpetna-vazba/", captured.HtmlBody);
+
+        // Token must have been minted on the seeded Registration.
+        await using var verify = new ApplicationDbContext(options);
+        var reg = await verify.Registrations.SingleAsync(r => r.Id == 9001);
+        Assert.NotNull(reg.FeedbackToken);
+        Assert.Contains(reg.FeedbackToken!.Value.ToString(), captured.HtmlBody);
+        // No invited-marking side effect.
+        Assert.Null(reg.FeedbackInvitedAtUtc);
+    }
+
+    [Fact]
+    public async Task SendTestAdultIndividualAsync_throws_when_user_has_no_adult_registration_in_game()
+    {
+        var options = CreateOptions();
+        await SeedGameAsync(options);
+        // Submission with only kids — no adult registration matches the user's email.
+        await AddSubmissionAsync(options, submissionId: 1, players: 1, adultsWithEmail: 0, adultsWithoutEmail: 0);
+        var (service, sender) = CreateService(options);
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            service.SendTestAdultIndividualAsync(
+                GameId, TestUserId, TestUserEmail, isReminder: false, CancellationToken.None));
+        Assert.Contains("zaregistrováni jako dospělý", ex.Message);
+        Assert.Empty(sender.Captured);
     }
 
     [Fact]
@@ -300,9 +426,9 @@ public sealed class FeedbackMailServiceTests
         var (service, sender) = CreateService(options);
 
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            service.SendTestBundleAsync(GameId, "", isReminder: false, CancellationToken.None));
+            service.SendTestBundleAsync(GameId, TestUserId, "", isReminder: false, CancellationToken.None));
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            service.SendTestBundleAsync(GameId, "   ", isReminder: false, CancellationToken.None));
+            service.SendTestBundleAsync(GameId, TestUserId, "   ", isReminder: false, CancellationToken.None));
 
         Assert.Empty(sender.Captured);
     }
@@ -315,7 +441,8 @@ public sealed class FeedbackMailServiceTests
         var (service, sender) = CreateService(options);
 
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            service.SendTestBundleAsync(GameId, "tom@example.cz", isReminder: false, CancellationToken.None));
+            service.SendTestBundleAsync(
+                GameId, TestUserId, TestUserEmail, isReminder: false, CancellationToken.None));
 
         Assert.Empty(sender.Captured);
     }
@@ -325,9 +452,11 @@ public sealed class FeedbackMailServiceTests
     {
         var options = CreateOptions();
         await SeedGameAsync(options);
+        await AddSubmissionAsync(options, submissionId: 1, players: 1, adultsWithEmail: 0, adultsWithoutEmail: 0);
         var (service, sender) = CreateService(options);
 
-        await service.SendTestBundleAsync(GameId, "tom@example.cz", isReminder: true, CancellationToken.None);
+        await service.SendTestBundleAsync(
+            GameId, TestUserId, TestUserEmail, isReminder: true, CancellationToken.None);
 
         var captured = Assert.Single(sender.Captured);
         // Default reminder subject (no template override) starts with "Připomínka:".
@@ -344,7 +473,8 @@ public sealed class FeedbackMailServiceTests
         var (service, sender) = CreateService(options);
 
         await Assert.ThrowsAsync<InvalidOperationException>(() =>
-            service.SendTestAdultIndividualAsync(GameId, "", isReminder: false, CancellationToken.None));
+            service.SendTestAdultIndividualAsync(
+                GameId, TestUserId, "", isReminder: false, CancellationToken.None));
 
         Assert.Empty(sender.Captured);
     }

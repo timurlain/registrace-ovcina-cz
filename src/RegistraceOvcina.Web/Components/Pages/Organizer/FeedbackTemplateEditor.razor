@@ -221,6 +221,7 @@ else
     private string? statusMessage;
     private string? errorMessage;
     private bool _needsEditorSync;
+    private string? currentUserId;
     private string? currentUserEmail;
     private bool testAsReminder;
 
@@ -247,6 +248,7 @@ else
         // up here without forcing a re-login.
         var authState = await AuthenticationStateProvider.GetAuthenticationStateAsync();
         var user = await UserManager.GetUserAsync(authState.User);
+        currentUserId = user?.Id;
         currentUserEmail = user?.Email;
     }
 
@@ -369,7 +371,7 @@ else
     private async Task SendTestAsync(bool isAdult)
     {
         if (busy) return;
-        if (string.IsNullOrWhiteSpace(currentUserEmail))
+        if (string.IsNullOrWhiteSpace(currentUserEmail) || string.IsNullOrWhiteSpace(currentUserId))
         {
             errorMessage = "U tvého účtu chybí e-mailová adresa — zkušební e-mail nelze odeslat.";
             return;
@@ -394,12 +396,12 @@ else
             if (isAdult)
             {
                 await FeedbackMailService.SendTestAdultIndividualAsync(
-                    GameId, currentUserEmail!, testAsReminder, CancellationToken.None);
+                    GameId, currentUserId!, currentUserEmail!, testAsReminder, CancellationToken.None);
             }
             else
             {
                 await FeedbackMailService.SendTestBundleAsync(
-                    GameId, currentUserEmail!, testAsReminder, CancellationToken.None);
+                    GameId, currentUserId!, currentUserEmail!, testAsReminder, CancellationToken.None);
             }
 
             statusMessage = $"Odesláno na {currentUserEmail}.";
